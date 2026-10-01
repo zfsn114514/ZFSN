@@ -1,0 +1,2666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZFSN</title>
+<meta name="description" content="ZFSN 的个人主页 — 二次元 / 游戏 / 创作">
+<link rel="icon" href="assets/avatar.jpg">
+<style>
+:root{
+  --bg:#07070b;
+  --bg2:#0d0d14;
+  --surface:rgba(255,255,255,.035);
+  --surface2:rgba(255,255,255,.06);
+  --line:rgba(255,255,255,.09);
+  --line2:rgba(255,255,255,.16);
+  --text:#e9e9f2;
+  --muted:#78788c;
+  --red:#ff2d4a;
+  --red-soft:#ff6b7f;
+  --silver:#c9cdd9;
+  --bili:#00aeec;
+  --steam:#66a3d9;
+  --xbox:#52b043;
+  --r:18px;
+  --ease:cubic-bezier(.2,.8,.3,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  overflow-x:hidden;
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+body.locked{overflow:hidden}
+
+canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block}
+canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;display:block}
+
+.glow{
+  position:fixed;width:620px;height:620px;border-radius:50%;pointer-events:none;z-index:1;
+  background:radial-gradient(circle,rgba(255,45,74,.14),rgba(255,45,74,.05) 40%,transparent 68%);
+  transform:translate(-50%,-50%);transition:opacity .4s;will-change:left,top;
+}
+.vignette{
+  position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 40%,transparent 35%,rgba(0,0,0,.55) 100%);
+}
+.grain{
+  position:fixed;inset:-50%;z-index:2;pointer-events:none;opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation:grain 8s steps(6) infinite;
+}
+@keyframes grain{
+  0%,100%{transform:translate(0,0)}
+  20%{transform:translate(-3%,2%)}
+  40%{transform:translate(2%,-3%)}
+  60%{transform:translate(-2%,-2%)}
+  80%{transform:translate(3%,1%)}
+}
+
+/* ═══ 顶部导航 ═══ */
+.topbar{
+  position:fixed;top:0;left:0;right:0;z-index:20;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:22px 40px;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);
+  background:linear-gradient(180deg,rgba(7,7,11,.9) 0%,rgba(7,7,11,.6) 60%,transparent 100%);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+.topbar .mark{display:flex;align-items:center;gap:10px;color:var(--silver);font-weight:600;cursor:pointer;user-select:none}
+.topbar .mark .dot{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 12px var(--red);animation:pulse 2.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.75)}}
+
+.nav{display:flex;gap:4px;align-items:center}
+.nav button{
+  background:none;color:var(--muted);font:inherit;font-size:11.5px;letter-spacing:.16em;
+  text-transform:uppercase;padding:9px 15px;border-radius:9px;cursor:pointer;position:relative;
+  transition:color .3s,border-color .3s,background .3s;border:1px solid transparent;
+}
+.nav button:hover{color:var(--text)}
+.nav button.active{color:var(--text);border-color:var(--line2);background:var(--surface2)}
+.nav button.active::after{
+  content:"";position:absolute;left:50%;bottom:-1px;transform:translateX(-50%);
+  width:16px;height:2px;border-radius:2px;background:var(--red);box-shadow:0 0 10px var(--red);
+}
+
+/* ═══ 页面切换过渡 ═══ */
+#wipe{
+  position:fixed;inset:0;z-index:60;pointer-events:none;
+  background:linear-gradient(120deg,#07070b 0%,#120309 45%,#07070b 100%);
+  opacity:0;transition:opacity .34s ease;
+}
+#wipe.on{opacity:1;pointer-events:all}
+#wipe .sweep{
+  position:absolute;top:50%;left:0;width:100%;height:2px;transform:translateY(-50%);
+  background:linear-gradient(90deg,transparent,var(--red),transparent);
+  box-shadow:0 0 30px 6px rgba(255,45,74,.5);
+  opacity:0;
+}
+#wipe.on .sweep{animation:sweep .62s var(--ease) forwards}
+@keyframes sweep{
+  0%{opacity:0;transform:translateY(-50%) scaleX(0)}
+  40%{opacity:1;transform:translateY(-50%) scaleX(1)}
+  100%{opacity:0;transform:translateY(-50%) scaleX(1)}
+}
+
+/* ═══ 页面容器 ═══ */
+.page{
+  position:relative;z-index:5;
+  min-height:100vh;
+  padding:120px 24px 90px;
+  display:none;
+}
+.page.active{display:block;animation:pageIn .6s var(--ease) both}
+@keyframes pageIn{
+  from{opacity:0;transform:translateY(26px) scale(.985)}
+  to{opacity:1;transform:none}
+}
+.wrap{max-width:1080px;margin:0 auto;width:100%}
+
+.phead{text-align:center;margin-bottom:56px}
+.phead .kicker{
+  font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--red);
+  margin-bottom:14px;font-weight:600;
+}
+.phead h2{
+  font-size:clamp(30px,5.5vw,46px);font-weight:800;letter-spacing:.02em;
+  background:linear-gradient(180deg,#fff 0%,var(--silver) 60%,#8b8fa0 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.phead p{margin-top:14px;color:var(--muted);font-size:13.5px;letter-spacing:.04em}
+
+/* ═══ HERO ═══ */
+#page-home{display:none;align-items:center;justify-content:center;padding-top:0;padding-bottom:0}
+#page-home.active{display:flex}
+.hero{text-align:center;max-width:760px;width:100%}
+
+.avatar-stage{
+  width:184px;height:184px;margin:0 auto 40px;perspective:1100px;position:relative;
+  cursor:pointer;
+}
+.avatar-wrap{
+  position:relative;width:100%;height:100%;
+  transform-style:preserve-3d;
+  transition:transform 1s var(--ease);
+}
+.avatar-stage.flipped .avatar-wrap{transform:rotateY(180deg)}
+.face{
+  position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  border-radius:50%;overflow:hidden;
+}
+.face.front img{
+  width:100%;height:100%;border-radius:50%;object-fit:cover;
+  border:1px solid var(--line);
+  box-shadow:0 0 0 1px rgba(255,255,255,.05),0 26px 70px rgba(0,0,0,.75),0 0 62px rgba(255,45,74,.2);
+}
+.face.back{
+  transform:rotateY(180deg);
+  background:linear-gradient(150deg,#15040a,#0d0d14 55%,#07070b);
+  border:1px solid rgba(255,45,74,.28);
+  box-shadow:0 26px 70px rgba(0,0,0,.75),0 0 62px rgba(255,45,74,.24) inset;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  text-align:center;padding:16px;
+}
+.face.back .big{font-size:30px;font-weight:800;color:var(--red);letter-spacing:.04em;text-shadow:0 0 24px rgba(255,45,74,.6)}
+.face.back .sm{font-size:9.5px;letter-spacing:.2em;color:var(--silver);text-transform:uppercase;opacity:.85}
+.face.back .ln{width:34px;height:1px;background:linear-gradient(90deg,transparent,var(--red),transparent)}
+
+.rings{position:absolute;inset:0;pointer-events:none}
+.ring{
+  position:absolute;inset:-11px;border-radius:50%;
+  background:conic-gradient(from 0deg,transparent 0deg,var(--red) 70deg,transparent 150deg,transparent 360deg);
+  animation:spin 4.5s linear infinite;
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.5px),#000 calc(100% - 2.5px));
+  mask:radial-gradient(farthest-side,transparent calc(100% - 2.5px),#000 calc(100% - 2.5px));
+}
+.ring.r2{inset:-20px;animation-duration:9s;animation-direction:reverse;opacity:.42}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.flip-hint{
+  margin-top:-24px;margin-bottom:26px;font-size:10.5px;letter-spacing:.22em;
+  text-transform:uppercase;color:#4a4a5a;transition:color .3s;
+}
+.hero:hover .flip-hint{color:var(--muted)}
+
+/* 名字：已移除红蓝错位特效，改为柔和辉光 + 字距呼吸 */
+.name{
+  font-size:clamp(56px,13vw,116px);
+  font-weight:800;letter-spacing:.06em;line-height:1;position:relative;display:inline-block;
+  background:linear-gradient(180deg,#fff 0%,var(--silver) 55%,#8b8fa0 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  transition:letter-spacing .55s var(--ease);
+  cursor:default;
+}
+.name::after{
+  content:"ZFSN";position:absolute;left:0;top:0;width:100%;
+  background:linear-gradient(180deg,#fff,var(--red-soft));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  opacity:0;transition:opacity .55s var(--ease);filter:blur(9px);
+}
+.name:hover{letter-spacing:.085em}
+.name:hover::after{opacity:.55}
+
+.tagline{
+  margin-top:22px;font-size:15px;color:var(--muted);letter-spacing:.05em;
+  min-height:24px;font-family:ui-monospace,"Cascadia Code",Consolas,monospace;
+}
+.caret{display:inline-block;width:8px;height:16px;background:var(--red);margin-left:3px;vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0}}
+
+.links{display:flex;gap:16px;justify-content:center;margin-top:44px;flex-wrap:wrap}
+.card{
+  position:relative;display:flex;align-items:center;gap:14px;
+  padding:17px 26px;border-radius:var(--r);
+  background:var(--surface);border:1px solid var(--line);
+  color:var(--text);text-decoration:none;overflow:hidden;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  transition:transform .35s var(--ease),border-color .35s,box-shadow .35s;
+  min-width:206px;
+}
+.card::before{
+  content:"";position:absolute;inset:0;opacity:0;transition:opacity .35s;
+  background:radial-gradient(400px circle at var(--mx,50%) var(--my,50%),var(--c,rgba(255,45,74,.2)),transparent 65%);
+}
+.card:hover{transform:translateY(-5px);border-color:rgba(255,255,255,.24);box-shadow:0 18px 46px rgba(0,0,0,.6),0 0 34px var(--c2,rgba(255,45,74,.28))}
+.card:hover::before{opacity:1}
+.card svg{width:26px;height:26px;flex:0 0 26px;position:relative;transition:transform .35s}
+.card:hover svg{transform:scale(1.14)}
+.card .txt{position:relative;text-align:left}
+.card .t{font-size:15px;font-weight:600;letter-spacing:.02em}
+.card .s{font-size:11.5px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
+.card .arrow{position:relative;margin-left:auto;color:var(--muted);font-size:17px;transition:transform .35s,color .35s}
+.card:hover .arrow{transform:translate(4px,-4px);color:var(--text)}
+.card.bili{--c:rgba(0,174,236,.24);--c2:rgba(0,174,236,.3)}
+.card.bili svg{color:var(--bili)}
+.card.steam{--c:rgba(102,153,204,.24);--c2:rgba(102,153,204,.3)}
+.card.steam svg{color:var(--steam)}
+.card.xbox{--c:rgba(82,176,67,.24);--c2:rgba(82,176,67,.3)}
+.card.xbox svg{color:var(--xbox)}
+
+/* ═══ 首页数据概览（三平台） ═══ */
+.home-stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));
+  gap:13px;width:100%;max-width:760px;margin:30px auto 0;
+}
+.hs-card{
+  display:flex;align-items:center;gap:13px;
+  padding:15px 17px;border-radius:14px;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);
+  text-decoration:none;color:inherit;
+  transition:transform .4s var(--ease),border-color .35s,background .35s;
+}
+.hs-card:hover{transform:translateY(-4px);border-color:var(--line2);background:var(--surface2)}
+.hs-ic{
+  width:38px;height:38px;flex:0 0 38px;border-radius:11px;
+  display:flex;align-items:center;justify-content:center;
+}
+.hs-ic svg{width:19px;height:19px}
+.hs-ic.bili{background:rgba(0,174,236,.13);color:var(--bili)}
+.hs-ic.steam{background:rgba(102,163,217,.13);color:var(--steam)}
+.hs-ic.xbox{background:rgba(82,176,67,.13);color:var(--xbox)}
+.hs-body{min-width:0;flex:1 1 auto}
+.hs-k{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.hs-v{
+  font-size:19px;font-weight:700;letter-spacing:.01em;margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.hs-s{
+  font-size:10.5px;color:var(--muted);margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* ═══ 作品展示墙 ═══ */
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:18px}
+.gitem{
+  position:relative;border-radius:14px;overflow:hidden;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);
+  aspect-ratio:4/5;
+  transition:transform .5s var(--ease),border-color .4s,box-shadow .4s;
+}
+.gitem img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .7s var(--ease)}
+.gitem::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,transparent 42%,rgba(4,4,8,.9) 100%);
+  opacity:.75;transition:opacity .45s;
+}
+.gitem:hover{transform:translateY(-7px);border-color:rgba(255,45,74,.4);box-shadow:0 22px 54px rgba(0,0,0,.65),0 0 40px rgba(255,45,74,.2)}
+.gitem:hover img{transform:scale(1.08)}
+.gitem:hover::after{opacity:.95}
+.gmeta{
+  position:absolute;left:0;right:0;bottom:0;padding:14px 15px;z-index:2;
+  transform:translateY(6px);transition:transform .45s var(--ease);
+}
+.gitem:hover .gmeta{transform:none}
+.gmeta .gt{font-size:13.5px;font-weight:600;letter-spacing:.02em}
+.gmeta .gs{font-size:10.5px;color:var(--muted);margin-top:4px;letter-spacing:.1em;text-transform:uppercase}
+.gitem .pill{
+  position:absolute;top:12px;left:12px;z-index:2;
+  font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+  padding:4px 9px;border-radius:20px;color:var(--silver);
+  background:rgba(0,0,0,.55);border:1px solid var(--line2);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.gitem .zoom{
+  position:absolute;top:12px;right:12px;z-index:2;width:26px;height:26px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text);
+  background:rgba(0,0,0,.55);border:1px solid var(--line2);opacity:0;transform:scale(.7);
+  transition:opacity .4s,transform .4s var(--ease);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.gitem:hover .zoom{opacity:1;transform:none}
+
+/* ── 作品互动：点赞 / 评论按钮 ── */
+.gacts{
+  position:absolute;top:12px;right:12px;z-index:3;display:flex;gap:7px;
+  opacity:0;transform:translateY(-4px);transition:opacity .4s,transform .4s var(--ease);
+}
+.gitem:hover .gacts{opacity:1;transform:none}
+.gact{
+  display:flex;align-items:center;gap:5px;cursor:pointer;
+  padding:5px 10px;border-radius:20px;font-size:11px;font-weight:600;
+  color:var(--text);background:rgba(0,0,0,.62);border:1px solid var(--line2);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:background .3s,border-color .3s,color .3s,transform .2s;
+  font-family:inherit;
+}
+.gact:hover{border-color:rgba(255,45,74,.55);color:#fff;transform:translateY(-1px)}
+.gact svg{width:13px;height:13px;flex:0 0 auto}
+/* 已点赞：实心红心 */
+.gact.on{color:#ff4d63;border-color:rgba(255,45,74,.6);background:rgba(255,45,74,.14)}
+.gact.on svg{fill:currentColor}
+.gact.like-bump{animation:likeBump .42s var(--ease)}
+@keyframes likeBump{
+  0%{transform:scale(1)} 38%{transform:scale(1.28)} 100%{transform:scale(1)}
+}
+
+/* ── 作品评论区（弹层）── */
+.wcmt{
+  position:fixed;inset:0;z-index:120;display:none;
+  align-items:center;justify-content:center;padding:20px;
+  background:rgba(4,4,8,.78);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+}
+.wcmt.on{display:flex}
+.wcmt-box{
+  width:min(560px,100%);max-height:82vh;display:flex;flex-direction:column;
+  background:var(--surface);border:1px solid var(--line2);border-radius:16px;
+  overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.7);
+}
+.wcmt-hd{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:17px 20px;border-bottom:1px solid var(--line);flex:0 0 auto;
+}
+.wcmt-hd .t{font-size:14.5px;font-weight:700;letter-spacing:.02em}
+.wcmt-hd .s{font-size:10.5px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
+.wcmt-x{
+  width:30px;height:30px;flex:0 0 auto;border-radius:50%;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:17px;
+  color:var(--muted);background:transparent;border:1px solid var(--line2);
+  transition:color .3s,border-color .3s,transform .3s;
+  font-family:inherit;line-height:1;
+}
+.wcmt-x:hover{color:var(--red);border-color:rgba(255,45,74,.5);transform:rotate(90deg)}
+.wcmt-list{flex:1 1 auto;overflow-y:auto;padding:14px 20px;min-height:96px}
+.wcmt-item{padding:11px 0;border-bottom:1px solid var(--line)}
+.wcmt-item:last-child{border-bottom:0}
+.wcmt-item .h{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.wcmt-item .nm{font-size:12.5px;font-weight:600}
+.wcmt-item .rg{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;color:var(--muted);letter-spacing:.03em;
+}
+.wcmt-item .rg svg{width:10px;height:10px;flex:0 0 auto}
+.wcmt-item .tm{font-size:10px;color:var(--faint);margin-left:auto;letter-spacing:.03em}
+.wcmt-item .bd{font-size:12.5px;color:var(--silver);line-height:1.72;margin-top:6px;word-break:break-word}
+.wcmt-empty{padding:22px 0;text-align:center;font-size:12px;color:var(--muted)}
+.wcmt-form{flex:0 0 auto;padding:15px 20px;border-top:1px solid var(--line);background:rgba(255,255,255,.015)}
+.wcmt-form .row{display:flex;gap:9px;margin-bottom:9px}
+.wcmt-form input,.wcmt-form textarea{
+  width:100%;padding:10px 13px;border-radius:10px;font-family:inherit;font-size:12.5px;
+  color:var(--text);background:rgba(0,0,0,.3);border:1px solid var(--line2);
+  outline:none;resize:vertical;transition:border-color .3s,background .3s;
+}
+.wcmt-form input:focus,.wcmt-form textarea:focus{border-color:rgba(255,45,74,.5);background:rgba(0,0,0,.45)}
+.wcmt-form input::placeholder,.wcmt-form textarea::placeholder{color:var(--faint)}
+.wcmt-form .ft{display:flex;align-items:center;gap:11px;margin-top:10px}
+.wcmt-form .ft .msg{font-size:11px;flex:1;letter-spacing:.02em}
+.wcmt-form .ft .msg.err{color:var(--red-soft)}
+.wcmt-form .ft .msg.ok{color:#4ade80}
+
+/* ── 轻量提示条 ── */
+.ztoast{
+  position:fixed;left:50%;bottom:34px;z-index:220;
+  transform:translate(-50%,16px);opacity:0;pointer-events:none;
+  padding:10px 20px;border-radius:10px;font-size:12.5px;letter-spacing:.02em;
+  color:var(--text);background:rgba(14,14,20,.96);
+  border:1px solid var(--line2);box-shadow:0 12px 40px rgba(0,0,0,.6);
+  transition:opacity .35s,transform .35s var(--ease);
+  max-width:80vw;text-align:center;
+}
+.ztoast.on{opacity:1;transform:translate(-50%,0)}
+.ztoast.err{border-color:rgba(255,45,74,.5);color:var(--red-soft)}
+
+#lb{
+  position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,4,8,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  opacity:0;pointer-events:none;transition:opacity .35s;
+  padding:32px;
+}
+#lb.on{opacity:1;pointer-events:all}
+#lb img{
+  max-width:min(92vw,900px);max-height:80vh;border-radius:12px;
+  box-shadow:0 30px 90px rgba(0,0,0,.85),0 0 70px rgba(255,45,74,.2);
+  transform:scale(.94);transition:transform .45s var(--ease);
+}
+#lb.on img{transform:none}
+#lb .cap{position:absolute;bottom:38px;left:0;right:0;text-align:center;font-size:12.5px;color:var(--muted);letter-spacing:.1em}
+#lb .close{position:absolute;top:26px;right:32px;font-size:28px;color:var(--muted);cursor:pointer;line-height:1;transition:color .3s,transform .3s}
+#lb .close:hover{color:var(--text);transform:rotate(90deg)}
+
+/* ═══ B站 ═══ */
+.bili-hero{
+  display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;
+  padding:22px 26px;border-radius:var(--r);margin-bottom:26px;
+  background:linear-gradient(120deg,rgba(0,174,236,.13),var(--surface) 60%);
+  border:1px solid rgba(0,174,236,.24);
+}
+.bili-hero .l{display:flex;align-items:center;gap:15px}
+.bili-hero svg{width:34px;height:34px;color:var(--bili);flex:0 0 34px}
+.bili-hero .t{font-size:15px;font-weight:600}
+.bili-hero .s{font-size:11.5px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+  padding:11px 20px;border-radius:11px;font-size:12.5px;font-weight:600;letter-spacing:.06em;
+  color:#04121a;background:linear-gradient(120deg,#4fc7f5,var(--bili));
+  border:0;cursor:pointer;transition:transform .3s var(--ease),box-shadow .3s;
+  box-shadow:0 8px 26px rgba(0,174,236,.3);
+}
+.btn:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(0,174,236,.45)}
+.btn.ghost{background:var(--surface2);color:var(--text);border:1px solid var(--line2);box-shadow:none}
+.btn.ghost:hover{border-color:var(--red);color:var(--red-soft);box-shadow:0 0 26px rgba(255,45,74,.2)}
+
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:18px}
+.vcard{
+  border-radius:14px;overflow:hidden;background:var(--surface);border:1px solid var(--line);
+  transition:transform .45s var(--ease),border-color .4s,box-shadow .4s;
+  text-decoration:none;color:var(--text);display:block;
+}
+.vcard:hover{transform:translateY(-6px);border-color:rgba(0,174,236,.45);box-shadow:0 20px 50px rgba(0,0,0,.6),0 0 34px rgba(0,174,236,.22)}
+.vcard .thumb{position:relative;aspect-ratio:16/10;overflow:hidden;background:#0d0d14}
+.vcard .thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .7s var(--ease)}
+.vcard:hover .thumb img{transform:scale(1.07)}
+.vcard .thumb .play{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,4,8,.32);opacity:0;transition:opacity .4s;
+}
+.vcard:hover .thumb .play{opacity:1}
+.vcard .thumb .play span{
+  width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,174,236,.92);color:#04121a;font-size:17px;padding-left:3px;
+  box-shadow:0 0 30px rgba(0,174,236,.6);transform:scale(.8);transition:transform .4s var(--ease);
+}
+.vcard:hover .thumb .play span{transform:none}
+.vcard .meta{padding:14px 16px 16px}
+.vcard .vt{font-size:13.5px;font-weight:600;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:40px}
+.vcard .vs{font-size:10.5px;color:var(--muted);margin-top:9px;letter-spacing:.08em;display:flex;gap:12px;flex-wrap:wrap}
+
+/* B站 账号总览卡片 */
+.bprofile{
+  display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center;
+  padding:22px 26px;border-radius:var(--r);margin-bottom:22px;
+  background:linear-gradient(120deg,rgba(0,174,236,.10),var(--surface) 65%);
+  border:1px solid var(--line2);
+}
+.bprofile .bavatar{
+  width:74px;height:74px;border-radius:50%;object-fit:cover;flex:0 0 74px;
+  border:2px solid rgba(0,174,236,.45);background:#0d0d14;
+  box-shadow:0 0 26px rgba(0,174,236,.25);
+}
+/* 无头像时的文字占位：img 无法显示文字，用伪元素承载首字 */
+.bprofile .bavatar.ph{
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,rgba(0,174,236,.22),rgba(0,174,236,.06));
+  color:var(--bili);font-size:26px;font-weight:700;
+}
+.bprofile .bavatar.ph::after{content:attr(data-initial)}
+.bprofile .bname{font-size:17px;font-weight:700;letter-spacing:.02em;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.bprofile .blv{
+  font-size:9.5px;font-weight:700;letter-spacing:.08em;padding:2px 7px;border-radius:5px;
+  background:linear-gradient(120deg,#4fc7f5,var(--bili));color:#04121a;
+}
+.bprofile .bsign{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.65}
+.bprofile .bstats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));
+  gap:10px;margin-top:16px;grid-column:1/-1;
+}
+.bprofile .bstat{
+  padding:12px 14px;border-radius:11px;background:var(--surface2);
+  border:1px solid var(--line);text-align:left;
+}
+.bprofile .bstat .bv{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.bprofile .bstat .bk{font-size:10.5px;color:var(--muted);margin-top:4px;letter-spacing:.08em}
+
+/* 视频卡片的互动数据条 */
+.vcard .vstats{
+  display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;padding-top:10px;
+  border-top:1px solid var(--line);font-size:10.5px;color:var(--muted);
+}
+.vcard .vstats b{font-weight:600;color:#b9c4d0;font-variant-numeric:tabular-nums}
+.vcard .vtag{
+  display:inline-block;font-size:10px;letter-spacing:.06em;padding:2px 8px;border-radius:6px;
+  background:rgba(0,174,236,.14);color:#7fd4f5;border:1px solid rgba(0,174,236,.28);
+}
+.vcard .vtags{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.vcard .vdur{
+  position:absolute;right:8px;bottom:8px;padding:2.5px 7px;border-radius:6px;
+  background:rgba(4,4,8,.82);color:#e8edf3;font-size:10.5px;font-weight:600;
+  font-variant-numeric:tabular-nums;letter-spacing:.02em;
+}
+
+/* B站 工具栏（排序 / 搜索） */
+.btools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:20px}
+.btools .bseg{display:flex;background:var(--surface2);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.btools .bseg button{
+  padding:9px 15px;font-size:12px;font-weight:600;letter-spacing:.05em;color:var(--muted);
+  background:transparent;border:0;cursor:pointer;transition:color .3s,background .3s;
+}
+.btools .bseg button.on{color:#04121a;background:linear-gradient(120deg,#4fc7f5,var(--bili))}
+.btools .binput{
+  flex:1;min-width:190px;padding:10px 15px;border-radius:11px;font-size:12.5px;
+  background:var(--surface2);border:1px solid var(--line);color:var(--text);
+}
+.btools .binput:focus{outline:none;border-color:rgba(0,174,236,.5)}
+.btools .binput::placeholder{color:#5a6272}
+
+/* ═══ Steam ═══ */
+.steam-hero{
+  display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;
+  padding:22px 26px;border-radius:var(--r);margin-bottom:26px;
+  background:linear-gradient(120deg,rgba(102,163,217,.13),var(--surface) 60%);
+  border:1px solid rgba(102,163,217,.24);
+}
+.steam-hero .l{display:flex;align-items:center;gap:15px}
+.steam-hero svg{width:34px;height:34px;color:var(--steam);flex:0 0 34px}
+.steam-hero .t{font-size:15px;font-weight:600}
+.steam-hero .s{font-size:11.5px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
+
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(246px,1fr));gap:18px}
+
+/* 统计条 */
+.stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;
+  margin-bottom:30px;
+}
+.stat{
+  padding:18px 20px;border-radius:13px;text-align:center;
+  background:var(--surface);border:1px solid var(--line);
+  transition:border-color .35s,box-shadow .35s;
+}
+.stat:hover{border-color:rgba(102,163,217,.42);box-shadow:0 0 30px rgba(102,163,217,.16)}
+.stat .v{
+  font-size:clamp(22px,3.4vw,29px);font-weight:800;letter-spacing:.01em;
+  background:linear-gradient(180deg,#fff,var(--steam));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  line-height:1.25;
+}
+.stat .k{
+  font-size:10.5px;color:var(--muted);letter-spacing:.14em;
+  text-transform:uppercase;margin-top:7px;
+}
+
+/* 小标题 */
+.subhead{
+  font-size:11.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted);
+  margin:34px 0 16px;display:flex;align-items:center;gap:12px;
+}
+.subhead::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+
+/* 最近两周 */
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:14px}
+.rcard{
+  position:relative;border-radius:12px;overflow:hidden;display:block;
+  background:var(--surface);border:1px solid rgba(102,163,217,.26);
+  text-decoration:none;color:var(--text);
+  transition:transform .4s var(--ease),box-shadow .4s,border-color .4s;
+}
+.rcard:hover{transform:translateY(-5px);border-color:rgba(102,163,217,.6);box-shadow:0 16px 40px rgba(0,0,0,.6),0 0 28px rgba(102,163,217,.26)}
+.rcard img{width:100%;aspect-ratio:460/215;object-fit:cover;display:block;transition:transform .6s var(--ease)}
+.rcard:hover img{transform:scale(1.06)}
+.rcard .rm{padding:11px 13px 13px}
+.rcard .rn{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rcard .rt{font-size:10.5px;color:var(--steam);margin-top:6px;letter-spacing:.06em;font-weight:600}
+
+/* 游戏卡片上的时长条 */
+.sgame .pt{
+  position:absolute;left:0;right:0;bottom:0;padding:6px 10px;
+  display:flex;align-items:center;gap:7px;
+  background:linear-gradient(0deg,rgba(4,6,10,.94),rgba(4,6,10,.55) 70%,transparent);
+  font-size:10.5px;letter-spacing:.07em;color:#cfe3f5;font-weight:600;
+}
+.sgame .pt .bar{
+  flex:1;height:3px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden;
+}
+.sgame .pt .bar i{
+  display:block;height:100%;border-radius:3px;
+  background:linear-gradient(90deg,var(--steam),#9fd0f5);
+  box-shadow:0 0 8px rgba(102,163,217,.7);
+}
+.sgame .rank{
+  position:absolute;top:10px;left:10px;font-size:10px;font-weight:700;
+  padding:3px 8px;border-radius:6px;letter-spacing:.06em;
+  background:rgba(0,0,0,.62);border:1px solid var(--line2);color:var(--silver);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.sgame{
+  position:relative;border-radius:13px;overflow:hidden;background:var(--surface);
+  border:1px solid var(--line);text-decoration:none;color:var(--text);display:block;
+  transition:transform .45s var(--ease),border-color .4s,box-shadow .4s;
+}
+.sgame:hover{transform:translateY(-6px);border-color:rgba(102,163,217,.5);box-shadow:0 20px 50px rgba(0,0,0,.6),0 0 34px rgba(102,163,217,.24)}
+.sgame .cover{position:relative;aspect-ratio:460/215;overflow:hidden;background:#0d0d14}
+.sgame .cover img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .7s var(--ease)}
+.sgame:hover .cover img{transform:scale(1.06)}
+.sgame .free{
+  position:absolute;top:10px;right:10px;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  padding:4px 9px;border-radius:20px;color:#cfe9ff;background:rgba(0,60,110,.7);
+  border:1px solid rgba(120,190,240,.4);backdrop-filter:blur(6px);
+}
+.sgame .meta{padding:13px 15px 15px}
+.sgame .nt{font-size:13.5px;font-weight:600;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sgame .tags{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+.sgame .tag{
+  font-size:9.5px;letter-spacing:.09em;padding:3px 8px;border-radius:5px;
+  color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--line);
+}
+.sgame .rel{font-size:10px;color:#4a4a5a;margin-top:9px;letter-spacing:.08em}
+
+/* 筛选工具条 */
+.sbar{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin-bottom:20px;padding:13px 15px;border-radius:13px;
+  background:var(--surface);border:1px solid var(--line);
+}
+.sbox{
+  flex:1;min-width:190px;display:flex;align-items:center;gap:9px;
+  padding:9px 13px;border-radius:9px;
+  background:rgba(0,0,0,.28);border:1px solid var(--line);
+  transition:border-color .3s,box-shadow .3s;
+}
+.sbox:focus-within{border-color:rgba(102,163,217,.55);box-shadow:0 0 0 3px rgba(102,163,217,.1)}
+.sbox svg{width:15px;height:15px;color:var(--muted);flex:0 0 15px}
+.sbox input{
+  flex:1;min-width:0;background:none;border:0;outline:0;color:var(--text);
+  font-size:13px;font-family:inherit;letter-spacing:.02em;
+}
+.sbox input::placeholder{color:#4a4a5a}
+.sseg{display:flex;gap:0;border-radius:9px;overflow:hidden;border:1px solid var(--line);flex:0 0 auto}
+.sseg button{
+  padding:9px 15px;background:rgba(255,255,255,.03);border:0;cursor:pointer;
+  color:var(--muted);font-size:11.5px;font-family:inherit;letter-spacing:.1em;
+  transition:background .3s,color .3s;
+}
+.sseg button + button{border-left:1px solid var(--line)}
+.sseg button:hover{color:var(--text);background:rgba(255,255,255,.06)}
+.sseg button.on{color:#fff;background:linear-gradient(135deg,rgba(102,163,217,.36),rgba(102,163,217,.18))}
+.scnt{font-size:11px;color:var(--muted);letter-spacing:.1em;flex:0 0 auto}
+
+/* 加载更多 */
+.morewrap{text-align:center;margin-top:30px}
+.morewrap .mtxt{font-size:11px;color:#4a4a5a;letter-spacing:.12em;margin-top:13px}
+
+/* 空状态 */
+.sempty{grid-column:1/-1;text-align:center;padding:56px 20px;color:var(--muted);font-size:13px;letter-spacing:.08em}
+
+/* ══════════ 留言板 ══════════ */
+.gbar{
+  display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;
+  padding:18px 22px;border-radius:14px;margin-bottom:26px;
+  background:var(--surface);border:1px solid var(--line);
+}
+.gbar-l{display:flex;gap:34px;flex-wrap:wrap}
+.gstat{display:flex;flex-direction:column;gap:3px}
+.gstat .v{
+  font-size:clamp(19px,2.8vw,25px);font-weight:800;letter-spacing:.01em;
+  background:linear-gradient(180deg,#fff,var(--red-soft));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  line-height:1.2;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.gstat .k{font-size:10.5px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
+
+.glist{display:grid;gap:13px}
+.gitem{
+  position:relative;padding:17px 20px 17px 22px;border-radius:13px;
+  background:var(--surface);border:1px solid var(--line);
+  transition:border-color .35s,box-shadow .35s,transform .35s var(--ease);
+}
+.gitem::before{
+  content:"";position:absolute;left:0;top:14px;bottom:14px;width:2px;border-radius:2px;
+  background:linear-gradient(180deg,var(--red),transparent);
+  opacity:.55;transition:opacity .35s;
+}
+.gitem:hover{border-color:var(--line2);box-shadow:0 12px 34px rgba(0,0,0,.5);transform:translateY(-2px)}
+.gitem:hover::before{opacity:1}
+.gitem header{
+  display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:10px;
+}
+.gitem .who{font-size:13.5px;font-weight:700;letter-spacing:.02em}
+.gitem .av{
+  width:26px;height:26px;border-radius:50%;flex:0 0 26px;
+  display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;
+  background:linear-gradient(140deg,var(--red),#7a0f22);
+  border:1px solid rgba(255,255,255,.14);
+}
+.gitem .loc{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10.5px;letter-spacing:.06em;color:#9db4c8;
+  padding:3px 9px;border-radius:20px;
+  background:rgba(102,163,217,.1);border:1px solid rgba(102,163,217,.22);
+}
+.gitem .loc svg{width:10px;height:10px}
+.gitem .when{margin-left:auto;font-size:10.5px;color:#4a4a5a;letter-spacing:.08em}
+.gitem .body{
+  font-size:13.5px;line-height:1.82;color:#c3c3cf;letter-spacing:.015em;
+  white-space:pre-wrap;word-break:break-word;
+}
+.gitem .ip{font-size:10px;color:#3a3a48;letter-spacing:.06em;margin-top:9px;font-family:ui-monospace,Consolas,monospace}
+
+.gempty{
+  text-align:center;padding:70px 20px;border-radius:14px;
+  background:var(--surface);border:1px dashed var(--line);
+}
+.gempty .ic{font-size:30px;opacity:.32;display:block;margin-bottom:14px}
+.gempty .t{font-size:14px;color:var(--muted);letter-spacing:.06em}
+
+.gskeleton{
+  height:96px;border-radius:13px;border:1px solid var(--line);background:var(--surface);
+  animation:shim 1.4s ease-in-out infinite;
+}
+
+/* ══════════ 弹窗 ══════════ */
+.modal-mask{
+  position:fixed;inset:0;z-index:80;display:none;
+  align-items:center;justify-content:center;padding:24px;
+  background:rgba(4,4,8,.82);
+  backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+}
+.modal-mask.on{display:flex;animation:mfi .3s var(--ease)}
+@keyframes mfi{from{opacity:0}to{opacity:1}}
+.modal{
+  width:100%;max-width:532px;max-height:88vh;overflow-y:auto;
+  border-radius:18px;padding:28px 30px 26px;
+  background:linear-gradient(165deg,#0f0f17,#0a0a11 60%,#08080d);
+  border:1px solid var(--line2);
+  box-shadow:0 40px 100px rgba(0,0,0,.8),0 0 60px rgba(255,45,74,.1);
+  animation:mfi2 .42s var(--ease);
+}
+@keyframes mfi2{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:none}}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:20px}
+.modal-kicker{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--red);margin-bottom:7px}
+.modal h3{font-size:21px;font-weight:700;letter-spacing:.01em}
+.modal-x{
+  width:32px;height:32px;flex:0 0 32px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid var(--line);
+  color:var(--muted);font-size:19px;line-height:1;font-family:inherit;
+  transition:background .3s,color .3s,border-color .3s;
+}
+.modal-x:hover{background:rgba(255,45,74,.14);color:#fff;border-color:rgba(255,45,74,.35)}
+
+.modal-loc{
+  display:flex;align-items:center;gap:8px;
+  padding:11px 15px;border-radius:11px;margin-bottom:20px;
+  font-size:11.5px;color:var(--muted);letter-spacing:.05em;
+  background:rgba(102,163,217,.075);border:1px solid rgba(102,163,217,.2);
+}
+.modal-loc svg{width:14px;height:14px;color:var(--steam);flex:0 0 14px}
+.modal-loc b{color:#cfe3f5;font-weight:600}
+
+.field{margin-bottom:18px}
+.field label{
+  display:block;font-size:11.5px;color:var(--muted);
+  letter-spacing:.12em;text-transform:uppercase;margin-bottom:9px;
+}
+.field label i{font-style:normal;text-transform:none;letter-spacing:.03em;color:#3f3f4d;font-size:10.5px}
+.field input,.field textarea{
+  width:100%;padding:12px 15px;border-radius:11px;
+  background:rgba(0,0,0,.34);border:1px solid var(--line);
+  color:var(--text);font-size:13.5px;font-family:inherit;line-height:1.65;
+  outline:none;transition:border-color .3s,box-shadow .3s,background .3s;
+  resize:vertical;
+}
+.field input:focus,.field textarea:focus{
+  border-color:rgba(255,45,74,.45);background:rgba(0,0,0,.44);
+  box-shadow:0 0 0 3px rgba(255,45,74,.09);
+}
+.field input::placeholder,.field textarea::placeholder{color:#3f3f4d}
+.field .tip{font-size:10.5px;color:#4a4a5a;letter-spacing:.06em;margin-top:7px;text-align:right}
+.field .tip.warn{color:var(--red-soft);text-align:left}
+
+.modal-foot{display:flex;align-items:center;gap:15px;margin-top:24px}
+.modal-err{
+  flex:1;font-size:11.5px;color:var(--red-soft);letter-spacing:.03em;
+  min-height:16px;
+}
+.modal-foot .btn{flex:0 0 auto;min-width:132px;justify-content:center}
+
+.btn.primary{
+  background:linear-gradient(135deg,var(--red),#c4142f);
+  border-color:transparent;color:#fff;font-weight:600;
+  box-shadow:0 8px 26px rgba(255,45,74,.3);
+}
+.btn.primary:hover{box-shadow:0 12px 34px rgba(255,45,74,.44);transform:translateY(-2px)}
+.btn.primary:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+.btn.danger{background:rgba(255,45,74,.12);border-color:rgba(255,45,74,.4);color:#ff8a9c}
+.btn.danger:hover{background:rgba(255,45,74,.22);color:#fff}
+.btn.sm{padding:7px 13px;font-size:11px}
+
+/* ══════════ Xbox ══════════ */
+.xbox-hero{
+  display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;
+  padding:20px 24px;border-radius:15px;margin-bottom:26px;
+  background:linear-gradient(120deg,rgba(16,124,16,.14),var(--surface) 58%);
+  border:1px solid rgba(63,214,63,.22);
+}
+.xbox-hero .l{display:flex;align-items:center;gap:15px}
+.xbox-hero svg{width:34px;height:34px;color:#3fd63f;flex:0 0 34px}
+.xbox-hero .t{font-size:15px;font-weight:600}
+.xbox-hero .s{font-size:11.5px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
+
+.stats .stat.x .v{
+  background:linear-gradient(180deg,#fff,#7ee87e);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.stats .stat.x:hover{border-color:rgba(63,214,63,.42);box-shadow:0 0 30px rgba(63,214,63,.14)}
+
+/* Xbox 竖版海报网格 */
+.xgrid{
+  display:grid;gap:18px;
+  grid-template-columns:repeat(auto-fill,minmax(178px,1fr));
+}
+.xcard{
+  position:relative;border-radius:14px;overflow:hidden;display:block;
+  background:var(--surface);border:1px solid rgba(63,214,63,.16);
+  text-decoration:none;color:var(--text);
+  transition:transform .45s var(--ease),border-color .4s,box-shadow .4s;
+}
+.xcard:hover{
+  transform:translateY(-7px);
+  border-color:rgba(63,214,63,.52);
+  box-shadow:0 22px 52px rgba(0,0,0,.66),0 0 36px rgba(63,214,63,.2);
+}
+.xcard .xposter{
+  position:relative;width:100%;aspect-ratio:2/3;overflow:hidden;background:#0a0f0a;
+}
+.xcard .xposter img{
+  width:100%;height:100%;object-fit:cover;display:block;
+  transition:transform .7s var(--ease);
+}
+.xcard:hover .xposter img{transform:scale(1.07)}
+.xcard .xposter::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(0deg,rgba(4,10,4,.92) 0%,rgba(4,10,4,.25) 38%,transparent 62%);
+}
+.xcard .xrank{
+  position:absolute;top:10px;left:10px;z-index:2;
+  font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;letter-spacing:.06em;
+  background:rgba(0,0,0,.66);border:1px solid rgba(63,214,63,.32);color:#9fe89f;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.xcard .xach{
+  position:absolute;top:10px;right:10px;z-index:2;
+  font-size:9.5px;font-weight:600;padding:3px 8px;border-radius:6px;letter-spacing:.04em;
+  background:rgba(0,0,0,.66);border:1px solid rgba(255,255,255,.14);color:#c9cdd9;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.xcard .xmeta{
+  position:absolute;left:0;right:0;bottom:0;z-index:2;padding:12px 13px 13px;
+}
+.xcard .xn{
+  font-size:12.5px;font-weight:700;line-height:1.42;letter-spacing:.01em;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.xcard .xh{
+  display:flex;align-items:center;gap:7px;margin-top:7px;
+}
+.xcard .xh .t{
+  font-size:11px;font-weight:700;color:#7ee87e;letter-spacing:.04em;
+  white-space:nowrap;
+}
+.xcard .xh .bar{
+  flex:1;height:3px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden;
+}
+.xcard .xh .bar i{
+  display:block;height:100%;border-radius:3px;
+  background:linear-gradient(90deg,#3fd63f,#9ff09f);
+  box-shadow:0 0 8px rgba(63,214,63,.7);
+}
+.xcard .xh .bar.nodata i{width:0 !important}
+.xcard .xp{
+  font-size:10px;color:#7d8f7d;letter-spacing:.07em;margin-top:6px;
+}
+.xcard .xph{
+  width:100%;height:100%;display:grid;place-items:center;
+  font-size:32px;font-weight:800;letter-spacing:.04em;color:rgba(63,214,63,.5);
+  background:linear-gradient(135deg,rgba(16,124,16,.22),#040a04);
+}
+
+.skeleton{
+  border-radius:13px;border:1px solid var(--line);background:var(--surface);
+  aspect-ratio:460/215;animation:shim 1.4s ease-in-out infinite;
+}
+@keyframes shim{0%,100%{opacity:.5}50%{opacity:.9}}
+
+footer{
+  position:relative;z-index:5;text-align:center;padding:30px 24px 38px;
+  font-size:11.5px;color:#4a4a5a;letter-spacing:.14em;
+}
+footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
+
+.reveal{opacity:0;transform:translateY(22px);animation:rise .9s var(--ease) forwards}
+@keyframes rise{to{opacity:1;transform:none}}
+.d1{animation-delay:.05s}.d2{animation-delay:.18s}.d3{animation-delay:.31s}.d4{animation-delay:.44s}.d5{animation-delay:.57s}
+
+@media (max-width:760px){
+  .topbar{padding:16px 18px;flex-direction:column;gap:12px;align-items:stretch}
+  .topbar .mark{justify-content:center}
+  .nav{justify-content:center;flex-wrap:wrap}
+  .nav button{padding:7px 10px;font-size:10.5px;letter-spacing:.1em}
+  .page{padding:150px 16px 70px}
+  #page-home{padding-top:150px;padding-bottom:50px}
+}
+@media (max-width:560px){
+  .avatar-stage{width:148px;height:148px}
+  .links{flex-direction:column;align-items:stretch;margin-top:34px}
+  .card{min-width:0;width:100%}
+  .gallery{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  .vgrid,.sgrid{grid-template-columns:1fr}
+  .xgrid{grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:12px}
+  .xbox-hero{padding:16px 17px}
+  .xbox-hero svg{width:28px;height:28px;flex:0 0 28px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+<canvas id="trail"></canvas>
+<div class="glow" id="glow"></div>
+<div class="vignette"></div>
+<div class="grain"></div>
+
+<div id="wipe"><div class="sweep"></div></div>
+
+<div class="topbar">
+  <div class="mark" data-go="home"><span class="dot"></span>ZFSN</div>
+  <nav class="nav">
+    <button data-go="home" class="active">首页</button>
+    <button data-go="works">作品</button>
+    <button data-go="bili">B站</button>
+    <button data-go="steam">游戏</button>
+    <button data-go="guest">留言</button>
+  </nav>
+</div>
+
+<!-- ══ 首页 ══ -->
+<section class="page active" id="page-home">
+  <div class="hero">
+    <div class="avatar-stage reveal d1" id="stage">
+      <div class="rings"><div class="ring"></div><div class="ring r2"></div></div>
+      <div class="avatar-wrap">
+        <div class="face front"><img src="assets/avatar.jpg" alt="ZFSN avatar"></div>
+        <div class="face back">
+          <div class="big">ZFSN</div>
+          <div class="ln"></div>
+          <div class="sm">Silver Hair</div>
+          <div class="sm">Red Oni</div>
+          <div class="sm">Est. 2026</div>
+        </div>
+      </div>
+    </div>
+    <div class="flip-hint">Click to flip / 点击翻转</div>
+
+    <h1 class="name reveal d2">ZFSN</h1>
+
+    <p class="tagline reveal d3"><span id="typed"></span><span class="caret"></span></p>
+
+    <div class="links reveal d4">
+      <a class="card bili" href="https://space.bilibili.com/1220210222" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.786 1.894v7.52c.017.764.28 1.395.786 1.893.507.498 1.134.756 1.88.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.498.769-1.129.786-1.893v-7.52c-.017-.765-.28-1.396-.786-1.894-.507-.497-1.134-.755-1.88-.773zM8 11.107c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c0-.373.129-.689.386-.947.258-.257.574-.386.947-.386zm8 0c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373Z"/></svg>
+        <span class="txt"><span class="t">哔哩哔哩</span><span class="s">BILIBILI</span></span>
+        <span class="arrow">↗</span>
+      </a>
+
+      <a class="card steam" href="https://steamcommunity.com/id/ZFSN114514/" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.253 0-2.265-1.014-2.265-2.265z"/></svg>
+        <span class="txt"><span class="t">Steam</span><span class="s">ZFSN114514</span></span>
+        <span class="arrow">↗</span>
+      </a>
+
+      <a class="card xbox" href="https://www.xbox.com/zh-CN/play/user/ZFSN114514" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.102 3.906C6.111 2.124 8.9 1 11.984 1c3.098 0 5.906 1.134 7.894 2.919-2.026-.086-4.005.745-5.642 2.245-1.618-1.47-3.578-2.3-5.578-2.263-1.72.032-3.142.65-4.013 1.31zM2.62 5.703C1.6 7.487 1 9.646 1 11.94 1 18.052 5.925 23 12 23s11-4.948 11-11.06c0-2.294-.6-4.453-1.62-6.237C19.9 4.14 17.62 3.6 15.3 4.86c-.53.29-1.02.68-1.5 1.15-.87-.83-1.83-1.45-2.85-1.86-.36.5-.7 1.06-1.02 1.66 1.06.28 2.06.87 2.95 1.7-1.02 1.05-2.02 2.33-2.94 3.75-.98 1.5-1.83 3.08-2.5 4.6-.98-.98-1.83-2.1-2.5-3.29-.02-1.06.13-2.09.45-3.05.47-.62 1.03-1.24 1.67-1.85.02-.02.05-.04.07-.06a8.9 8.9 0 0 1-.02 0z"/></svg>
+        <span class="txt"><span class="t">Xbox</span><span class="s" id="home-xbox-sub">ZFSN114514</span></span>
+        <span class="arrow">↗</span>
+      </a>
+    </div>
+
+    <!-- 首页数据概览：三平台实时数据 -->
+    <div class="home-stats reveal d5" id="home-stats">
+      <a class="hs-card" data-go="bili">
+        <div class="hs-ic bili">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906z"/></svg>
+        </div>
+        <div class="hs-body">
+          <div class="hs-k">哔哩哔哩</div>
+          <div class="hs-v" id="hs-bili-v">—</div>
+          <div class="hs-s" id="hs-bili-s">正在载入…</div>
+        </div>
+      </a>
+      <a class="hs-card" data-go="steam">
+        <div class="hs-ic steam">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0z"/></svg>
+        </div>
+        <div class="hs-body">
+          <div class="hs-k">Steam</div>
+          <div class="hs-v" id="hs-steam-v">—</div>
+          <div class="hs-s" id="hs-steam-s">正在载入…</div>
+        </div>
+      </a>
+      <a class="hs-card" data-go="steam">
+        <div class="hs-ic xbox">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.102 3.906C6.111 2.124 8.9 1 11.984 1c3.098 0 5.906 1.134 7.894 2.919-2.026-.086-4.005.745-5.642 2.245-1.618-1.47-3.578-2.3-5.578-2.263-1.72.032-3.142.65-4.013 1.31zM2.62 5.703C1.6 7.487 1 9.646 1 11.94 1 18.052 5.925 23 12 23s11-4.948 11-11.06c0-2.294-.6-4.453-1.62-6.237C19.9 4.14 17.62 3.6 15.3 4.86c-.53.29-1.02.68-1.5 1.15-.87-.83-1.83-1.45-2.85-1.86-.36.5-.7 1.06-1.02 1.66 1.06.28 2.06.87 2.95 1.7-1.02 1.05-2.02 2.33-2.94 3.75-.98 1.5-1.83 3.08-2.5 4.6-.98-.98-1.83-2.1-2.5-3.29-.02-1.06.13-2.09.45-3.05.47-.62 1.03-1.24 1.67-1.85.02-.02.05-.04.07-.06a8.9 8.9 0 0 1-.02 0z"/></svg>
+        </div>
+        <div class="hs-body">
+          <div class="hs-k">Xbox</div>
+          <div class="hs-v" id="hs-xbox-v">—</div>
+          <div class="hs-s" id="hs-xbox-s">正在载入…</div>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 作品 ══ -->
+<section class="page" id="page-works">
+  <div class="wrap">
+    <div class="phead">
+      <div class="kicker">Gallery</div>
+      <h2>作品展示墙</h2>
+      <p>二次元插画 / 视觉创作 — 点击任意作品放大查看</p>
+    </div>
+    <div class="gallery" id="gallery"></div>
+  </div>
+</section>
+
+<!-- ══ B站 ══ -->
+<section class="page" id="page-bili">
+  <div class="wrap">
+    <div class="phead">
+      <div class="kicker">Bilibili</div>
+      <h2>最新投稿</h2>
+      <p>来自 B站 的内容更新 — 点击卡片跳转观看</p>
+    </div>
+
+    <div class="bili-hero">
+      <div class="l">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.786 1.894v7.52c.017.764.28 1.395.786 1.893.507.498 1.134.756 1.88.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.498.769-1.129.786-1.893v-7.52c-.017-.765-.28-1.396-.786-1.894-.507-.497-1.134-.755-1.88-.773z"/></svg>
+        <div>
+          <div class="t">ZFSN 的哔哩哔哩空间</div>
+          <div class="s" id="bili-count">正在载入…</div>
+        </div>
+      </div>
+      <a class="btn" href="https://space.bilibili.com/1220210222" target="_blank" rel="noopener">前往主页 ↗</a>
+    </div>
+
+    <!-- 账号总览：昵称 / 头像 / 等级 / 粉丝 / 总播放 等 -->
+    <div class="bprofile" id="bprofile" style="display:none">
+      <img class="bavatar" id="b-avatar" alt="" onerror="this.style.display='none'">
+      <div>
+        <div class="bname">
+          <span id="b-name">—</span>
+          <span class="blv" id="b-level">Lv0</span>
+        </div>
+        <div class="bsign" id="b-sign"></div>
+      </div>
+      <div class="bstats" id="b-stats"></div>
+    </div>
+
+    <!-- 排序 / 搜索工具条 -->
+    <div class="btools" id="btools" style="display:none">
+      <div class="bseg" id="bsort">
+        <button data-sort="new" class="on">最新发布</button>
+        <button data-sort="views">播放最多</button>
+        <button data-sort="like">点赞最多</button>
+        <button data-sort="dur">时长最长</button>
+      </div>
+      <input class="binput" id="bsearch" type="search" placeholder="搜索视频标题或标签…">
+      <span class="scnt" id="bcnt"></span>
+    </div>
+
+    <div class="vgrid" id="vgrid">
+      <div class="skeleton" style="aspect-ratio:16/10"></div>
+      <div class="skeleton" style="aspect-ratio:16/10"></div>
+      <div class="skeleton" style="aspect-ratio:16/10"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ Steam ══ -->
+<section class="page" id="page-steam">
+  <div class="wrap">
+    <div class="phead">
+      <div class="kicker">Steam</div>
+      <h2>游戏库</h2>
+      <p>ZFSN114514 的游戏世界 — 数据来自 Steam 官方 API，含真实游玩时长</p>
+    </div>
+
+    <div class="steam-hero">
+      <div class="l">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.253 0-2.265-1.014-2.265-2.265z"/></svg>
+        <div>
+          <div class="t" id="steam-persona">ZFSN114514</div>
+          <div class="s" id="steam-count">正在载入…</div>
+        </div>
+      </div>
+      <a class="btn ghost" href="https://steamcommunity.com/id/ZFSN114514/" target="_blank" rel="noopener">个人资料 ↗</a>
+    </div>
+
+    <!-- 统计条 -->
+    <div class="stats" id="stats" style="display:none">
+      <div class="stat"><div class="v" id="st-games">—</div><div class="k">款游戏</div></div>
+      <div class="stat"><div class="v" id="st-hours">—</div><div class="k">总游玩时数</div></div>
+      <div class="stat"><div class="v" id="st-top">—</div><div class="k">最常玩的游戏</div></div>
+      <div class="stat"><div class="v" id="st-since">—</div><div class="k">Steam 起始年</div></div>
+    </div>
+
+    <!-- 最近两周 -->
+    <div id="recent-block" style="display:none">
+      <div class="subhead">最近两周</div>
+      <div class="rgrid" id="rgrid"></div>
+    </div>
+
+    <div class="subhead" id="all-head">全部游戏</div>
+
+    <!-- 筛选工具条 -->
+    <div class="sbar" id="sbar" style="display:none">
+      <div class="sbox">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="ssearch" type="text" placeholder="搜索游戏名…" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="sseg" id="ssort">
+        <button data-sort="hours" class="on">按时长</button>
+        <button data-sort="name">按名称</button>
+      </div>
+      <div class="scnt" id="sfilter-count"></div>
+    </div>
+
+    <div class="sgrid" id="sgrid">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+
+    <div class="morewrap" id="morewrap" style="display:none">
+      <button class="btn ghost" id="morebtn">加载更多</button>
+      <div class="mtxt" id="moretxt"></div>
+    </div>
+
+    <!-- Xbox -->
+    <div class="subhead" id="xbox-head">Xbox</div>
+
+    <div class="xbox-hero">
+      <div class="l">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.102 3.906C6.111 2.124 8.9 1 11.984 1c3.098 0 5.906 1.134 7.894 2.919-2.026-.086-4.005.745-5.642 2.245-1.618-1.47-3.578-2.3-5.578-2.263-1.72.032-3.142.65-4.013 1.31zM2.62 5.703C1.6 7.487 1 9.646 1 11.94 1 18.052 5.925 23 12 23s11-4.948 11-11.06c0-2.294-.6-4.453-1.62-6.237C19.9 4.14 17.62 3.6 15.3 4.86c-.53.29-1.02.68-1.5 1.15-.87-.83-1.83-1.45-2.85-1.86-.36.5-.7 1.06-1.02 1.66 1.06.28 2.06.87 2.95 1.7-1.02 1.05-2.02 2.33-2.94 3.75-.98 1.5-1.83 3.08-2.5 4.6-.98-.98-1.83-2.1-2.5-3.29-.02-1.06.13-2.09.45-3.05.47-.62 1.03-1.24 1.67-1.85.02-.02.05-.04.07-.06a8.9 8.9 0 0 1-.02 0z"/></svg>
+        <div>
+          <div class="t" id="xbox-persona">ZFSN114514</div>
+          <div class="s" id="xbox-count">正在载入…</div>
+        </div>
+      </div>
+      <a class="btn ghost" href="https://www.xbox.com/zh-CN/play/user/ZFSN114514" target="_blank" rel="noopener">Xbox 个人资料 ↗</a>
+    </div>
+
+    <div class="stats" id="xstats" style="display:none">
+      <div class="stat x"><div class="v" id="xt-games">—</div><div class="k">款游戏</div></div>
+      <div class="stat x"><div class="v" id="xt-hours">—</div><div class="k">总游玩时数</div></div>
+      <div class="stat x"><div class="v" id="xt-ach">—</div><div class="k">已解锁成就</div></div>
+      <div class="stat x"><div class="v" id="xt-top">—</div><div class="k">最常玩的游戏</div></div>
+    </div>
+
+    <div class="xgrid" id="xgrid">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 留言 ══ -->
+<section class="page" id="page-guest">
+  <div class="wrap">
+    <div class="phead">
+      <div class="kicker">Guestbook</div>
+      <h2>留言板</h2>
+      <p>说点什么吧 — 留言时会自动记录你的大致所在地，但不保存精确地址</p>
+    </div>
+
+    <div class="gbar">
+      <div class="gbar-l">
+        <div class="gstat"><span class="v" id="g-count">—</span><span class="k">条留言</span></div>
+        <div class="gstat"><span class="v" id="g-mine">—</span><span class="k">我的位置</span></div>
+      </div>
+      <button class="btn primary" id="g-write">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width:15px;height:15px"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+        写留言
+      </button>
+    </div>
+
+    <div class="glist" id="glist">
+      <div class="gskeleton"></div>
+      <div class="gskeleton"></div>
+      <div class="gskeleton"></div>
+    </div>
+
+    <div class="morewrap" id="gmorewrap" style="display:none">
+      <button class="btn ghost" id="gmorebtn">加载更多</button>
+      <div class="mtxt" id="gmoretxt"></div>
+    </div>
+  </div>
+</section>
+
+<footer class="reveal d5">
+  ZFSN<span class="sep">/</span>PERSONAL SPACE<span class="sep">/</span>2026
+</footer>
+
+<div id="lb"><span class="close">×</span><img src="" alt=""><div class="cap"></div></div>
+
+<!-- ══ 作品评论区弹层 ══ -->
+<div class="wcmt" id="wcmt">
+  <div class="wcmt-box" role="dialog" aria-modal="true" aria-labelledby="wcmt-title">
+    <div class="wcmt-hd">
+      <div>
+        <div class="t" id="wcmt-title">评论</div>
+        <div class="s" id="wcmt-sub"></div>
+      </div>
+      <button class="wcmt-x" id="wcmt-x" aria-label="关闭">×</button>
+    </div>
+    <div class="wcmt-list" id="wcmt-list"></div>
+    <div class="wcmt-form">
+      <div class="row">
+        <input id="wcmt-name" type="text" maxlength="24" placeholder="你的名字">
+      </div>
+      <textarea id="wcmt-text" rows="3" maxlength="800" placeholder="说点什么…"></textarea>
+      <div class="ft">
+        <button class="btn primary sm" id="wcmt-send">发表评论</button>
+        <span class="msg" id="wcmt-msg"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 留言弹窗 ══ -->
+<div class="modal-mask" id="gmask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="gmtitle">
+    <div class="modal-head">
+      <div>
+        <div class="modal-kicker">Leave a message</div>
+        <h3 id="gmtitle">写留言</h3>
+      </div>
+      <button class="modal-x" id="gclose" aria-label="关闭">×</button>
+    </div>
+
+    <div class="modal-loc">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <span>你的位置：</span><b id="gmloc">识别中…</b>
+    </div>
+
+    <div class="field">
+      <label for="gmname">名字 <i>（最多 24 字）</i></label>
+      <input id="gmname" type="text" maxlength="24" placeholder="怎么称呼你？" autocomplete="nickname">
+      <div class="tip" id="gmname-tip"></div>
+    </div>
+
+    <div class="field">
+      <label for="gmtext">内容 <i>（最多 800 字）</i></label>
+      <textarea id="gmtext" maxlength="800" rows="5" placeholder="想说的话…"></textarea>
+      <div class="tip"><span id="gmtext-cnt">0</span> / 800</div>
+    </div>
+
+    <div class="modal-foot">
+      <div class="modal-err" id="gmerr"></div>
+      <button class="btn primary" id="gsubmit">发布留言</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var $  = function(s){ return document.querySelector(s); };
+  var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
+
+  /* ═══ 粒子网络 ═══ */
+  var cv = $("#bg"), ctx = cv.getContext("2d");
+  var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var pts = [], mouse = { x: -9999, y: -9999 };
+
+  function resize(){
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var n = Math.round(Math.min(120, (W * H) / 16000));
+    pts = [];
+    for (var i = 0; i < n; i++){
+      pts.push({
+        x: Math.random() * W, y: Math.random() * H,
+        vx: (Math.random() - .5) * .32, vy: (Math.random() - .5) * .32,
+        r: Math.random() * 1.5 + .6
+      });
+    }
+  }
+
+  var LINK = 132;
+  function draw(){
+    ctx.clearRect(0, 0, W, H);
+    for (var i = 0; i < pts.length; i++){
+      var p = pts[i];
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0 || p.x > W) p.vx *= -1;
+      if (p.y < 0 || p.y > H) p.vy *= -1;
+
+      var dxm = p.x - mouse.x, dym = p.y - mouse.y;
+      var dm = Math.sqrt(dxm * dxm + dym * dym);
+      if (dm < 130 && dm > 0.01){
+        p.x += dxm / dm * .55;
+        p.y += dym / dm * .55;
+      }
+
+      for (var j = i + 1; j < pts.length; j++){
+        var q = pts[j];
+        var dx = p.x - q.x, dy = p.y - q.y;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d < LINK){
+          var a = (1 - d / LINK) * .3;
+          ctx.strokeStyle = "rgba(150,158,178," + a + ")";
+          ctx.lineWidth = .6;
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+        }
+      }
+
+      var near = dm < 190 ? (1 - dm / 190) : 0;
+      ctx.fillStyle = near > 0
+        ? "rgba(255,90,115," + (.4 + near * .6) + ")"
+        : "rgba(160,166,186,.5)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r + near * 1.6, 0, 6.2832);
+      ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
+  if (!reduce) draw();
+  else {
+    ctx.fillStyle = "rgba(160,166,186,.35)";
+    pts.forEach(function(p){ ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832); ctx.fill(); });
+  }
+
+  /* ═══ 鼠标拖尾 ═══ */
+  var tc = $("#trail"), tctx = tc.getContext("2d");
+  var tails = [], TMAX = 26;
+  function sizeTrail(){
+    tc.width = window.innerWidth * dpr; tc.height = window.innerHeight * dpr;
+    tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  sizeTrail();
+  window.addEventListener("resize", sizeTrail);
+
+  var lastX = null, lastY = null;
+  function trailLoop(){
+    tctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    if (!reduce){
+      for (var i = tails.length - 1; i >= 0; i--){
+        var t = tails[i];
+        t.life -= .028;
+        if (t.life <= 0){ tails.splice(i, 1); continue; }
+        t.x += t.vx; t.y += t.vy;
+        t.vx *= .95; t.vy *= .95;
+        var rr = t.r * t.life;
+        var g = tctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, rr * 3.4);
+        g.addColorStop(0, "rgba(255,90,115," + (t.life * .5) + ")");
+        g.addColorStop(.45, "rgba(255,45,74," + (t.life * .16) + ")");
+        g.addColorStop(1, "rgba(255,45,74,0)");
+        tctx.fillStyle = g;
+        tctx.beginPath(); tctx.arc(t.x, t.y, rr * 3.4, 0, 6.2832); tctx.fill();
+      }
+    }
+    requestAnimationFrame(trailLoop);
+  }
+  trailLoop();
+
+  /* ═══ 指针事件 ═══ */
+  function pointerMove(x, y){
+    mouse.x = x; mouse.y = y;
+    if (reduce) return;
+    if (lastX === null){ lastX = x; lastY = y; }
+    var dx = x - lastX, dy = y - lastY;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var steps = Math.min(Math.ceil(dist / 7), 4);
+    for (var s = 0; s < steps; s++){
+      var f = steps > 1 ? (s + 1) / steps : 1;
+      tails.push({
+        x: lastX + dx * f, y: lastY + dy * f,
+        vx: dx * .055 + (Math.random() - .5) * .9,
+        vy: dy * .055 + (Math.random() - .5) * .9,
+        r: 2.6 + Math.random() * 1.9,
+        life: 1
+      });
+    }
+    if (tails.length > TMAX) tails.splice(0, tails.length - TMAX);
+    lastX = x; lastY = y;
+  }
+
+  window.addEventListener("mousemove", function(e){ pointerMove(e.clientX, e.clientY); });
+  window.addEventListener("mouseleave", function(){ mouse.x = -9999; mouse.y = -9999; lastX = null; lastY = null; });
+  window.addEventListener("touchmove", function(e){
+    if (e.touches[0]) pointerMove(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+
+  /* ═══ 光标光晕 ═══ */
+  var glow = $("#glow");
+  var gx = window.innerWidth / 2, gy = window.innerHeight / 2, tX = gx, tY = gy;
+  window.addEventListener("mousemove", function(e){ tX = e.clientX; tY = e.clientY; });
+  (function follow(){
+    gx += (tX - gx) * .12; gy += (tY - gy) * .12;
+    glow.style.left = gx + "px"; glow.style.top = gy + "px";
+    requestAnimationFrame(follow);
+  })();
+
+  /* ═══ 卡片聚光 ═══ */
+  $$(".card").forEach(function(c){
+    c.addEventListener("mousemove", function(e){
+      var r = c.getBoundingClientRect();
+      c.style.setProperty("--mx", (e.clientX - r.left) + "px");
+      c.style.setProperty("--my", (e.clientY - r.top) + "px");
+    });
+  });
+
+  /* ═══ 打字机 ═══ */
+  var lines = [
+    "Silver hair. Red oni. Zero limits.",
+    "\u4e8c\u6b21\u5143 / \u6e38\u620f / \u521b\u4f5c",
+    "Welcome to my corner of the internet."
+  ];
+  var el = $("#typed");
+  if (reduce){ el.textContent = lines[0]; }
+  else {
+    var li = 0, ci = 0, del = false;
+    (function tick(){
+      var s = lines[li];
+      if (!del){
+        ci++;
+        el.textContent = s.slice(0, ci);
+        if (ci === s.length){ del = true; return setTimeout(tick, 1900); }
+        setTimeout(tick, 62);
+      } else {
+        ci--;
+        el.textContent = s.slice(0, ci);
+        if (ci === 0){ del = false; li = (li + 1) % lines.length; return setTimeout(tick, 320); }
+        setTimeout(tick, 28);
+      }
+    })();
+  }
+
+  /* ═══ 3D 头像翻转 ═══ */
+  var stage = $("#stage");
+  var flipLock = false;
+  function flip(){
+    if (flipLock) return;
+    flipLock = true;
+    stage.classList.toggle("flipped");
+    setTimeout(function(){ flipLock = false; }, 1050);
+  }
+  stage.addEventListener("click", flip);
+  stage.addEventListener("mouseenter", function(){ if (!flipLock) stage.classList.add("flipped"); });
+  stage.addEventListener("mouseleave", function(){ stage.classList.remove("flipped"); });
+
+  /* ═══ 页面切换 ═══ */
+  var wipe = $("#wipe");
+  var pages = { home: $("#page-home"), works: $("#page-works"), bili: $("#page-bili"), steam: $("#page-steam"), guest: $("#page-guest") };
+  var navBtns = $$(".nav button");
+  var current = "home";
+  var switching = false;
+
+  function setActive(key){
+    $$(".page").forEach(function(p){ p.classList.remove("active"); });
+    if (pages[key]) pages[key].classList.add("active");
+    navBtns.forEach(function(b){ b.classList.toggle("active", b.dataset.go === key); });
+    current = key;
+    window.scrollTo(0, 0);
+    // 切到作品页时刷新一次 —— 保证后台新加的作品马上可见，
+    // 也顺带同步最新的点赞/评论数。
+    if (key === "works" && window.__zfsnLoadGallery) window.__zfsnLoadGallery();
+  }
+
+  function go(key){
+    if (switching || key === current || !pages[key]) return;
+    switching = true;
+    if (reduce){ setActive(key); switching = false; return; }
+    document.body.classList.add("locked");
+    wipe.classList.add("on");
+    setTimeout(function(){
+      setActive(key);
+      wipe.classList.remove("on");
+      document.body.classList.remove("locked");
+      setTimeout(function(){ switching = false; }, 320);
+    }, 340);
+  }
+
+  navBtns.forEach(function(b){ b.addEventListener("click", function(){ go(b.dataset.go); }); });
+  $(".topbar .mark").addEventListener("click", function(){ go("home"); });
+
+  // 首页三平台概览卡 → 点击跳转到对应页面
+  $$(".hs-card").forEach(function(c){
+    c.addEventListener("click", function(){ go(c.dataset.go); });
+  });
+
+  /* ═══ 作品展示墙 ═══
+   * 数据来源：后端 /api/works（后台「作品管理」里添加的）。
+   * 没有作品时显示空状态，**不再**用演示数据冒充真实作品。
+   */
+  var gallery = $("#gallery");
+
+  /* ── 轻量提示条（点赞失败等场景用） ── */
+  var _toastTimer = null;
+  function toast(msg, isErr){
+    var el = $("#ztoast");
+    if (!el){
+      el = document.createElement("div");
+      el.id = "ztoast";
+      el.className = "ztoast";
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.className = "ztoast on" + (isErr ? " err" : "");
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(function(){ el.className = "ztoast"; }, 2600);
+  }
+
+  // 没有图片时用本地生成的 SVG 渐变图占位
+  var WPAL = [
+    ["#ff2d4a", "#2a0510"], ["#39d5ff", "#04141d"], ["#ff6b7f", "#1a0410"],
+    ["#c9cdd9", "#0d0d14"], ["#a855f7", "#120424"], ["#0ea5e9", "#03121f"],
+    ["#3fd63f", "#04160a"], ["#ffb547", "#1f1103"]
+  ];
+  function grad(c1, c2){
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="600">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+      '<stop offset="0" stop-color="' + c1 + '"/><stop offset="1" stop-color="' + c2 + '"/>' +
+      '</linearGradient>' +
+      '<radialGradient id="r" cx=".72" cy=".24" r=".75">' +
+      '<stop offset="0" stop-color="' + c1 + '" stop-opacity=".85"/>' +
+      '<stop offset="1" stop-color="' + c1 + '" stop-opacity="0"/></radialGradient></defs>' +
+      '<rect width="480" height="600" fill="' + c2 + '"/>' +
+      '<rect width="480" height="600" fill="url(#g)" opacity=".55"/>' +
+      '<rect width="480" height="600" fill="url(#r)"/>' +
+      '<g fill="none" stroke="rgba(255,255,255,.18)" stroke-width="1">' +
+      '<circle cx="340" cy="180" r="86"/><circle cx="340" cy="180" r="132" stroke-dasharray="3 7"/>' +
+      '<path d="M0 470 Q120 400 240 455 T480 420"/><path d="M0 520 Q140 455 250 505 T480 470"/>' +
+      '</g></svg>';
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  }
+  function placeholder(i){ var c = WPAL[i % WPAL.length]; return grad(c[0], c[1]); }
+
+  // 作品图片路径兼容：后台可能填绝对路径（D:\...），浏览器无法直接加载，
+  // 这里自动转换成站点内的相对路径。
+  function workImg(w, i){
+    var src = (w.cover || "").trim();
+    if (!src) return placeholder(i);
+    // 把 D:\ZFSNwebsite\assets\xx.jpg → assets/xx.jpg
+    var m = src.match(/[\\/]ZFSNwebsite[\\/](.+)$/i);
+    if (m) src = m[1].replace(/\\/g, "/");
+    src = src.replace(/\\/g, "/");
+    if (/^(https?:|data:|\/)/.test(src)) return src;
+    return src;
+  }
+
+  var ICON_HEART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+    '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+  var ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+    '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+
+  /** 拉取作品列表并渲染 */
+  function loadGallery(){
+    // 统一走 api()：它内部会先确保后端地址已探测出来，
+    // 不会出现"探测还没完成就发请求"的竞态。
+    api("/api/works").then(function(d){
+      GALLERY_CACHE = (d && d.items) || [];
+      renderGallery(GALLERY_CACHE);
+    }).catch(function(e){
+      gallery.innerHTML = '<div class="wcmt-empty" style="grid-column:1/-1">' +
+        '作品加载失败：' + esc(e.message || "未知错误") + '</div>';
+    });
+  }
+
+  function renderGallery(list){
+    if (!list.length){
+      gallery.innerHTML = '<div class="wcmt-empty" style="grid-column:1/-1">' +
+        '还没有作品 — 在后台「作品管理」里添加后会显示在这里</div>';
+      return;
+    }
+    gallery.innerHTML = "";
+    list.forEach(function(w, i){
+      var el = document.createElement("div");
+      el.className = "gitem reveal";
+      el.style.animationDelay = (i * .06) + "s";
+      var img = workImg(w, i);
+      el.innerHTML =
+        (w.tag ? '<span class="pill">' + esc(w.tag) + '</span>' : '') +
+        '<div class="gacts">' +
+          '<button class="gact" data-like="' + w.id + '" title="点赞">' +
+            ICON_HEART + '<span class="n">' + (w.likes || 0) + '</span></button>' +
+          '<button class="gact" data-cmt="' + w.id + '" title="评论">' +
+            ICON_CHAT + '<span class="n">' + (w.comments || 0) + '</span></button>' +
+        '</div>' +
+        '<img src="' + img + '" alt="' + esc(w.title) + '" loading="lazy">' +
+        '<div class="gmeta">' +
+          '<div class="gt">' + esc(w.title) + '</div>' +
+          (w.desc ? '<div class="gs">' + esc(w.desc) + '</div>' : '') +
+        '</div>';
+
+      // 点卡片主体 → 放大查看（如果填了链接则打开链接）
+      el.addEventListener("click", function(e){
+        if (e.target.closest(".gact")) return;    // 点赞/评论按钮不触发放大
+        if (w.link){
+          window.open(w.link, "_blank", "noopener");
+        } else {
+          openLB(el.querySelector("img").src, w.title);
+        }
+      });
+
+      gallery.appendChild(el);
+    });
+
+    // 绑定点赞
+    gallery.querySelectorAll("button[data-like]").forEach(function(b){
+      b.addEventListener("click", function(e){
+        e.stopPropagation();
+        doLike(b.getAttribute("data-like"), b);
+      });
+    });
+    // 绑定评论
+    gallery.querySelectorAll("button[data-cmt]").forEach(function(b){
+      b.addEventListener("click", function(e){
+        e.stopPropagation();
+        var id = b.getAttribute("data-cmt");
+        var w = list.find(function(x){ return x.id === id; });
+        openComments(id, w ? w.title : "作品");
+      });
+    });
+  }
+
+  /** 点赞 / 取消点赞 */
+  function doLike(workId, btn){    btn.disabled = true;
+    api("/api/works/" + workId + "/like", { method: "POST" })
+      .then(function(d){
+        btn.disabled = false;
+        btn.classList.toggle("on", !!d.liked);
+        btn.querySelector(".n").textContent = d.likes;
+        btn.classList.remove("like-bump");
+        void btn.offsetWidth;                  // 强制重排以重启动画
+        btn.classList.add("like-bump");
+        // 更新内存里的数据，切换页面回来时数字不会回退
+        GALLERY_CACHE.forEach(function(x){ if (x.id === workId) x.likes = d.likes; });
+      })
+      .catch(function(e){
+        btn.disabled = false;
+        toast(e.message || "点赞失败", true);
+      });
+  }
+
+  /* ── 评论区 ── */
+  var wcmt = $("#wcmt"), wcmtList = $("#wcmt-list"), wcmtTitle = $("#wcmt-title");
+  var wcmtSub = $("#wcmt-sub"), wcmtMsg = $("#wcmt-msg");
+  var wcmtName = $("#wcmt-name"), wcmtText = $("#wcmt-text");
+  var curWorkId = null;
+
+  function geoLine(geo){
+    if (!geo) return "";
+    var t = geo.region || geo.province || geo.country || "";
+    if (!t) return "";
+    return '<span class="rg">' + geoIcon() + esc(t) + '</span>';
+  }
+  function geoIcon(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  }
+
+  function openComments(workId, title){
+    curWorkId = workId;
+    wcmtTitle.textContent = "评论 · " + title;
+    wcmtSub.textContent = "填名字和内容即可发表，会显示你的归属地";
+    wcmtMsg.textContent = "";
+    wcmtMsg.className = "msg";
+    wcmtText.value = "";
+    // 记住上次填的名字，省得每次重填
+    try {
+      var saved = localStorage.getItem("zfsn_cmt_name");
+      if (saved && !wcmtName.value) wcmtName.value = saved;
+    } catch (e) {}
+    wcmt.classList.add("on");
+    document.body.classList.add("locked");
+    loadComments(workId);
+  }
+  function closeComments(){
+    wcmt.classList.remove("on");
+    document.body.classList.remove("locked");
+    curWorkId = null;
+  }
+  $("#wcmt-x").addEventListener("click", closeComments);
+  wcmt.addEventListener("click", function(e){ if (e.target === wcmt) closeComments(); });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape" && wcmt.classList.contains("on")) closeComments();
+  });
+
+  function loadComments(workId){
+    wcmtList.innerHTML = '<div class="sk" style="height:56px;margin:8px 0"></div>';
+    api("/api/works/" + workId + "/interactions")
+      .then(function(d){ renderComments(d.comments || []); })
+      .catch(function(){ wcmtList.innerHTML = '<div class="wcmt-empty">评论加载失败</div>'; });
+  }
+
+  function renderComments(list){
+    if (!list.length){
+      wcmtList.innerHTML = '<div class="wcmt-empty">还没有评论 — 来抢第一个沙发</div>';
+      return;
+    }
+    // 新的在上面
+    var sorted = list.slice().sort(function(a, b){ return b.ts - a.ts; });
+    wcmtList.innerHTML = sorted.map(function(c){
+      return '<div class="wcmt-item">' +
+        '<div class="h">' +
+          '<span class="nm">' + esc(c.name) + '</span>' +
+          geoLine(c.geo) +
+          '<span class="tm">' + esc(c.time || "") + '</span>' +
+        '</div>' +
+        '<div class="bd">' + esc(c.text) + '</div>' +
+      '</div>';
+    }).join("");
+  }
+
+  function sendComment(){
+    if (curWorkId === null) return;
+    var name = (wcmtName.value || "").trim();
+    var text = (wcmtText.value || "").trim();
+    if (!name){ wcmtMsg.textContent = "请填写名字"; wcmtMsg.className = "msg err"; return; }
+    if (!text){ wcmtMsg.textContent = "请填写评论内容"; wcmtMsg.className = "msg err"; return; }
+    $("#wcmt-send").disabled = true;
+    wcmtMsg.textContent = "发表中…"; wcmtMsg.className = "msg";
+
+    api("/api/works/" + curWorkId + "/comments", {
+      method: "POST", body: JSON.stringify({ name: name, text: text })
+    })
+      .then(function(){
+        $("#wcmt-send").disabled = false;
+        try { localStorage.setItem("zfsn_cmt_name", name); } catch (e) {}
+        wcmtMsg.textContent = "已发表 ✓"; wcmtMsg.className = "msg ok";
+        wcmtText.value = "";
+        loadComments(curWorkId);
+        // 同步卡片上的评论数
+        refreshCounts();
+        setTimeout(function(){ if (wcmtMsg.className.indexOf("ok") >= 0) wcmtMsg.textContent = ""; }, 2200);
+      })
+      .catch(function(e){
+        $("#wcmt-send").disabled = false;
+        wcmtMsg.textContent = e.message || "发表失败";
+        wcmtMsg.className = "msg err";
+      });
+  }
+  $("#wcmt-send").addEventListener("click", sendComment);
+
+  /** 重新拉一次列表刷新点赞/评论数（发表评论后用） */
+  function refreshCounts(){
+    api("/api/works").then(function(d){
+      var list = (d && d.items) || [];
+      GALLERY_CACHE = list;
+      list.forEach(function(w){
+        var lb = gallery.querySelector('button[data-like="' + w.id + '"] .n');
+        var cb = gallery.querySelector('button[data-cmt="' + w.id + '"] .n');
+        if (lb) lb.textContent = w.likes || 0;
+        if (cb) cb.textContent = w.comments || 0;
+      });
+    }).catch(function(){});
+  }
+
+  var GALLERY_CACHE = [];
+  // 由 detectAPI() 完成后统一触发加载（见下方 __zfsnOnAPIReady 注册）
+  // 这里只登记一个"待加载"标记，避免 API_BASE 尚未探测就发请求。
+  window.__zfsnLoadGallery = loadGallery;
+
+  /* Lightbox */
+  var lb = $("#lb"), lbImg = lb.querySelector("img"), lbCap = lb.querySelector(".cap");
+  function openLB(src, cap){
+    lbImg.src = src; lbCap.textContent = cap || "";
+    lb.classList.add("on"); document.body.classList.add("locked");
+  }
+  function closeLB(){
+    lb.classList.remove("on"); document.body.classList.remove("locked");
+  }
+  lb.addEventListener("click", function(e){ if (e.target !== lbImg) closeLB(); });
+  lb.querySelector(".close").addEventListener("click", closeLB);
+  document.addEventListener("keydown", function(e){ if (e.key === "Escape") closeLB(); });
+
+  /* ═══ Steam 数据 ═══ */
+  var sgrid = $("#sgrid"), scount = $("#steam-count");
+  var statsBox = $("#stats"), rblock = $("#recent-block"), rgrid = $("#rgrid");
+  var sbar = $("#sbar"), ssearch = $("#ssearch"), ssort = $("#ssort");
+  var sfilterCount = $("#sfilter-count");
+  var morewrap = $("#morewrap"), morebtn = $("#morebtn"), moretxt = $("#moretxt");
+
+  var FALLBACK = {
+    count: 2, total_hours: 0,
+    player: { name: "ZFSN114514" },
+    games: [
+      { appid: 438100, name: "VRChat", playtime: "\u2014", hours: 0, cover: coverUrl(438100) },
+      { appid: 730, name: "Counter-Strike 2", playtime: "\u2014", hours: 0, cover: coverUrl(730) }
+    ],
+    recent: []
+  };
+
+  function coverUrl(appid){
+    return "https://cdn.cloudflare.steamstatic.com/steam/apps/" + appid + "/header.jpg";
+  }
+
+  function esc(s){
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  /* ── 全量游戏状态 ── */
+  var ALL_GAMES = [];      // 按时长降序的原始完整列表
+  var VIEW_GAMES = [];     // 当前筛选/排序后的列表
+  var SHOWN = 0;           // 已渲染条数
+  var BATCH = 36;          // 每批渲染条数（懒加载，避免 165 张图一次性加载）
+  var sortMode = "hours";
+  var maxHours = 1;
+  var searchTerm = "";
+
+  /* 时长（分钟）排序用；未玩过排最后 */
+  function byHours(a, b){
+    var d = (b.hours || 0) - (a.hours || 0);
+    if (d !== 0) return d;
+    return String(a.name).localeCompare(String(b.name));
+  }
+  function byName(a, b){
+    return String(a.name).localeCompare(String(b.name), "zh-Hans-CN");
+  }
+
+  /* 构建一张游戏卡片的 DOM */
+  function makeCard(g){
+    var idx = ALL_GAMES.indexOf(g);
+    var a = document.createElement("a");
+    a.className = "sgame";
+    a.href = g.store || ("https://store.steampowered.com/app/" + g.appid + "/");
+    a.target = "_blank"; a.rel = "noopener";
+
+    var pct = Math.max(3, Math.round(((g.hours || 0) / maxHours) * 100));
+    var pt = (g.hours > 0)
+      ? '<div class="pt"><span>' + esc(g.playtime) + '</span>' +
+        '<span class="bar"><i style="width:' + pct + '%"></i></span></div>'
+      : '<div class="pt"><span>' + esc(g.playtime || "未玩过") + '</span>' +
+        '<span class="bar"><i style="width:3%;opacity:.35"></i></span></div>';
+
+    a.innerHTML =
+      '<div class="cover">' +
+        '<img src="' + esc(g.cover || coverUrl(g.appid)) + '" alt="" loading="lazy" ' +
+        'onerror="this.style.visibility=\'hidden\'">' +
+        '<span class="rank">#' + (idx >= 0 ? idx + 1 : "—") + '</span>' +
+      '</div>' +
+      '<div class="meta"><div class="nt" title="' + esc(g.name) + '">' + esc(g.name) + '</div>' +
+      pt + '</div>';
+    return a;
+  }
+
+  /* 分批追加渲染 */
+  function appendBatch(){
+    var end = Math.min(SHOWN + BATCH, VIEW_GAMES.length);
+    if (SHOWN >= VIEW_GAMES.length) return;
+    var frag = document.createDocumentFragment();
+    for (var i = SHOWN; i < end; i++) frag.appendChild(makeCard(VIEW_GAMES[i]));
+    sgrid.appendChild(frag);
+    SHOWN = end;
+    updateMore();
+  }
+
+  function updateMore(){
+    var left = VIEW_GAMES.length - SHOWN;
+    if (VIEW_GAMES.length === 0){
+      morewrap.style.display = "none";
+      return;
+    }
+    if (left > 0){
+      morewrap.style.display = "block";
+      morebtn.textContent = "加载更多（还有 " + left + " 款）";
+      moretxt.textContent = "已显示 " + SHOWN + " / " + VIEW_GAMES.length + " 款";
+    } else {
+      morewrap.style.display = "block";
+      morebtn.style.display = "none";
+      moretxt.textContent = "已显示全部 " + VIEW_GAMES.length + " 款游戏";
+    }
+  }
+
+  /* 应用搜索 + 排序，重置渲染 */
+  function applyFilter(){
+    var t = searchTerm.trim().toLowerCase();
+    var list = !t ? ALL_GAMES.slice()
+      : ALL_GAMES.filter(function(g){
+          return String(g.name).toLowerCase().indexOf(t) >= 0 ||
+                 String(g.appid).indexOf(t) >= 0;
+        });
+    list.sort(sortMode === "name" ? byName : byHours);
+    VIEW_GAMES = list;
+
+    sgrid.innerHTML = "";
+    SHOWN = 0;
+    if (!list.length){
+      sgrid.innerHTML = '<div class="sempty">没有匹配「' + esc(searchTerm) + '」的游戏</div>';
+      morewrap.style.display = "none";
+      sfilterCount.textContent = "0 款";
+      return;
+    }
+    sfilterCount.textContent = list.length + " 款" +
+      (list.length !== ALL_GAMES.length ? " / 共 " + ALL_GAMES.length : "");
+    appendBatch();
+  }
+
+  /* 首次渲染整体 */
+  function renderGames(list){
+    ALL_GAMES = list.slice().sort(byHours);
+    maxHours = 1;
+    ALL_GAMES.forEach(function(g){ if (g.hours > maxHours) maxHours = g.hours; });
+    sbar.style.display = "flex";
+    morebtn.style.display = "";
+    applyFilter();
+  }
+
+  /* 交互绑定（只绑一次） */
+  (function bindSteamUI(){
+    var timer = null;
+    ssearch.addEventListener("input", function(){
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        searchTerm = ssearch.value;
+        applyFilter();
+      }, 180);
+    });
+    ssort.addEventListener("click", function(e){
+      var b = e.target.closest ? e.target.closest("button[data-sort]") : null;
+      if (!b) return;
+      var m = b.getAttribute("data-sort");
+      if (m === sortMode) return;
+      sortMode = m;
+      Array.prototype.forEach.call(ssort.children, function(x){ x.classList.toggle("on", x === b); });
+      applyFilter();
+    });
+    morebtn.addEventListener("click", appendBatch);
+  })();
+
+  /* 渲染最近两周 */
+  function renderRecent(list){
+    if (!list || !list.length) return;
+    rblock.style.display = "block";
+    rgrid.innerHTML = "";
+    list.forEach(function(g, i){
+      var a = document.createElement("a");
+      a.className = "rcard reveal";
+      a.style.animationDelay = (i * .06) + "s";
+      a.href = "https://store.steampowered.com/app/" + g.appid + "/";
+      a.target = "_blank"; a.rel = "noopener";
+      a.innerHTML =
+        '<img src="' + esc(g.cover || coverUrl(g.appid)) + '" alt="" loading="lazy" ' +
+        'onerror="this.style.visibility=\'hidden\'">' +
+        '<div class="rm"><div class="rn" title="' + esc(g.name) + '">' + esc(g.name) + '</div>' +
+        '<div class="rt">' + esc(g.playtime2w || "") + '</div></div>';
+      rgrid.appendChild(a);
+    });
+  }
+
+  /* 渲染统计条 */
+  function renderStats(d){
+    var games = d.games || [];
+    if (!games.length) return;
+    statsBox.style.display = "grid";
+    var sorted = games.slice().sort(byHours);
+    $("#st-games").textContent = (d.count || games.length);
+    $("#st-hours").textContent = d.total_hours ? (d.total_hours.toLocaleString() + " h") : "—";
+    $("#st-top").textContent = sorted[0] ? sorted[0].name : "—";
+    $("#st-top").style.fontSize = "";
+    var created = d.player && d.player.created ? String(d.player.created).slice(0, 4) : "";
+    $("#st-since").textContent = created || "—";
+    if (d.player && d.player.name){
+      $("#steam-persona").textContent = d.player.name;
+    }
+  }
+
+  fetch("steam_games.json")
+    .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(d){
+      var data = (d && d.games && d.games.length) ? d : FALLBACK;
+      renderGames(data.games);
+      renderStats(data);
+      renderRecent(data.recent);
+      scount.textContent = "\u5171 " + (data.count || data.games.length) + " \u6b3e\u6e38\u620f" +
+        (data.total_hours ? "\u00b7 " + data.total_hours.toLocaleString() + " \u5c0f\u65f6\u603b\u65f6\u957f" : "");
+      // ── 首页 Steam 概览卡 ──
+      var hvs = $("#hs-steam-v"), hss = $("#hs-steam-s");
+      if (hvs) hvs.textContent = (data.count || data.games.length) + " 款游戏";
+      if (hss) hss.textContent = data.total_hours
+        ? data.total_hours.toLocaleString() + " 小时总时长"
+        : "暂无时长数据";
+    })
+    .catch(function(){
+      renderGames(FALLBACK.games);
+      renderStats(FALLBACK);
+      scount.textContent = "\u964d\u7ea7\u6570\u636e";
+    });
+
+  /* ═══ B站数据 ═══
+     数据结构（由 tools/build_bili.py 生成）：
+       profile: { name, face_local, face, sign, level, followers, following,
+                  likes, total_views, total_likes, total_coins, ... }
+       videos:  [ { bvid, title, cover, pub, length, tname, desc,
+                    views, danmaku, reply, like, coin, favorite, share } ]
+     ─────────────────────────────────────────────── */
+  var vgrid = $("#vgrid"), bcount = $("#bili-count");
+  var bprofile = $("#bprofile"), bstats = $("#b-stats");
+  var btools = $("#btools"), bsortBox = $("#bsort"), bsearch = $("#bsearch"), bcnt = $("#bcnt");
+
+  var VID_ALL = [];        // 全量
+  var VID_VIEW = [];       // 过滤+排序后
+  var vShown = 0, V_BATCH = 24, vidSort = "new", vidQuery = "";
+
+  var VFALLBACK = [
+    { bvid: "", title: "前往 B站 主页查看最新投稿", cover: "", pub: "", views: 0 }
+  ];
+
+  function fmtN(n){
+    n = Number(n) || 0;
+    if (n >= 100000000) return (n / 100000000).toFixed(2).replace(/\.?0+$/, "") + "亿";
+    if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.?0+$/, "") + "万";
+    return String(n);
+  }
+
+  function renderProfile(p, list){
+    if (!p || (!p.name && !p.followers)) return;
+    bprofile.style.display = "";
+
+    // 头像：优先用本地已下载的（B站 CDN 有防盗链，外链可能加载不出来）
+    var av = $("#b-avatar");
+    var name = p.name || "ZFSN";
+    var src = p.face_local || p.face || "";
+    if (src){
+      av.src = src;
+      av.style.display = "";
+      av.classList.remove("ph");
+    } else {
+      // 没有头像时用昵称首字做圆形占位：
+      // img 无法显示文字，所以把它变成纯色圆底 + 伪元素首字
+      av.removeAttribute("src");
+      av.classList.add("ph");
+      av.style.display = "";
+      av.setAttribute("data-initial", name.slice(0, 1).toUpperCase());
+    }
+    $("#b-name").textContent = name;
+    $("#b-level").textContent = "Lv" + (p.level || 0);
+    $("#b-sign").textContent = p.sign || "";
+
+    // ── 首页 B站 概览卡 ──
+    var hvb = $("#hs-bili-v"), hsb = $("#hs-bili-s");
+    if (hvb) hvb.textContent = fmtN(p.followers) + " 粉丝";
+    if (hsb) hsb.textContent = fmtN(p.total_views != null ? p.total_views
+      : list.reduce(function(a, x){ return a + (Number(x.views) || 0); }, 0)) + " 总播放" +
+      (list.length ? " · " + list.length + " 个投稿" : "");
+
+    var cells = [
+      { v: fmtN(p.followers), k: "粉丝" },
+      { v: fmtN(p.following), k: "关注" },
+      { v: fmtN(p.total_views != null ? p.total_views : list.reduce(function(a, x){ return a + (Number(x.views) || 0); }, 0)), k: "总播放" },
+      { v: fmtN(p.likes), k: "获赞" },
+      { v: fmtN(list.reduce(function(a, x){ return a + (Number(x.coin) || 0); }, 0)), k: "投币" },
+      { v: fmtN(list.reduce(function(a, x){ return a + (Number(x.favorite) || 0); }, 0)), k: "收藏" }
+    ];
+    bstats.innerHTML = cells.map(function(c){
+      return '<div class="bstat"><div class="bv">' + esc(c.v) + '</div>' +
+             '<div class="bk">' + esc(c.k) + '</div></div>';
+    }).join("");
+  }
+
+  function makeVCard(v, i){
+    var a = document.createElement("a");
+    a.className = "vcard reveal";
+    a.style.animationDelay = (i * .04) + "s";
+    a.href = v.bvid ? ("https://www.bilibili.com/video/" + v.bvid)
+                    : "https://space.bilibili.com/1220210222";
+    a.target = "_blank"; a.rel = "noopener";
+
+    var thumb = v.cover
+      ? '<img src="' + esc(v.cover) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+      : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(0,174,236,.18),rgba(4,4,8,1));font-size:11px;letter-spacing:.2em;color:#5a6a78;text-transform:uppercase">bilibili</div>';
+
+    // 时长角标
+    var dur = v.length ? '<span class="vdur">' + esc(v.length) + '</span>' : '';
+
+    // 分区标签
+    var tagsHtml = "";
+    if (v.tname){
+      tagsHtml = '<div class="vtags"><span class="vtag">' + esc(v.tname) + '</span></div>';
+    }
+
+    // 互动数据（只在有值时显示）
+    var st = [];
+    if (Number(v.views)) st.push('<span>播放 <b>' + fmtN(v.views) + '</b></span>');
+    if (Number(v.like)) st.push('<span>赞 <b>' + fmtN(v.like) + '</b></span>');
+    if (Number(v.coin)) st.push('<span>币 <b>' + fmtN(v.coin) + '</b></span>');
+    if (Number(v.favorite)) st.push('<span>藏 <b>' + fmtN(v.favorite) + '</b></span>');
+    if (Number(v.danmaku)) st.push('<span>弹幕 <b>' + fmtN(v.danmaku) + '</b></span>');
+    if (Number(v.reply)) st.push('<span>评论 <b>' + fmtN(v.reply) + '</b></span>');
+    var statsHtml = st.length ? '<div class="vstats">' + st.join("") + '</div>' : '';
+
+    var meta = [];
+    if (v.pub) meta.push('<span>' + esc(v.pub) + '</span>');
+    if (v.pages && Number(v.pages) > 1) meta.push('<span>' + Number(v.pages) + 'P</span>');
+
+    a.innerHTML =
+      '<div class="thumb">' + thumb + dur + '<div class="play"><span>▶</span></div></div>' +
+      '<div class="meta">' +
+        '<div class="vt">' + esc(v.title) + '</div>' +
+        (meta.length ? '<div class="vs">' + meta.join("") + '</div>' : '') +
+        tagsHtml + statsHtml +
+      '</div>';
+    return a;
+  }
+
+  function appendVideos(){
+    if (vShown >= VID_VIEW.length) return;
+    var end = Math.min(vShown + V_BATCH, VID_VIEW.length);
+    var frag = document.createDocumentFragment();
+    for (var i = vShown; i < end; i++) frag.appendChild(makeVCard(VID_VIEW[i], i));
+    vgrid.appendChild(frag);
+    vShown = end;
+  }
+
+  function applyVFilter(){
+    var q = vidQuery.trim().toLowerCase();
+    var arr = VID_ALL.filter(function(v){
+      if (!q) return true;
+      return (v.title || "").toLowerCase().indexOf(q) >= 0 ||
+             (v.tname || "").toLowerCase().indexOf(q) >= 0 ||
+             (v.desc || "").toLowerCase().indexOf(q) >= 0;
+    });
+
+    arr.sort(function(a, b){
+      switch (vidSort){
+        case "views": return (Number(b.views) || 0) - (Number(a.views) || 0);
+        case "like":  return (Number(b.like) || 0) - (Number(a.like) || 0);
+        case "dur":   return (Number(b.duration) || 0) - (Number(a.duration) || 0);
+        default:      return (Number(b.ts) || 0) - (Number(a.ts) || 0);
+      }
+    });
+
+    VID_VIEW = arr;
+    vgrid.innerHTML = "";
+    vShown = 0;
+
+    if (!arr.length){
+      vgrid.innerHTML = '<div class="sempty" style="grid-column:1/-1"><span class="ic">◌</span>' +
+        '<div class="t">没有匹配的视频</div></div>';
+      if (bcnt) bcnt.textContent = "0 / " + VID_ALL.length;
+      return;
+    }
+    appendVideos();
+    if (bcnt) bcnt.textContent = arr.length + (q || vidSort !== "new" ? (" / " + VID_ALL.length) : "") + " 条";
+  }
+
+  function renderVideos(list){
+    VID_ALL = list;
+    if (btools) btools.style.display = "";
+    applyVFilter();
+  }
+
+  // 触底加载更多
+  if (vgrid){
+    var vSentinel = document.createElement("div");
+    vSentinel.style.cssText = "grid-column:1/-1;height:1px";
+    vgrid.parentNode.appendChild(vSentinel);
+    if ("IntersectionObserver" in window){
+      new IntersectionObserver(function(es){
+        es.forEach(function(e){
+          if (e.isIntersecting && vShown < VID_VIEW.length){
+            appendVideos();
+            // 追加后重新观察（保持触发能力）
+            vSentinel.scrollIntoView({ block: "nearest" });
+          }
+        });
+      }, { rootMargin: "400px" }).observe(vSentinel);
+    }
+  }
+
+  // 排序 / 搜索绑定
+  if (bsortBox){
+    bsortBox.addEventListener("click", function(e){
+      var btn = e.target.closest("button[data-sort]");
+      if (!btn) return;
+      Array.prototype.forEach.call(bsortBox.children, function(b){ b.classList.remove("on"); });
+      btn.classList.add("on");
+      vidSort = btn.getAttribute("data-sort");
+      applyVFilter();
+    });
+  }
+  if (bsearch){
+    var bTimer = null;
+    bsearch.addEventListener("input", function(){
+      clearTimeout(bTimer);
+      bTimer = setTimeout(function(){
+        vidQuery = bsearch.value || "";
+        applyVFilter();
+      }, 180);
+    });
+  }
+
+  fetch("bili_videos.json")
+    .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(d){
+      var list = (d && d.videos && d.videos.length) ? d.videos : VFALLBACK;
+      renderProfile(d && d.profile, list);
+      renderVideos(list);
+      if (bcount){
+        var s = "UID " + (d.mid || 1220210222) + " · " + list.length + " 条投稿";
+        if (d.updated) s += " · 更新于 " + d.updated.slice(0, 10);
+        bcount.textContent = s;
+      }
+    })
+    .catch(function(e){
+      if (bcount) bcount.textContent = "数据加载失败，请稍后重试";
+      renderVideos(VFALLBACK);
+    });
+
+  /* ═══ Xbox 数据 ═══ */
+  var xgrid = $("#xgrid"), xcount = $("#xbox-count");
+  var xstats = $("#xstats");
+  var XFALLBACK = { count: 0, total_hours: 0, games: [] };
+
+  function renderXbox(d){
+    if (!xgrid) return;
+    var games = (d && d.games) || [];
+
+    if (!games.length){
+      xgrid.innerHTML = '<div class="sempty">' +
+        (d && d.note ? d.note : "Xbox 数据待补充") + '</div>';
+      if (xcount) xcount.textContent = "Xbox Profile";
+      return;
+    }
+
+    /* 头部统计：总时长 / 成就总数 / 最常玩 */
+    var tot = 0, ach = 0, hasHour = [];
+    games.forEach(function(g){
+      var h = Number(g.hours);
+      if (!isNaN(h) && h > 0){ tot += h; hasHour.push(g); }
+      ach += (Number(g.achievements_done) || 0);
+    });
+    var best = hasHour.slice().sort(function(a, b){ return b.hours - a.hours; })[0];
+
+    if (xcount){
+      xcount.textContent = "共 " + (d.count || games.length) + " 款游戏" +
+        (tot > 0 ? " · " + Math.round(tot).toLocaleString() + " 小时" : "");
+    }
+    // ── 首页 Xbox 概览卡 ──
+    var hvx = $("#hs-xbox-v"), hsx = $("#hs-xbox-s");
+    if (hvx) hvx.textContent = (d.count || games.length) + " 款游戏";
+    if (hsx) hsx.textContent = tot > 0
+      ? Math.round(tot).toLocaleString() + " 小时" + (ach > 0 ? " · " + ach + " 成就" : "")
+      : "暂无时长数据";
+    var hsub = $("#home-xbox-sub");
+    if (hsub && d.persona) hsub.textContent = d.persona;
+    if (xstats && tot > 0){
+      xstats.style.display = "grid";
+      $("#xt-games").textContent = (d.count || games.length);
+      $("#xt-hours").textContent = Math.round(tot).toLocaleString() + " h";
+      $("#xt-ach").textContent = ach > 0 ? ach.toLocaleString() : "—";
+      $("#xt-top").textContent = best ? best.name : "—";
+      $("#xt-top").style.fontSize = (best && best.name.length > 12) ? "15px" : "";
+    }
+
+    /* 按时长降序，无数据排最后 */
+    var sorted = games.slice().sort(function(a, b){
+      var ha = Number(a.hours), hb = Number(b.hours);
+      return (isNaN(hb) ? -1 : hb) - (isNaN(ha) ? -1 : ha);
+    });
+    var maxH = 1;
+    sorted.forEach(function(g){ if (g.hours > maxH) maxH = g.hours; });
+
+    xgrid.innerHTML = "";
+    sorted.forEach(function(g, i){
+      var a = document.createElement("a");
+      a.className = "xcard";
+      a.href = g.store || "https://www.xbox.com/zh-CN/play/user/ZFSN114514";
+      a.target = "_blank"; a.rel = "noopener";
+
+      var h = Number(g.hours);
+      var hasT = !isNaN(h) && h > 0;
+      var pct = hasT ? Math.max(3, Math.round((h / maxH) * 100)) : 0;
+      var achDone = Number(g.achievements_done) || 0;
+      var achTot = Number(g.achievements_total) || 0;
+
+      var poster = g.cover
+        ? '<img src="' + esc(g.cover) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+        : '<div class="xph">' + esc((g.name || "X").slice(0, 2)) + '</div>';
+
+      a.innerHTML =
+        '<div class="xposter">' + poster +
+          '<span class="xrank">#' + (i + 1) + '</span>' +
+          (achTot > 0 ? '<span class="xach">' + achDone + '/' + achTot + '</span>' : '') +
+          '<div class="xmeta">' +
+            '<div class="xn" title="' + esc(g.name) + '">' + esc(g.name) + '</div>' +
+            (hasT
+              ? '<div class="xh"><span class="t">' + esc(g.playtime || (h + "h")) + '</span>' +
+                '<span class="bar"><i style="width:' + pct + '%"></i></span></div>'
+              : '<div class="xh"><span class="t" style="color:#6a7a6a">暂无数据</span>' +
+                '<span class="bar nodata"><i style="width:0"></i></span></div>') +
+          '</div>' +
+        '</div>';
+      xgrid.appendChild(a);
+    });
+  }
+
+  fetch("xbox_games.json")
+    .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(renderXbox)
+    .catch(function(){ renderXbox(XFALLBACK); });
+
+  /* ═══ 留言板 ═══ */
+  var glist = $("#glist"), gcount = $("#g-count"), gmine = $("#g-mine");
+  var gmask = $("#gmask"), gname = $("#gmname"), gtext = $("#gmtext");
+  var gmloc = $("#gmloc"), gmerr = $("#gmerr"), gsubmit = $("#gsubmit");
+  var gmorewrap = $("#gmorewrap"), gmorebtn = $("#gmorebtn"), gmoretxt = $("#gmoretxt");
+
+  var MSG_ALL = [];
+  var MSG_SHOWN = 0;
+  var G_BATCH = 12;
+  var myGeo = null;
+
+  /* ── 后端服务地址探测 ──────────────────────────────────
+     页面可能通过多种方式打开，后端地址各不相同：
+       · http://localhost:3000        → 同源，最省事
+       · http://域名:3000             → 同源（公网推荐方案）
+       · http://localhost:88          → 同源不通，需跨到 :3000
+       · http://192.168.x.x:88        → 同上，用当前主机名的 3000
+       · file://                      → 只能写死 localhost:3000
+     所以列出所有候选地址并发探测 /api/health，取第一个响应的。
+
+     ⚠ 两个必须避开的坑：
+       1. 缓存污染 —— sessionStorage 里可能残留上次的地址（比如上次用
+          localhost 打开、这次用公网域名），换个浏览器标签就失效。
+          所以缓存命中后仍要复验，失败就重跑全量探测。
+       2. 端口相同即同源 —— 判断"同源"要看 location.port，不能只看协议。
+     ──────────────────────────────────────────────────── */
+  var API_BASE = "";          // 探测完成前为空
+  var API_READY = null;       // Promise
+  var API_CACHE_KEY = "zfsn_api_base";
+
+  function portOf(loc){
+    if (loc.port) return loc.port;
+    return loc.protocol === "https:" ? "443" : "80";
+  }
+
+  function apiCandidates(){
+    var list = [];
+    var host = location.hostname;
+    var proto = location.protocol;
+    var isHttp = (proto === "http:" || proto === "https:");
+    var port = portOf(location);
+
+    // ① 同源：只要页面本身就是后端提供的，"" 就成立。
+    //    判断方法：探一下同源的 /api/health —— 探测函数自带失败兜底，
+    //    所以这里可以无条件优先试同源，不用预先猜端口号。
+    //    这样即使外部端口映射成了 38472 之类的任意值也能工作。
+    if (isHttp) list.push("");
+
+    // ② 当前主机名的 3000 端口 —— 覆盖"页面在 88、后端在 3000"的场景
+    if (proto === "http:" && host) list.push("http://" + host + ":3000");
+
+    // ③ 本机兜底：页面在 file:// 或 https 时用得上
+    list.push("http://localhost:3000");
+    list.push("http://127.0.0.1:3000");
+
+    // 去重，保持顺序
+    var seen = {}, out = [];
+    list.forEach(function(u){ if (!(u in seen)){ seen[u] = 1; out.push(u); } });
+    return out;
+  }
+
+  function probe(base){
+    return new Promise(function(resolve){
+      var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+      var timer = setTimeout(function(){
+        if (ctl) ctl.abort();
+        resolve(null);
+      }, 2200);
+      // 同源请求会被浏览器/CDN 缓存，加时间戳绕过
+      var url = (base || "") + "/api/health" + (base ? "" : "?_=" + Date.now());
+      fetch(url, { signal: ctl ? ctl.signal : undefined, cache: "no-store" })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){
+          clearTimeout(timer);
+          resolve(d && d.ok ? (base || "") : null);
+        })
+        .catch(function(){ clearTimeout(timer); resolve(null); });
+    });
+  }
+
+  function detectAPI(){
+    if (API_READY) return API_READY;
+
+    var cached = null;
+    try { cached = sessionStorage.getItem(API_CACHE_KEY); } catch (e) {}
+
+    // 缓存值必须仍在当前候选列表里才可信 —— 否则说明用户换了访问方式
+    var bases = apiCandidates();
+    var cacheValid = (cached !== null && bases.indexOf(cached) >= 0);
+
+    function raceAll(list){
+      return Promise.all(list.map(probe)).then(function(res){
+        var hit = null;
+        for (var i = 0; i < res.length; i++){
+          if (res[i] !== null){ hit = res[i]; break; }
+        }
+        if (hit !== null){
+          try { sessionStorage.setItem(API_CACHE_KEY, hit); } catch (e) {}
+        }
+        return hit;
+      });
+    }
+
+    API_READY = cacheValid
+      // 先复验缓存；失效就重跑全量
+      ? probe(cached).then(function(ok){
+          return (ok !== null) ? ok : raceAll(bases);
+        })
+      : raceAll(bases);
+
+    // 探测完成后刷新对应 UI
+    API_READY.then(function(base){
+      API_BASE = (base === null) ? null : (base || "");
+      if (window.__zfsnOnAPIReady) window.__zfsnOnAPIReady(base);
+      // 作品墙依赖后端数据，等地址确定后再加载
+      if (window.__zfsnLoadGallery) window.__zfsnLoadGallery();
+    });
+
+    return API_READY;
+  }
+
+  /* 统一请求：先确保后端地址已探测出来 */
+  function api(path, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    return detectAPI().then(function(base){
+      if (base === null){
+        throw new Error("后端服务未启动（请在 D:\\ZFSN-server 运行 node server.js）");
+      }
+      return fetch(base + path, opts);
+    }).then(function(r){
+      return r.json().catch(function(){ throw new Error("服务返回异常 (HTTP " + r.status + ")"); })
+        .then(function(d){
+          if (!r.ok || d.ok === false) throw new Error(d.error || ("HTTP " + r.status));
+          return d;
+        });
+    });
+  }
+
+  function geoIcon(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  }
+
+  function makeMsgItem(m){
+    var d = document.createElement("div");
+    d.className = "gitem";
+    var initial = (m.name || "?").slice(0, 1).toUpperCase();
+    var loc = (m.geo && m.geo.region) || "";
+    d.innerHTML =
+      '<header>' +
+        '<span class="av">' + esc(initial) + '</span>' +
+        '<span class="who">' + esc(m.name) + '</span>' +
+        (loc ? '<span class="loc">' + geoIcon() + esc(loc) + '</span>' : '') +
+        '<span class="when">' + esc(m.time || "") + '</span>' +
+      '</header>' +
+      '<div class="body">' + esc(m.text) + '</div>' +
+      (m.ip && m.ip !== "127.0.0.1" ? '<div class="ip">' + esc(m.ip) + '</div>' : '');
+    return d;
+  }
+
+  function gAppendBatch(){
+    if (MSG_SHOWN >= MSG_ALL.length) return;
+    var end = Math.min(MSG_SHOWN + G_BATCH, MSG_ALL.length);
+    var frag = document.createDocumentFragment();
+    for (var i = MSG_SHOWN; i < end; i++) frag.appendChild(makeMsgItem(MSG_ALL[i]));
+    glist.appendChild(frag);
+    MSG_SHOWN = end;
+    gUpdateMore();
+  }
+
+  function gUpdateMore(){
+    var left = MSG_ALL.length - MSG_SHOWN;
+    if (left > 0){
+      gmorewrap.style.display = "block";
+      gmorebtn.textContent = "加载更多（还有 " + left + " 条）";
+      gmoretxt.textContent = "已显示 " + MSG_SHOWN + " / " + MSG_ALL.length + " 条";
+    } else {
+      gmorewrap.style.display = "block";
+      gmorebtn.style.display = "none";
+      gmoretxt.textContent = MSG_ALL.length ? ("已显示全部 " + MSG_ALL.length + " 条留言") : "还没有留言，来抢第一条吧";
+    }
+  }
+
+  function renderMessages(list){
+    MSG_ALL = (list || []).slice();
+    MSG_SHOWN = 0;
+    glist.innerHTML = "";
+    if (!MSG_ALL.length){
+      glist.innerHTML = '<div class="gempty"><span class="ic">◇</span><div class="t">还没有人留言 — 写下第一条吧</div></div>';
+      gUpdateMore();
+      return;
+    }
+    gAppendBatch();
+  }
+
+  /* 后端连不上时给出可操作的排查指引。
+     要点：区分"访问者是不是本机"——本机多半是服务没启动，
+     外部访客则多半是端口没映射到公网，两者的解法完全不同。 */
+  function backendHelp(){
+    var lines = [];
+    var proto = location.protocol;
+    var isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || "");
+
+    if (proto === "https:"){
+      lines.push('当前页面是 <b style="color:#ff8a9c">https</b> 协议，' +
+        '浏览器会拦截对 http 后端的请求（混合内容限制）。');
+      lines.push('请改用 <b style="color:#cfe3f5">http://' + location.hostname +
+        ':3000</b> 访问本站——后端自带页面托管，这样页面和接口同源，不会有跨域问题。');
+    } else if (proto === "file:"){
+      lines.push('当前是直接双击打开的本地文件，后端地址无法自动推断。');
+      lines.push('请改用 <b style="color:#cfe3f5">http://localhost:3000</b> 访问本站。');
+    } else if (isLocal){
+      lines.push('请确认后端服务已启动。');
+      lines.push('方式一：双击 <code style="color:#ff8a9c">D:\\ZFSN-server\\启动服务.bat</code>');
+      lines.push('方式二：在该目录执行 <code style="color:#ff8a9c">node server.js</code>');
+      lines.push('（注：开机自启计划任务会自动拉起，正常无需手动操作）');
+    } else {
+      // 外部访客：本机服务大概率是好的，问题出在网络上
+      lines.push('你的浏览器没能连上本站的后端服务。');
+      lines.push('如果你是站主：请检查路由器是否把 <b style="color:#ff8a9c">3000</b> ' +
+        '端口映射到了本机，以及 Windows 防火墙是否放行。');
+      lines.push('如果你是访客：可能是站点暂时离线，稍后再试即可。');
+    }
+    return lines.join("<br>");
+  }
+
+  function loadMessages(){
+    api("/api/messages").then(function(d){
+      renderMessages(d.items);
+      if (gcount) gcount.textContent = d.count;
+    }).catch(function(e){
+      glist.innerHTML = '<div class="gempty"><span class="ic">⚠</span>' +
+        '<div class="t">留言服务暂时连不上</div>' +
+        '<div style="margin-top:12px;font-size:11.5px;color:#7a7a8c;line-height:2;text-align:left;max-width:460px;margin-left:auto;margin-right:auto">' +
+        backendHelp() +
+        '<div style="margin-top:10px;color:#3f3f4d;font-size:10.5px">技术信息：' + esc(e.message) + '</div>' +
+        '</div></div>';
+      if (gcount) gcount.textContent = "—";
+    });
+  }
+
+  function loadMyGeo(){
+    api("/api/geo").then(function(d){
+      myGeo = d;
+      if (gmloc) gmloc.textContent = d.region || "未知";
+      if (gmine) gmine.textContent = d.region || "未知";
+    }).catch(function(){
+      if (gmloc) gmloc.textContent = "识别失败";
+      if (gmine) gmine.textContent = "—";
+    });
+  }
+
+  function openModal(){
+    gmerr.textContent = "";
+    gmask.classList.add("on");
+    document.body.classList.add("locked");
+    setTimeout(function(){ gname.focus(); }, 180);
+  }
+  function closeModal(){
+    gmask.classList.remove("on");
+    document.body.classList.remove("locked");
+  }
+
+  $("#g-write").addEventListener("click", openModal);
+  $("#gclose").addEventListener("click", closeModal);
+  gmask.addEventListener("click", function(e){ if (e.target === gmask) closeModal(); });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape" && gmask.classList.contains("on")) closeModal();
+  });
+
+  gtext.addEventListener("input", function(){
+    $("#gmtext-cnt").textContent = gtext.value.length;
+  });
+
+  gsubmit.addEventListener("click", function(){
+    var name = gname.value.trim();
+    var text = gtext.value.trim();
+    gmerr.innerHTML = "";
+    if (!name){ gmerr.textContent = "请填写名字"; gname.focus(); return; }
+    if (!text){ gmerr.textContent = "请填写留言内容"; gtext.focus(); return; }
+
+    gsubmit.disabled = true;
+    gsubmit.textContent = "发布中…";
+    api("/api/messages", {
+      method: "POST",
+      body: JSON.stringify({ name: name, text: text })
+    }).then(function(d){
+      gtext.value = "";
+      $("#gmtext-cnt").textContent = "0";
+      closeModal();
+      loadMessages();
+      // 让「我的位置」也刷新一下
+      if (!myGeo) loadMyGeo();
+    }).catch(function(e){
+      var msg = e.message || "发布失败";
+      gmerr.innerHTML = esc(msg);
+      // 后端连不上时，给出可操作的指引
+      if (/未启动|Failed to fetch|NetworkError|Load failed/i.test(msg)){
+        gmerr.innerHTML = '无法连接后端服务<br>' +
+          '<span style="color:#7a7a8c;font-size:11px">' + backendHelp() + '</span>';
+      }
+    }).then(function(){
+      gsubmit.disabled = false;
+      gsubmit.textContent = "发布留言";
+    });
+  });
+
+  gmorebtn.addEventListener("click", gAppendBatch);
+
+  /* 页面打开就预探测后端，这样点「写留言」时已经就绪 */
+  detectAPI();
+  loadMessages();
+  loadMyGeo();
+})();
+</script>
+</body>
+</html>

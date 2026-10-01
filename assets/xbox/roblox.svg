@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 900">
+<defs>
+<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#2b2f38"/><stop offset="1" stop-color="#0d1016"/>
+</linearGradient>
+</defs>
+<rect width="720" height="900" fill="url(#g)"/>
+<g transform="translate(360,400)">
+<rect x="-110" y="-110" width="220" height="220" rx="42" fill="#e2231a" transform="rotate(18)"/>
+<rect x="-46" y="-46" width="92" height="92" fill="#2b2f38" transform="rotate(18)"/>
+</g>
+<text x="360" y="620" text-anchor="middle" font-family="Arial,sans-serif" font-size="58" font-weight="bold" fill="#e8e8ee">Roblox</text>
+<text x="360" y="668" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" fill="#6a6a7c">Not Supported</text>
+</svg>
