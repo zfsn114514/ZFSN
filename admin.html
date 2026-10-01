@@ -229,10 +229,67 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 }
 .fld input::placeholder,.fld textarea::placeholder{color:#3f3f4d}
 .fld .hint{font-size:10.5px;color:var(--dim);margin-top:6px;letter-spacing:.04em}
+
+/* ── 图片上传区 ── */
+.drop{
+  position:relative;border-radius:12px;cursor:pointer;overflow:hidden;
+  border:1px dashed var(--line2);background:rgba(0,0,0,.28);
+  transition:border-color .3s,background .3s;
+}
+.drop:hover{border-color:rgba(255,45,74,.5);background:rgba(0,0,0,.4)}
+.drop.over{border-color:var(--red);background:rgba(255,45,74,.08)}
+.drop.busy{pointer-events:none;opacity:.7}
+.drop-empty{padding:26px 20px;text-align:center}
+.drop-empty svg{width:26px;height:26px;color:var(--red-soft);opacity:.85;margin-bottom:11px}
+.drop-empty .dt{font-size:12.5px;color:var(--silver);letter-spacing:.03em}
+.drop-empty .ds{font-size:10.5px;color:var(--dim);margin-top:7px;letter-spacing:.05em}
+.drop-prev{display:flex;gap:14px;align-items:center;padding:12px}
+.drop-prev.hide{display:none}
+.drop-prev img{
+  width:88px;height:88px;flex:0 0 88px;object-fit:cover;border-radius:9px;
+  border:1px solid var(--line2);background:#08080d;
+}
+.pv-info{min-width:0;flex:1}
+.pv-path{
+  font-size:10.5px;color:var(--muted);font-family:ui-monospace,Consolas,monospace;
+  word-break:break-all;line-height:1.6;margin-bottom:10px;
+}
+.pv-act{display:flex;gap:9px;flex-wrap:wrap}
+/* 上传进度条 */
+.drop-bar{
+  position:absolute;left:0;right:0;bottom:0;height:2px;background:transparent;
+  opacity:0;transition:opacity .3s;
+}
+.drop-bar.on{opacity:1}
+.drop-bar span{
+  display:block;height:100%;width:0;
+  background:linear-gradient(90deg,var(--red),#ff8a9c);
+  transition:width .25s ease;
+}
 .frow{display:flex;gap:11px;flex-wrap:wrap;margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}
 .msg{font-size:12px;letter-spacing:.03em;min-height:18px;margin-top:12px}
 .msg.ok{color:var(--green)}
 .msg.bad{color:var(--red-soft)}
+
+/* 作品列表缩略图 */
+.itrow{display:flex;gap:14px;align-items:flex-start}
+.itbody{flex:1;min-width:0}
+.thumb{
+  width:74px;height:74px;flex:0 0 74px;object-fit:cover;border-radius:9px;
+  border:1px solid var(--line2);background:#08080d;display:block;
+}
+.thumb.ph{
+  display:grid;place-items:center;font-size:10px;color:var(--dim);
+  letter-spacing:.08em;border-style:dashed;
+}
+.thumb.broken{opacity:.35}
+.itpath{
+  font-size:9.5px;color:#3f3f4d;font-family:ui-monospace,Consolas,monospace;
+  margin-top:9px;word-break:break-all;letter-spacing:.02em;
+}
+@media (max-width:560px){
+  .thumb{width:56px;height:56px;flex:0 0 56px}
+}
 
 /* 列表条目 */
 .items{display:grid;gap:11px}
@@ -469,17 +526,40 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
           <label>简介</label>
           <textarea id="w-desc" rows="2" maxlength="300" placeholder="一句话描述这个作品"></textarea>
         </div>
-        <div class="grid2">
-          <div class="fld">
-            <label>图片地址</label>
-            <input id="w-cover" type="text" maxlength="800" placeholder="https://... 或 assets/xxx.jpg">
-            <div class="hint">留空则自动生成渐变占位图</div>
+        <div class="fld">
+          <label>作品图片</label>
+          <!-- 拖拽 / 点击上传：图片直接落到 assets/works/，
+               不用再手填目录 —— 手填容易写绝对路径或拼错文件名，页面上就裂图了 -->
+          <div class="drop" id="w-drop">
+            <input type="file" id="w-file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" hidden>
+            <div class="drop-empty" id="w-drop-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>
+              </svg>
+              <div class="dt">点击选择图片，或把图片拖到这里</div>
+              <div class="ds">JPG / PNG / WebP / GIF / AVIF · 最大 12MB</div>
+            </div>
+            <div class="drop-prev hide" id="w-drop-prev">
+              <img id="w-prev-img" src="" alt="">
+              <div class="pv-info">
+                <div class="pv-path" id="w-prev-path"></div>
+                <div class="pv-act">
+                  <button type="button" class="btn sm" id="w-repick">换一张</button>
+                  <button type="button" class="btn danger sm" id="w-clear">移除</button>
+                </div>
+              </div>
+            </div>
+            <div class="drop-bar" id="w-drop-bar"><span id="w-drop-bar-in"></span></div>
           </div>
-          <div class="fld">
-            <label>跳转链接</label>
-            <input id="w-link" type="text" maxlength="500" placeholder="https://... （可留空）">
-            <div class="hint">点击作品卡片时打开</div>
-          </div>
+          <input type="hidden" id="w-cover">
+          <div class="hint" id="w-cover-hint">上传后会保存到 assets/works/ 并自动填入路径；留空则用渐变占位图</div>
+        </div>
+
+        <div class="fld">
+          <label>跳转链接</label>
+          <input id="w-link" type="text" maxlength="500" placeholder="https://... （可留空）">
+          <div class="hint">点击作品卡片时打开</div>
         </div>
         <div class="fld" style="max-width:220px">
           <label>排序权重</label>
@@ -1098,13 +1178,126 @@ if ($("#refresh-inter")){
 var WORKS = [];
 var editingId = null;
 
+/* ── 图片上传 ──
+ * 走 /api/upload（multipart），后端把图片存进站点 assets/works/，
+ * 返回相对路径，直接写进隐藏字段 w-cover。
+ *
+ * 为什么不让用户手填路径：
+ *   手填极易写成 D:\ZFSNwebsite\assets\x.jpg 这类绝对路径、
+ *   或者文件名大小写/后缀拼错 —— 浏览器加载不了，页面上直接裂图。
+ */
+function setCoverPreview(path){
+  var prev = $("#w-drop-prev"), empty = $("#w-drop-empty");
+  if (!prev || !empty) return;
+  if (path){
+    $("#w-cover").value = path;
+    $("#w-prev-img").src = (path.indexOf("://") >= 0 || path.charAt(0) === "/") ? path : path;
+    $("#w-prev-path").textContent = path;
+    prev.classList.remove("hide");
+    empty.classList.add("hide");
+  } else {
+    $("#w-cover").value = "";
+    $("#w-prev-img").removeAttribute("src");
+    prev.classList.add("hide");
+    empty.classList.remove("hide");
+  }
+}
+
+function uploadImage(file){
+  if (!file) return;
+  if (!/^image\//.test(file.type || "")){
+    toast("只能上传图片文件", "bad");
+    return;
+  }
+  if (file.size > 12 * 1024 * 1024){
+    toast("图片太大了（上限 12MB）", "bad");
+    return;
+  }
+  var drop = $("#w-drop"), bar = $("#w-drop-bar"), barIn = $("#w-drop-bar-in");
+  drop.classList.add("busy");
+  bar.classList.add("on");
+  barIn.style.width = "0%";
+
+  var fd = new FormData();
+  fd.append("file", file);
+
+  // 不用 api()：它会给所有请求硬塞 Content-Type: application/json，
+  // 那会破坏 multipart 的 boundary。这里自己带 Token。
+  var t = localStorage.getItem(TOKEN_KEY);
+  detectAPI().then(function(base){
+    if (base === null) throw new Error("后端服务未启动");
+    return new Promise(function(resolve, reject){
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", base + "/api/upload", true);
+      if (t) xhr.setRequestHeader("X-Admin-Token", t);
+      xhr.upload.onprogress = function(e){
+        if (e.lengthComputable) barIn.style.width = Math.round(e.loaded / e.total * 100) + "%";
+      };
+      xhr.onload = function(){
+        var d = {};
+        try { d = JSON.parse(xhr.responseText || "{}"); } catch (e) {}
+        if (xhr.status >= 200 && xhr.status < 300 && d.ok !== false) resolve(d);
+        else reject(new Error(d.error || ("上传失败 (HTTP " + xhr.status + ")")));
+      };
+      xhr.onerror = function(){ reject(new Error("网络错误，上传失败")); };
+      xhr.send(fd);
+    });
+  }).then(function(d){
+    drop.classList.remove("busy");
+    barIn.style.width = "100%";
+    setTimeout(function(){ bar.classList.remove("on"); }, 380);
+    setCoverPreview(d.path);
+    toast("图片已上传 · " + Math.round(d.size / 1024) + " KB", "ok");
+    $("#w-cover-hint").textContent = "已保存到 " + d.path;
+  }).catch(function(e){
+    drop.classList.remove("busy");
+    bar.classList.remove("on");
+    toast(e.message, "bad");
+    if (/登录|会话/.test(e.message)) backToLogin();
+  });
+}
+
+(function initUpload(){
+  var drop = $("#w-drop"), input = $("#w-file");
+  if (!drop || !input) return;
+
+  drop.addEventListener("click", function(e){
+    if (e.target.closest("#w-repick")) { e.stopPropagation(); input.value = ""; input.click(); return; }
+    if (e.target.closest("#w-clear")) { e.stopPropagation(); setCoverPreview(""); $("#w-cover-hint").textContent = "已移除图片，将使用渐变占位图"; return; }
+    input.value = "";
+    input.click();
+  });
+  input.addEventListener("change", function(){
+    if (input.files && input.files[0]) uploadImage(input.files[0]);
+  });
+
+  // 拖拽上传
+  ["dragenter", "dragover"].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.remove("over"); });
+  });
+  drop.addEventListener("drop", function(e){
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) uploadImage(f);
+  });
+
+  // 防止把图片拖到页面其它地方时浏览器直接打开图片
+  ["dragover", "drop"].forEach(function(ev){
+    window.addEventListener(ev, function(e){ e.preventDefault(); });
+  });
+})();
+
 function openWorkForm(item){
   editingId = item ? item.id : null;
   $("#work-form-title").textContent = item ? "编辑作品" : "添加新作品";
   $("#w-title").value = item ? (item.title || "") : "";
   $("#w-tag").value = item ? (item.tag || "") : "";
   $("#w-desc").value = item ? (item.desc || "") : "";
-  $("#w-cover").value = item ? (item.cover || "") : "";
+  setCoverPreview(item ? (item.cover || "") : "");
+  $("#w-cover-hint").textContent = "上传后会保存到 assets/works/ 并自动填入路径；留空则用渐变占位图";
+  if ($("#w-file")) $("#w-file").value = "";
   $("#w-link").value = item ? (item.link || "") : "";
   $("#w-order").value = item ? (item.order || 0) : 0;
   $("#w-msg").textContent = "";
@@ -1123,11 +1316,17 @@ $("#w-save").addEventListener("click", function(){
   var title = $("#w-title").value.trim();
   var msg = $("#w-msg");
   if (!title){ msg.className = "msg bad"; msg.textContent = "请填写作品标题"; return; }
+  // 图片路径归一化：万一存进来的是 D:\ZFSNwebsite\assets\works\x.jpg
+  // 这类绝对路径，转成站点内相对路径再提交，前端才能加载。
+  var cover = ($("#w-cover").value || "").trim();
+  var pm = cover.match(/[\\/]ZFSNwebsite[\\/](.+)$/i);
+  if (pm) cover = pm[1].replace(/\\/g, "/");
+
   var body = {
     title: title,
     tag: $("#w-tag").value.trim(),
     desc: $("#w-desc").value.trim(),
-    cover: $("#w-cover").value.trim(),
+    cover: cover,
     link: $("#w-link").value.trim(),
     order: Number($("#w-order").value) || 0
   };
@@ -1165,20 +1364,30 @@ function loadWorks(){
     WORKS.forEach(function(w, i){
       var el = document.createElement("div");
       el.className = "it";
+      // 显示真实缩略图：路径填错时能一眼看出来，不用去前台才发现裂图
+      var th = w.cover
+        ? '<img class="thumb" src="' + esc(w.cover) + '" alt="" loading="lazy" onerror="this.classList.add(\'broken\')">'
+        : '<span class="thumb ph">无图</span>';
       el.innerHTML =
-        "<header>" +
-          '<span class="who">' + esc(w.title) + "</span>" +
-          (w.tag ? '<span class="loc">' + esc(w.tag) + "</span>" : "") +
-          '<span class="when">' + esc(w.time || "") + " · 权重 " + (w.order || 0) + "</span>" +
-        "</header>" +
-        (w.desc ? '<div class="body">' + esc(w.desc) + "</div>" : "") +
-        '<div class="meta">' +
-          (w.cover ? '<span class="tag">含图片</span>' : "") +
-          (w.link ? '<span class="tag">含链接</span>' : '<span class="tag">无链接</span>') +
-          '<span class="act">' +
-            '<button class="btn sm" data-edit="' + w.id + '">编辑</button>' +
-            '<button class="btn danger sm" data-wdel="' + w.id + '">删除</button>' +
-          "</span>" +
+        '<div class="itrow">' +
+          th +
+          '<div class="itbody">' +
+            "<header>" +
+              '<span class="who">' + esc(w.title) + "</span>" +
+              (w.tag ? '<span class="loc">' + esc(w.tag) + "</span>" : "") +
+              '<span class="when">' + esc(w.time || "") + " · 权重 " + (w.order || 0) + "</span>" +
+            "</header>" +
+            (w.desc ? '<div class="body">' + esc(w.desc) + "</div>" : "") +
+            '<div class="meta">' +
+              (w.cover ? '<span class="tag">含图片</span>' : "") +
+              (w.link ? '<span class="tag">含链接</span>' : '<span class="tag">无链接</span>') +
+              '<span class="act">' +
+                '<button class="btn sm" data-edit="' + w.id + '">编辑</button>' +
+                '<button class="btn danger sm" data-wdel="' + w.id + '">删除</button>' +
+              "</span>" +
+            "</div>" +
+            (w.cover ? '<div class="itpath">' + esc(w.cover) + "</div>" : "") +
+          "</div>" +
         "</div>";
       box.appendChild(el);
     });

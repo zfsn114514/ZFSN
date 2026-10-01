@@ -391,6 +391,149 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 .wcmt-form .ft .msg.err{color:var(--red-soft)}
 .wcmt-form .ft .msg.ok{color:#4ade80}
 
+/* ══════════ 作品详情页 ══════════ */
+.backbtn{
+  display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  padding:8px 15px 8px 11px;border-radius:9px;margin-bottom:24px;
+  font-size:12px;letter-spacing:.05em;font-family:inherit;
+  color:var(--muted);background:var(--surface);border:1px solid var(--line);
+  transition:color .3s,border-color .3s,transform .3s var(--ease);
+}
+.backbtn:hover{color:var(--text);border-color:var(--line2);transform:translateX(-3px)}
+.backbtn svg{width:14px;height:14px}
+
+.wd-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:34px;align-items:start}
+@media (max-width:880px){.wd-layout{grid-template-columns:1fr;gap:26px}}
+
+/* 大图：点一下可进灯光箱全屏看 */
+.wd-media{
+  position:relative;border-radius:16px;overflow:hidden;cursor:zoom-in;
+  background:var(--surface);border:1px solid var(--line);
+  box-shadow:0 26px 70px rgba(0,0,0,.6);
+}
+.wd-media img{width:100%;display:block;transition:transform .7s var(--ease)}
+.wd-media:hover img{transform:scale(1.02)}
+.wd-media .zoombadge{
+  position:absolute;right:13px;bottom:13px;z-index:2;
+  display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;
+  font-size:10.5px;letter-spacing:.08em;color:var(--text);
+  background:rgba(0,0,0,.62);border:1px solid var(--line2);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  opacity:0;transition:opacity .35s;
+}
+.wd-media:hover .zoombadge{opacity:1}
+.wd-media .zoombadge svg{width:12px;height:12px}
+
+/* 右侧信息栏 */
+.wd-side{position:sticky;top:96px}
+@media (max-width:880px){.wd-side{position:static}}
+.wd-kicker{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--red-soft);opacity:.85;margin-bottom:11px}
+.wd-title{font-size:clamp(22px,3.6vw,32px);font-weight:800;letter-spacing:.005em;line-height:1.28}
+.wd-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px}
+.wd-desc{
+  margin-top:18px;font-size:13.5px;line-height:1.85;color:var(--silver);
+  letter-spacing:.015em;white-space:pre-wrap;word-break:break-word;
+}
+.wd-act{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:24px}
+
+/* 点赞大按钮 */
+.wd-like{
+  display:inline-flex;align-items:center;gap:9px;cursor:pointer;
+  padding:11px 20px;border-radius:11px;font-size:13px;font-weight:600;
+  font-family:inherit;letter-spacing:.03em;
+  color:var(--text);background:var(--surface2);border:1px solid var(--line2);
+  transition:background .3s,border-color .3s,color .3s,transform .25s var(--ease);
+}
+.wd-like:hover{border-color:rgba(255,45,74,.55);color:#fff;transform:translateY(-2px)}
+.wd-like svg{width:16px;height:16px;flex:0 0 auto}
+.wd-like.on{color:#ff4d63;border-color:rgba(255,45,74,.6);background:rgba(255,45,74,.14)}
+.wd-like.on svg{fill:currentColor}
+.wd-like.bump{animation:likeBump .42s var(--ease)}
+.wd-like:disabled{opacity:.6;cursor:default;transform:none}
+
+/* 互动统计小条 */
+.wd-stats{display:flex;gap:22px;flex-wrap:wrap;margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.wd-stat{display:flex;flex-direction:column;gap:2px}
+.wd-stat .v{font-size:19px;font-weight:800;letter-spacing:.01em;color:var(--text)}
+.wd-stat .k{font-size:10px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
+
+/* 上一件 / 下一件 */
+.wd-nav{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:30px}
+.wd-nav a{
+  display:flex;align-items:center;gap:10px;padding:11px;border-radius:11px;
+  background:var(--surface);border:1px solid var(--line);text-decoration:none;
+  transition:border-color .3s,transform .3s var(--ease);
+}
+.wd-nav a:hover{border-color:var(--line2);transform:translateY(-2px)}
+.wd-nav img{width:42px;height:42px;flex:0 0 42px;object-fit:cover;border-radius:8px;background:#08080d}
+.wd-nav .t{font-size:11.5px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wd-nav .d{font-size:9.5px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:3px}
+.wd-nav .nx{text-align:right;justify-content:flex-end}
+.wd-nav .nx .txt{margin-left:auto}
+.wd-nav .ph{width:42px;height:42px;flex:0 0 42px;border-radius:8px;border:1px dashed var(--line2);display:grid;place-items:center;font-size:9px;color:var(--faint)}
+
+/* ── 评论区（详情页内嵌，全部评论公开可见）── */
+.wdc{margin-top:44px;padding-top:34px;border-top:1px solid var(--line)}
+.wdc-hd{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+.wdc-hd h3{font-size:17px;font-weight:700;letter-spacing:.02em}
+.wdc-hd .c{font-size:11.5px;color:var(--muted);letter-spacing:.06em}
+.wdc-form{
+  padding:18px 20px;border-radius:13px;margin-bottom:26px;
+  background:var(--surface);border:1px solid var(--line);
+}
+.wdc-form .row{display:flex;gap:11px;margin-bottom:11px}
+.wdc-form input,.wdc-form textarea{
+  width:100%;padding:11px 14px;border-radius:10px;font-family:inherit;font-size:13px;
+  background:rgba(0,0,0,.35);border:1px solid var(--line);color:var(--text);
+  outline:none;resize:vertical;line-height:1.7;
+  transition:border-color .3s,box-shadow .3s,background .3s;
+}
+.wdc-form input{max-width:260px}
+.wdc-form input:focus,.wdc-form textarea:focus{border-color:rgba(255,45,74,.5);background:rgba(0,0,0,.45)}
+.wdc-form input::placeholder,.wdc-form textarea::placeholder{color:var(--faint)}
+.wdc-form .ft{display:flex;align-items:center;gap:12px;margin-top:12px}
+.wdc-form .ft .msg{font-size:11.5px;flex:1;letter-spacing:.02em}
+.wdc-form .ft .msg.err{color:var(--red-soft)}
+.wdc-form .ft .msg.ok{color:#4ade80}
+@media (max-width:560px){.wdc-form input{max-width:none}}
+
+.wdc-list{display:grid;gap:0}
+.wdc-item{
+  position:relative;padding:16px 18px 16px 20px;border-radius:12px;margin-bottom:10px;
+  background:var(--surface);border:1px solid var(--line);
+  transition:border-color .3s,background .3s;
+}
+.wdc-item:hover{border-color:var(--line2);background:var(--surface2)}
+.wdc-item::before{
+  content:"";position:absolute;left:0;top:14px;bottom:14px;width:2px;border-radius:2px;
+  background:linear-gradient(180deg,var(--red),transparent);opacity:.5;
+}
+.wdc-item header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.wdc-item .av{
+  width:26px;height:26px;border-radius:50%;flex:0 0 26px;
+  display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;
+  background:linear-gradient(140deg,var(--red),#7a0f22);
+  border:1px solid rgba(255,255,255,.14);
+}
+.wdc-item .nm{font-size:13px;font-weight:700;letter-spacing:.02em}
+.wdc-item .rg{
+  display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;
+  font-size:10px;letter-spacing:.05em;color:#9db4c8;
+  background:rgba(102,163,217,.1);border:1px solid rgba(102,163,217,.22);
+}
+.wdc-item .rg svg{width:9px;height:9px}
+.wdc-item .no{font-size:10px;color:var(--faint);letter-spacing:.08em}
+.wdc-item .tm{margin-left:auto;font-size:10px;color:var(--faint);letter-spacing:.06em}
+.wdc-item .bd{
+  font-size:13px;line-height:1.8;color:#c3c3cf;letter-spacing:.015em;
+  white-space:pre-wrap;word-break:break-word;
+}
+.wdc-empty{
+  text-align:center;padding:52px 20px;border-radius:13px;
+  background:var(--surface);border:1px dashed var(--line);
+  font-size:13px;color:var(--muted);letter-spacing:.05em;
+}
+
 /* ── 轻量提示条 ── */
 .ztoast{
   position:fixed;left:50%;bottom:34px;z-index:220;
@@ -691,44 +834,63 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 }
 .gstat .k{font-size:10.5px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
 
-.glist{display:grid;gap:13px}
+/* 留言列表：多列瀑布式排布。
+   原来是单列满宽 —— 一条两三个字的留言会横跨整个屏幕，
+   右侧留出巨大空白，滚动起来非常累。改成卡片式多列后
+   屏幕利用率高得多，一屏能看十几条。 */
+.glist{
+  display:grid;gap:12px;
+  grid-template-columns:repeat(auto-fill,minmax(272px,1fr));
+  align-items:start;
+}
 .gitem{
-  position:relative;padding:17px 20px 17px 22px;border-radius:13px;
+  position:relative;padding:14px 16px 14px 18px;border-radius:12px;
   background:var(--surface);border:1px solid var(--line);
   transition:border-color .35s,box-shadow .35s,transform .35s var(--ease);
 }
 .gitem::before{
-  content:"";position:absolute;left:0;top:14px;bottom:14px;width:2px;border-radius:2px;
+  content:"";position:absolute;left:0;top:12px;bottom:12px;width:2px;border-radius:2px;
   background:linear-gradient(180deg,var(--red),transparent);
   opacity:.55;transition:opacity .35s;
 }
 .gitem:hover{border-color:var(--line2);box-shadow:0 12px 34px rgba(0,0,0,.5);transform:translateY(-2px)}
 .gitem:hover::before{opacity:1}
 .gitem header{
-  display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:10px;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:8px;
 }
-.gitem .who{font-size:13.5px;font-weight:700;letter-spacing:.02em}
+.gitem .who{font-size:12.5px;font-weight:700;letter-spacing:.02em}
 .gitem .av{
-  width:26px;height:26px;border-radius:50%;flex:0 0 26px;
-  display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;
+  width:22px;height:22px;border-radius:50%;flex:0 0 22px;
+  display:grid;place-items:center;font-size:10px;font-weight:800;color:#fff;
   background:linear-gradient(140deg,var(--red),#7a0f22);
   border:1px solid rgba(255,255,255,.14);
 }
 .gitem .loc{
-  display:inline-flex;align-items:center;gap:5px;
-  font-size:10.5px;letter-spacing:.06em;color:#9db4c8;
-  padding:3px 9px;border-radius:20px;
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;letter-spacing:.05em;color:#9db4c8;
+  padding:2px 8px;border-radius:20px;
   background:rgba(102,163,217,.1);border:1px solid rgba(102,163,217,.22);
 }
-.gitem .loc svg{width:10px;height:10px}
-.gitem .when{margin-left:auto;font-size:10.5px;color:#4a4a5a;letter-spacing:.08em}
+.gitem .loc svg{width:9px;height:9px}
+.gitem .when{margin-left:auto;font-size:10px;color:#4a4a5a;letter-spacing:.06em}
+/* 正文最多显示 6 行 —— 长留言折叠，避免个别超长内容把整列撑爆 */
 .gitem .body{
-  font-size:13.5px;line-height:1.82;color:#c3c3cf;letter-spacing:.015em;
+  font-size:13px;line-height:1.72;color:#c3c3cf;letter-spacing:.015em;
   white-space:pre-wrap;word-break:break-word;
+  display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;
 }
-.gitem .ip{font-size:10px;color:#3a3a48;letter-spacing:.06em;margin-top:9px;font-family:ui-monospace,Consolas,monospace}
+.gitem .ip{font-size:9.5px;color:#3a3a48;letter-spacing:.05em;margin-top:7px;font-family:ui-monospace,Consolas,monospace}
+/* 被折叠的留言：显示"展开"提示，点开后完整展示 */
+.gitem.clamped{cursor:pointer}
+.gitem.clamped::after{
+  content:"展开全文";display:block;margin-top:8px;
+  font-size:10px;letter-spacing:.1em;color:var(--red-soft);opacity:.75;
+}
+.gitem.clamped.open::after{content:"收起"}
+.gitem.clamped.open .body{-webkit-line-clamp:unset;display:block;overflow:visible}
 
 .gempty{
+  grid-column:1/-1;
   text-align:center;padding:70px 20px;border-radius:14px;
   background:var(--surface);border:1px dashed var(--line);
 }
@@ -736,7 +898,7 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 .gempty .t{font-size:14px;color:var(--muted);letter-spacing:.06em}
 
 .gskeleton{
-  height:96px;border-radius:13px;border:1px solid var(--line);background:var(--surface);
+  height:88px;border-radius:12px;border:1px solid var(--line);background:var(--surface);
   animation:shim 1.4s ease-in-out infinite;
 }
 
@@ -1052,9 +1214,25 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     <div class="phead">
       <div class="kicker">Gallery</div>
       <h2>作品展示墙</h2>
-      <p>二次元插画 / 视觉创作 — 点击任意作品放大查看</p>
+      <p>二次元插画 / 视觉创作 — 点击任意作品进入详情页</p>
     </div>
     <div class="gallery" id="gallery"></div>
+  </div>
+</section>
+
+<!-- ══ 作品详情 ══ -->
+<section class="page" id="page-work">
+  <div class="wrap">
+    <button class="backbtn" id="wd-back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      返回作品墙
+    </button>
+    <div id="wd-root">
+      <div class="wd-layout">
+        <div class="wd-media"><div class="skeleton" style="aspect-ratio:4/5"></div></div>
+        <div class="wd-side"><div class="skeleton" style="height:200px"></div></div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -1495,7 +1673,10 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
 
   /* ═══ 页面切换 ═══ */
   var wipe = $("#wipe");
-  var pages = { home: $("#page-home"), works: $("#page-works"), bili: $("#page-bili"), steam: $("#page-steam"), guest: $("#page-guest") };
+  var pages = {
+    home: $("#page-home"), works: $("#page-works"), work: $("#page-work"),
+    bili: $("#page-bili"), steam: $("#page-steam"), guest: $("#page-guest")
+  };
   var navBtns = $$(".nav button");
   var current = "home";
   var switching = false;
@@ -1503,7 +1684,9 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   function setActive(key){
     $$(".page").forEach(function(p){ p.classList.remove("active"); });
     if (pages[key]) pages[key].classList.add("active");
-    navBtns.forEach(function(b){ b.classList.toggle("active", b.dataset.go === key); });
+    // 作品详情页属于"作品"这一栏，导航高亮要跟着走
+    var navKey = (key === "work") ? "works" : key;
+    navBtns.forEach(function(b){ b.classList.toggle("active", b.dataset.go === navKey); });
     current = key;
     window.scrollTo(0, 0);
     // 切到作品页时刷新一次 —— 保证后台新加的作品马上可见，
@@ -1532,6 +1715,39 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   $$(".hs-card").forEach(function(c){
     c.addEventListener("click", function(){ go(c.dataset.go); });
   });
+
+  /* ═══ 地址栏路由（作品详情可分享）═══
+   * #work/<id>    → 打开该作品详情页
+   * 其它 / 空     → 普通页面切换
+   *
+   * 用 hash 而不是 history.pushState：静态站部署在任意子目录下都不用改
+   * 服务器配置，刷新也不会 404。
+   */
+  function openWorkById(id){
+    if (!id) return;
+    if (current === "work" && window.__zfsnWorkId === id) return;
+    go("work");
+    if (window.__zfsnLoadWork) window.__zfsnLoadWork(id);
+  }
+
+  function routeFromHash(){
+    var h = (location.hash || "").replace(/^#/, "");
+    var m = h.match(/^work\/([a-f0-9]+)$/i);
+    if (m) { openWorkById(m[1]); return; }
+    if (pages[h]) { go(h); return; }
+    go("home");
+  }
+
+  window.__zfsnOpenWork = function(id){
+    // 写进地址栏，这样复制出去的链接别人打开就是同一件作品
+    if (("#work/" + id) !== location.hash){
+      try { location.hash = "work/" + id; return; }   // hashchange 会接手
+      catch (e) {}
+    }
+    openWorkById(id);
+  };
+
+  window.addEventListener("hashchange", routeFromHash);
 
   /* ═══ 作品展示墙 ═══
    * 数据来源：后端 /api/works（后台「作品管理」里添加的）。
@@ -1637,14 +1853,12 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
           (w.desc ? '<div class="gs">' + esc(w.desc) + '</div>' : '') +
         '</div>';
 
-      // 点卡片主体 → 放大查看（如果填了链接则打开链接）
+      // 点卡片主体 → 进入作品详情页
+      // （详情页里能看到完整大图、简介、点赞数，以及**所有人的评论**；
+      //   原来只是弹个灯箱放大图，别人评了什么完全看不到。）
       el.addEventListener("click", function(e){
-        if (e.target.closest(".gact")) return;    // 点赞/评论按钮不触发放大
-        if (w.link){
-          window.open(w.link, "_blank", "noopener");
-        } else {
-          openLB(el.querySelector("img").src, w.title);
-        }
+        if (e.target.closest(".gact")) return;    // 点赞/评论按钮不触发跳转
+        if (window.__zfsnOpenWork) window.__zfsnOpenWork(w.id);
       });
 
       gallery.appendChild(el);
@@ -2285,12 +2499,12 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     }
     // ── 首页 Xbox 概览卡 ──
     var hvx = $("#hs-xbox-v"), hsx = $("#hs-xbox-s");
+    var xTotalAch = Number(d.total_achievements) || ach;
     if (hvx) hvx.textContent = (d.count || games.length) + " 款游戏";
     if (hsx) hsx.textContent = tot > 0
-      ? Math.round(tot).toLocaleString() + " 小时" + (ach > 0 ? " · " + ach + " 成就" : "")
+      ? Math.round(tot).toLocaleString() + " 小时" +
+        (xTotalAch > 0 ? " · " + xTotalAch.toLocaleString() + " 成就" : "")
       : "暂无时长数据";
-    var hsub = $("#home-xbox-sub");
-    if (hsub && d.persona) hsub.textContent = d.persona;
     if (xstats && tot > 0){
       xstats.style.display = "grid";
       $("#xt-games").textContent = (d.count || games.length);
@@ -2504,6 +2718,16 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       '</header>' +
       '<div class="body">' + esc(m.text) + '</div>' +
       (m.ip && m.ip !== "127.0.0.1" ? '<div class="ip">' + esc(m.ip) + '</div>' : '');
+
+    // 正文超过 6 行会被 CSS 折叠，点一下展开看全文。
+    // 只给"真的被截断"的加交互，短留言点了没反应反而奇怪。
+    var body = d.querySelector(".body");
+    if (body && body.scrollHeight > body.clientHeight + 4){
+      d.classList.add("clamped");
+      d.addEventListener("click", function(){
+        d.classList.toggle("open");
+      });
+    }
     return d;
   }
 
