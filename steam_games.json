@@ -1,6 +1,6 @@
 {
   "source": "Steam Web API (官方)",
-  "updated": "2026-10-01 23:37:08",
+  "updated": "2026-10-02 03:25:43",
   "steamid": "76561199577166952",
   "profile": "https://steamcommunity.com/id/ZFSN114514/",
   "player": {
@@ -9,15 +9,15 @@
     "created": "2023-12-02"
   },
   "count": 165,
-  "total_hours": 2306.2,
+  "total_hours": 2308.3,
   "games": [
     {
       "appid": 438100,
       "name": "VRChat",
-      "minutes": 34760,
-      "hours": 579.3,
-      "playtime": "579 小时",
-      "recent": 564,
+      "minutes": 34883,
+      "hours": 581.4,
+      "playtime": "581 小时",
+      "recent": 687,
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/438100/header.jpg",
       "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/438100/capsule_616x353.jpg",
       "store": "https://store.steampowered.com/app/438100/"
@@ -1836,25 +1836,25 @@
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/header.jpg"
     },
     {
-      "appid": 5253140,
-      "name": "NekoTrak Demo",
-      "minutes2w": 666,
-      "playtime2w": "11.1 小时",
-      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/5253140/header.jpg"
-    },
-    {
       "appid": 250820,
       "name": "SteamVR",
-      "minutes2w": 643,
-      "playtime2w": "10.7 小时",
+      "minutes2w": 792,
+      "playtime2w": "13.2 小时",
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/250820/header.jpg"
     },
     {
       "appid": 438100,
       "name": "VRChat",
-      "minutes2w": 564,
-      "playtime2w": "9.4 小时",
+      "minutes2w": 687,
+      "playtime2w": "11.4 小时",
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/438100/header.jpg"
+    },
+    {
+      "appid": 5253140,
+      "name": "NekoTrak Demo",
+      "minutes2w": 666,
+      "playtime2w": "11.1 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/5253140/header.jpg"
     },
     {
       "appid": 480,

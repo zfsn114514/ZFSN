@@ -338,58 +338,8 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
   0%{transform:scale(1)} 38%{transform:scale(1.28)} 100%{transform:scale(1)}
 }
 
-/* ── 作品评论区（弹层）── */
-.wcmt{
-  position:fixed;inset:0;z-index:120;display:none;
-  align-items:center;justify-content:center;padding:20px;
-  background:rgba(4,4,8,.78);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
-}
-.wcmt.on{display:flex}
-.wcmt-box{
-  width:min(560px,100%);max-height:82vh;display:flex;flex-direction:column;
-  background:var(--surface);border:1px solid var(--line2);border-radius:16px;
-  overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.7);
-}
-.wcmt-hd{
-  display:flex;align-items:center;justify-content:space-between;gap:14px;
-  padding:17px 20px;border-bottom:1px solid var(--line);flex:0 0 auto;
-}
-.wcmt-hd .t{font-size:14.5px;font-weight:700;letter-spacing:.02em}
-.wcmt-hd .s{font-size:10.5px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
-.wcmt-x{
-  width:30px;height:30px;flex:0 0 auto;border-radius:50%;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;font-size:17px;
-  color:var(--muted);background:transparent;border:1px solid var(--line2);
-  transition:color .3s,border-color .3s,transform .3s;
-  font-family:inherit;line-height:1;
-}
-.wcmt-x:hover{color:var(--red);border-color:rgba(255,45,74,.5);transform:rotate(90deg)}
-.wcmt-list{flex:1 1 auto;overflow-y:auto;padding:14px 20px;min-height:96px}
-.wcmt-item{padding:11px 0;border-bottom:1px solid var(--line)}
-.wcmt-item:last-child{border-bottom:0}
-.wcmt-item .h{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.wcmt-item .nm{font-size:12.5px;font-weight:600}
-.wcmt-item .rg{
-  display:inline-flex;align-items:center;gap:4px;
-  font-size:10px;color:var(--muted);letter-spacing:.03em;
-}
-.wcmt-item .rg svg{width:10px;height:10px;flex:0 0 auto}
-.wcmt-item .tm{font-size:10px;color:var(--faint);margin-left:auto;letter-spacing:.03em}
-.wcmt-item .bd{font-size:12.5px;color:var(--silver);line-height:1.72;margin-top:6px;word-break:break-word}
+/* 通用空状态 / 加载失败文案（作品墙用） */
 .wcmt-empty{padding:22px 0;text-align:center;font-size:12px;color:var(--muted)}
-.wcmt-form{flex:0 0 auto;padding:15px 20px;border-top:1px solid var(--line);background:rgba(255,255,255,.015)}
-.wcmt-form .row{display:flex;gap:9px;margin-bottom:9px}
-.wcmt-form input,.wcmt-form textarea{
-  width:100%;padding:10px 13px;border-radius:10px;font-family:inherit;font-size:12.5px;
-  color:var(--text);background:rgba(0,0,0,.3);border:1px solid var(--line2);
-  outline:none;resize:vertical;transition:border-color .3s,background .3s;
-}
-.wcmt-form input:focus,.wcmt-form textarea:focus{border-color:rgba(255,45,74,.5);background:rgba(0,0,0,.45)}
-.wcmt-form input::placeholder,.wcmt-form textarea::placeholder{color:var(--faint)}
-.wcmt-form .ft{display:flex;align-items:center;gap:11px;margin-top:10px}
-.wcmt-form .ft .msg{font-size:11px;flex:1;letter-spacing:.02em}
-.wcmt-form .ft .msg.err{color:var(--red-soft)}
-.wcmt-form .ft .msg.ok{color:#4ade80}
 
 /* ══════════ 作品详情页 ══════════ */
 .backbtn{
@@ -1419,29 +1369,7 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
 
 <div id="lb"><span class="close">×</span><img src="" alt=""><div class="cap"></div></div>
 
-<!-- ══ 作品评论区弹层 ══ -->
-<div class="wcmt" id="wcmt">
-  <div class="wcmt-box" role="dialog" aria-modal="true" aria-labelledby="wcmt-title">
-    <div class="wcmt-hd">
-      <div>
-        <div class="t" id="wcmt-title">评论</div>
-        <div class="s" id="wcmt-sub"></div>
-      </div>
-      <button class="wcmt-x" id="wcmt-x" aria-label="关闭">×</button>
-    </div>
-    <div class="wcmt-list" id="wcmt-list"></div>
-    <div class="wcmt-form">
-      <div class="row">
-        <input id="wcmt-name" type="text" maxlength="24" placeholder="你的名字">
-      </div>
-      <textarea id="wcmt-text" rows="3" maxlength="800" placeholder="说点什么…"></textarea>
-      <div class="ft">
-        <button class="btn primary sm" id="wcmt-send">发表评论</button>
-        <span class="msg" id="wcmt-msg"></span>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- 作品评论已迁到「作品详情」页（#page-work），这里不再需要弹层 -->
 
 <!-- ══ 留言弹窗 ══ -->
 <div class="modal-mask" id="gmask">
@@ -1748,6 +1676,17 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   };
 
   window.addEventListener("hashchange", routeFromHash);
+  // 供启动时调用（写在文件末尾，那时所有渲染函数都已定义完毕）
+  window.__zfsnApplyRoute = function(){
+    var h = (location.hash || "").replace(/^#/, "");
+    var m = h.match(/^work\/([a-f0-9]+)$/i);
+    if (m){
+      setActive("work");
+      if (window.__zfsnLoadWork) window.__zfsnLoadWork(m[1]);
+      return;
+    }
+    if (pages[h]) setActive(h);
+  };
 
   /* ═══ 作品展示墙 ═══
    * 数据来源：后端 /api/works（后台「作品管理」里添加的）。
@@ -1871,13 +1810,13 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
         doLike(b.getAttribute("data-like"), b);
       });
     });
-    // 绑定评论
+    // 绑定评论：直接跳到详情页的评论区。
+    // 详情页里有完整的"谁评论了、评论了什么"，还能看大图和点赞，
+    // 比在卡片上弹一个小窗更符合"每个人都想看别人说了什么"的诉求。
     gallery.querySelectorAll("button[data-cmt]").forEach(function(b){
       b.addEventListener("click", function(e){
         e.stopPropagation();
-        var id = b.getAttribute("data-cmt");
-        var w = list.find(function(x){ return x.id === id; });
-        openComments(id, w ? w.title : "作品");
+        if (window.__zfsnOpenWork) window.__zfsnOpenWork(b.getAttribute("data-cmt"));
       });
     });
   }
@@ -1888,10 +1827,15 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       .then(function(d){
         btn.disabled = false;
         btn.classList.toggle("on", !!d.liked);
-        btn.querySelector(".n").textContent = d.likes;
-        btn.classList.remove("like-bump");
+        // 作品墙的按钮数字在 .n 里，详情页的在 #wd-like-n / #wd-s-like 里。
+        // 用 closest 判断自己在哪个页面，别让两处的 DOM 结构互相绑定。
+        var n = btn.querySelector(".n") || btn.querySelector("span");
+        if (n) n.textContent = d.likes;
+        var sLike = $("#wd-s-like");
+        if (sLike) sLike.textContent = d.likes;
+        btn.classList.remove("like-bump", "bump");
         void btn.offsetWidth;                  // 强制重排以重启动画
-        btn.classList.add("like-bump");
+        btn.classList.add(btn.classList.contains("wd-like") ? "bump" : "like-bump");
         // 更新内存里的数据，切换页面回来时数字不会回退
         GALLERY_CACHE.forEach(function(x){ if (x.id === workId) x.likes = d.likes; });
       })
@@ -1901,105 +1845,14 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       });
   }
 
-  /* ── 评论区 ── */
-  var wcmt = $("#wcmt"), wcmtList = $("#wcmt-list"), wcmtTitle = $("#wcmt-title");
-  var wcmtSub = $("#wcmt-sub"), wcmtMsg = $("#wcmt-msg");
-  var wcmtName = $("#wcmt-name"), wcmtText = $("#wcmt-text");
-  var curWorkId = null;
-
-  function geoLine(geo){
-    if (!geo) return "";
-    var t = geo.region || geo.province || geo.country || "";
-    if (!t) return "";
-    return '<span class="rg">' + geoIcon() + esc(t) + '</span>';
-  }
+  /* ── 归属地图标 ──
+   * 作品评论已迁到详情页（见下方 #page-work 的渲染逻辑），
+   * 这里只留公共的小工具函数。
+   */
   function geoIcon(){
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
       '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
   }
-
-  function openComments(workId, title){
-    curWorkId = workId;
-    wcmtTitle.textContent = "评论 · " + title;
-    wcmtSub.textContent = "填名字和内容即可发表，会显示你的归属地";
-    wcmtMsg.textContent = "";
-    wcmtMsg.className = "msg";
-    wcmtText.value = "";
-    // 记住上次填的名字，省得每次重填
-    try {
-      var saved = localStorage.getItem("zfsn_cmt_name");
-      if (saved && !wcmtName.value) wcmtName.value = saved;
-    } catch (e) {}
-    wcmt.classList.add("on");
-    document.body.classList.add("locked");
-    loadComments(workId);
-  }
-  function closeComments(){
-    wcmt.classList.remove("on");
-    document.body.classList.remove("locked");
-    curWorkId = null;
-  }
-  $("#wcmt-x").addEventListener("click", closeComments);
-  wcmt.addEventListener("click", function(e){ if (e.target === wcmt) closeComments(); });
-  document.addEventListener("keydown", function(e){
-    if (e.key === "Escape" && wcmt.classList.contains("on")) closeComments();
-  });
-
-  function loadComments(workId){
-    wcmtList.innerHTML = '<div class="sk" style="height:56px;margin:8px 0"></div>';
-    api("/api/works/" + workId + "/interactions")
-      .then(function(d){ renderComments(d.comments || []); })
-      .catch(function(){ wcmtList.innerHTML = '<div class="wcmt-empty">评论加载失败</div>'; });
-  }
-
-  function renderComments(list){
-    if (!list.length){
-      wcmtList.innerHTML = '<div class="wcmt-empty">还没有评论 — 来抢第一个沙发</div>';
-      return;
-    }
-    // 新的在上面
-    var sorted = list.slice().sort(function(a, b){ return b.ts - a.ts; });
-    wcmtList.innerHTML = sorted.map(function(c){
-      return '<div class="wcmt-item">' +
-        '<div class="h">' +
-          '<span class="nm">' + esc(c.name) + '</span>' +
-          geoLine(c.geo) +
-          '<span class="tm">' + esc(c.time || "") + '</span>' +
-        '</div>' +
-        '<div class="bd">' + esc(c.text) + '</div>' +
-      '</div>';
-    }).join("");
-  }
-
-  function sendComment(){
-    if (curWorkId === null) return;
-    var name = (wcmtName.value || "").trim();
-    var text = (wcmtText.value || "").trim();
-    if (!name){ wcmtMsg.textContent = "请填写名字"; wcmtMsg.className = "msg err"; return; }
-    if (!text){ wcmtMsg.textContent = "请填写评论内容"; wcmtMsg.className = "msg err"; return; }
-    $("#wcmt-send").disabled = true;
-    wcmtMsg.textContent = "发表中…"; wcmtMsg.className = "msg";
-
-    api("/api/works/" + curWorkId + "/comments", {
-      method: "POST", body: JSON.stringify({ name: name, text: text })
-    })
-      .then(function(){
-        $("#wcmt-send").disabled = false;
-        try { localStorage.setItem("zfsn_cmt_name", name); } catch (e) {}
-        wcmtMsg.textContent = "已发表 ✓"; wcmtMsg.className = "msg ok";
-        wcmtText.value = "";
-        loadComments(curWorkId);
-        // 同步卡片上的评论数
-        refreshCounts();
-        setTimeout(function(){ if (wcmtMsg.className.indexOf("ok") >= 0) wcmtMsg.textContent = ""; }, 2200);
-      })
-      .catch(function(e){
-        $("#wcmt-send").disabled = false;
-        wcmtMsg.textContent = e.message || "发表失败";
-        wcmtMsg.className = "msg err";
-      });
-  }
-  $("#wcmt-send").addEventListener("click", sendComment);
 
   /** 重新拉一次列表刷新点赞/评论数（发表评论后用） */
   function refreshCounts(){
@@ -2019,6 +1872,176 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   // 由 detectAPI() 完成后统一触发加载（见下方 __zfsnOnAPIReady 注册）
   // 这里只登记一个"待加载"标记，避免 API_BASE 尚未探测就发请求。
   window.__zfsnLoadGallery = loadGallery;
+
+  /* ═══════════ 作品详情页 ═══════════
+   * 需求：任何人都能点进作品，看到大图、简介，以及**谁评论了、评论了什么**。
+   * 之前点卡片只是弹灯箱放大图 —— 评论藏在另一个入口里，别人根本看不到。
+   */
+  var wdRoot = $("#wd-root");
+  window.__zfsnWorkId = null;
+
+  function loadWork(id){
+    window.__zfsnWorkId = id;
+    wdRoot.innerHTML =
+      '<div class="wd-layout">' +
+        '<div class="wd-media"><div class="skeleton" style="aspect-ratio:4/5"></div></div>' +
+        '<div class="wd-side"><div class="skeleton" style="height:200px"></div></div>' +
+      '</div>';
+    api("/api/works/" + id)
+      .then(function(d){ renderWork(d); })
+      .catch(function(e){
+        wdRoot.innerHTML = '<div class="wdc-empty">' +
+          '作品加载失败：' + esc(e.message || "未知错误") +
+          '<br><br>它可能已经被删除了。</div>';
+      });
+  }
+  window.__zfsnLoadWork = loadWork;
+
+  function renderWork(d){
+    var w = d.item || {};
+    var img = workImg(w, 0);
+    var cmts = d.commentList || [];
+    var prev = d.prev, next = d.next;
+
+    var navHtml = '<div class="wd-nav">';
+    navHtml += prev
+      ? '<a href="#work/' + prev.id + '">' + (prev.cover ? '<img src="' + esc(workImg(prev, 0)) + '" alt="">' : '<span class="ph">无图</span>') +
+        '<span class="txt"><span class="d">上一件</span><span class="t">' + esc(prev.title) + '</span></span></a>'
+      : '<span></span>';
+    navHtml += next
+      ? '<a class="nx" href="#work/' + next.id + '"><span class="txt"><span class="d">下一件</span><span class="t">' + esc(next.title) + '</span></span>' +
+        (next.cover ? '<img src="' + esc(workImg(next, 0)) + '" alt="">' : '<span class="ph">无图</span>') + '</a>'
+      : '<span></span>';
+    navHtml += '</div>';
+
+    wdRoot.innerHTML =
+      '<div class="wd-layout">' +
+        '<div class="wd-media" id="wd-media">' +
+          '<img src="' + esc(img) + '" alt="' + esc(w.title) + '" id="wd-img">' +
+          '<span class="zoombadge">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+              '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/><path d="M11 8v6M8 11h6"/>' +
+            '</svg>原图</span>' +
+        '</div>' +
+        '<div class="wd-side">' +
+          '<div class="wd-kicker">' + (w.tag ? esc(w.tag) : "Work") + '</div>' +
+          '<h2 class="wd-title">' + esc(w.title) + '</h2>' +
+          '<div class="wd-meta">' +
+            (w.time ? '<span class="gitem-x"><span class="loc">' + geoIcon() + esc(w.time) + '</span></span>' : '') +
+          '</div>' +
+          (w.desc ? '<div class="wd-desc">' + esc(w.desc) + '</div>' : '') +
+          '<div class="wd-act">' +
+            '<button class="wd-like" id="wd-like" data-like="' + w.id + '">' +
+              ICON_HEART + '<span id="wd-like-n">' + (w.likes || 0) + '</span> 点赞</button>' +
+            (w.link ? '<a class="btn ghost" href="' + esc(w.link) + '" target="_blank" rel="noopener">查看原链接 ↗</a>' : '') +
+          '</div>' +
+          '<div class="wd-stats">' +
+            '<div class="wd-stat"><span class="v" id="wd-s-like">' + (w.likes || 0) + '</span><span class="k">点赞</span></div>' +
+            '<div class="wd-stat"><span class="v" id="wd-s-cmt">' + cmts.length + '</span><span class="k">评论</span></div>' +
+          '</div>' +
+          navHtml +
+        '</div>' +
+      '</div>' +
+
+      /* ── 评论区：公开可见，谁都能看 ── */
+      '<div class="wdc">' +
+        '<div class="wdc-hd">' +
+          '<h3>评论区</h3>' +
+          '<span class="c" id="wdc-count">' + (cmts.length ? cmts.length + " 条评论" : "还没有人评论") + '</span>' +
+        '</div>' +
+        '<div class="wdc-form">' +
+          '<div class="row"><input id="wdc-name" type="text" maxlength="24" placeholder="你的名字"></div>' +
+          '<textarea id="wdc-text" rows="3" maxlength="800" placeholder="说点什么…（会显示你的大致归属地）"></textarea>' +
+          '<div class="ft">' +
+            '<button class="btn primary sm" id="wdc-send">发表评论</button>' +
+            '<span class="msg" id="wdc-msg"></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="wdc-list" id="wdc-list"></div>' +
+      '</div>';
+
+    // 名字记在本地，下次不用重填
+    try {
+      var saved = localStorage.getItem("zfsn_cmt_name");
+      if (saved) $("#wdc-name").value = saved;
+    } catch (e) {}
+
+    // 大图 → 灯箱看原图
+    var imgEl = $("#wd-img");
+    if (imgEl) imgEl.addEventListener("click", function(){ openLB(imgEl.src, w.title); });
+
+    // 点赞
+    var lk = $("#wd-like");
+    if (lk) {
+      lk.classList.toggle("on", !!d.liked);
+      lk.addEventListener("click", function(){ doLike(w.id, lk); });
+    }
+
+    // 发表评论
+    $("#wdc-send").addEventListener("click", function(){ sendWorkComment(w.id); });
+    var ta = $("#wdc-text");
+    if (ta) ta.addEventListener("keydown", function(e){
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") sendWorkComment(w.id);
+    });
+
+    renderWorkComments(cmts);
+  }
+
+  function renderWorkComments(list){
+    var box = $("#wdc-list");
+    if (!box) return;
+    if (!list.length){
+      box.innerHTML = '<div class="wdc-empty">还没有评论 — 来抢第一个沙发</div>';
+      return;
+    }
+    box.innerHTML = list.slice().sort(function(a, b){ return b.ts - a.ts; })
+      .map(function(c, i){
+        var initial = (c.name || "?").slice(0, 1).toUpperCase();
+        var rg = (c.geo && c.geo.region) || "";
+        return '<div class="wdc-item">' +
+          '<header>' +
+            '<span class="av">' + esc(initial) + '</span>' +
+            '<span class="nm">' + esc(c.name) + '</span>' +
+            (rg ? '<span class="rg">' + geoIcon() + esc(rg) + '</span>' : '') +
+            '<span class="no">#' + (list.length - i) + '</span>' +
+            '<span class="tm">' + esc(c.time || "") + '</span>' +
+          '</header>' +
+          '<div class="bd">' + esc(c.text) + '</div>' +
+        '</div>';
+      }).join("");
+  }
+
+  function sendWorkComment(workId){
+    var nameEl = $("#wdc-name"), textEl = $("#wdc-text"), msg = $("#wdc-msg");
+    var name = (nameEl.value || "").trim();
+    var text = (textEl.value || "").trim();
+    if (!name){ msg.textContent = "请填写名字"; msg.className = "msg err"; return; }
+    if (!text){ msg.textContent = "请填写评论内容"; msg.className = "msg err"; return; }
+
+    $("#wdc-send").disabled = true;
+    msg.textContent = "发表中…"; msg.className = "msg";
+
+    api("/api/works/" + workId + "/comments", {
+      method: "POST", body: JSON.stringify({ name: name, text: text })
+    }).then(function(){
+      $("#wdc-send").disabled = false;
+      try { localStorage.setItem("zfsn_cmt_name", name); } catch (e) {}
+      msg.textContent = "已发表 ✓"; msg.className = "msg ok";
+      textEl.value = "";
+      // 重新拉详情，评论列表和计数一起刷新
+      loadWork(workId);
+      refreshCounts();
+      setTimeout(function(){ if (msg.className.indexOf("ok") >= 0) msg.textContent = ""; }, 2400);
+    }).catch(function(e){
+      $("#wdc-send").disabled = false;
+      msg.textContent = e.message || "发表失败";
+      msg.className = "msg err";
+    });
+  }
+
+  $("#wd-back").addEventListener("click", function(){
+    try { location.hash = "works"; } catch (e) { go("works"); }
+  });
 
   /* Lightbox */
   var lb = $("#lb"), lbImg = lb.querySelector("img"), lbCap = lb.querySelector(".cap");
@@ -2879,6 +2902,12 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   });
 
   gmorebtn.addEventListener("click", gAppendBatch);
+
+  /* ═══ 启动时应用地址栏路由 ═══
+   * 别人分享的 #work/<id> 链接，打开就直接落在作品详情页 ——
+   * 这正是"详情页可分享"的意义。
+   */
+  if (window.__zfsnApplyRoute) window.__zfsnApplyRoute();
 
   /* 页面打开就预探测后端，这样点「写留言」时已经就绪 */
   detectAPI();
