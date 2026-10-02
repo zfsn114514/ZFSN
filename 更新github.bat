@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 rem ============================================================
 rem  ZFSN site - push to GitHub
 rem  After this succeeds, Cloudflare auto-rebuilds in ~1 min.
@@ -6,6 +7,9 @@ rem  ASCII-only REMs to avoid cmd parser choking on CJK under
 rem  chcp 65001 (which would print lines like
 rem    'CJK text' is not recognized as an internal command
 rem  and confuse the user).
+rem  enabledelayedexpansion is REQUIRED for !VAR! expansion inside
+rem  parenthesised for/if blocks - without it the loop never runs
+rem  and we silently report success without ever calling git push.
 rem ============================================================
 
 rem Switch to the script's own directory. Running as admin changes
