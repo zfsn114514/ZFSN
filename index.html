@@ -299,6 +299,15 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 .gitem:hover .gmeta{transform:none}
 .gmeta .gt{font-size:13.5px;font-weight:600;letter-spacing:.02em}
 .gmeta .gs{font-size:10.5px;color:var(--muted);margin-top:4px;letter-spacing:.1em;text-transform:uppercase}
+/* 卡片上的媒体角标：相册张数 / 视频 / 附件个数 */
+.gmeta .gbadge{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px}
+.gmeta .gbadge span{
+  display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;
+  font-size:9.5px;letter-spacing:.08em;color:var(--silver);
+  background:rgba(0,0,0,.6);border:1px solid var(--line2);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.gmeta .gbadge svg{width:10px;height:10px}
 .gitem .pill{
   position:absolute;top:12px;left:12px;z-index:2;
   font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
@@ -374,6 +383,43 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 }
 .wd-media:hover .zoombadge{opacity:1}
 .wd-media .zoombadge svg{width:12px;height:12px}
+
+/* ── 作品视频 ── */
+.wd-media.has-video{cursor:default}
+.wd-media .wd-video{width:100%;display:block;background:#000;max-height:78vh}
+/* ── 相册缩略图条 ── */
+.wd-thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.wd-thumbs button{
+  width:68px;height:52px;padding:0;border-radius:9px;overflow:hidden;cursor:pointer;
+  border:1px solid var(--line2);background:var(--surface);
+  transition:border-color .3s,transform .25s var(--ease);
+}
+.wd-thumbs button:hover{transform:translateY(-2px)}
+.wd-thumbs button.on{border-color:var(--red);box-shadow:0 0 0 1px rgba(255,45,74,.5)}
+.wd-thumbs img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* ── 下载附件 ── */
+.wd-dl{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.wd-dl h4{
+  font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;margin-bottom:11px;
+}
+.wd-dl a{
+  display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:10px;
+  border:1px solid var(--line);background:var(--surface);text-decoration:none;
+  color:var(--text);margin-bottom:8px;
+  transition:border-color .3s,background .3s,transform .25s var(--ease);
+}
+.wd-dl a:hover{border-color:rgba(255,45,74,.5);background:var(--surface2);transform:translateX(3px)}
+.wd-dl .ic{
+  width:30px;height:30px;flex:0 0 30px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,45,74,.12);color:var(--red-soft);
+  font-size:9px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+}
+.wd-dl .nm{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wd-dl .sz{font-size:10.5px;color:var(--muted);font-family:ui-monospace,Consolas,monospace;white-space:nowrap}
+.wd-dl .ar{color:var(--muted);font-size:13px}
 
 /* 右侧信息栏 */
 .wd-side{position:sticky;top:96px}
@@ -1749,23 +1795,67 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   }
   function placeholder(i){ var c = WPAL[i % WPAL.length]; return grad(c[0], c[1]); }
 
-  // 作品图片路径兼容：后台可能填绝对路径（D:\...），浏览器无法直接加载，
-  // 这里自动转换成站点内的相对路径。
-  function workImg(w, i){
-    var src = (w.cover || "").trim();
-    if (!src) return placeholder(i);
+  /** 单张图片路径归一化（兼容后台可能填的绝对路径） */
+  function imgPath(p, i){
+    var src = String(p || "").trim().replace(/\\/g, "/");
     // 把 D:\ZFSNwebsite\assets\xx.jpg → assets/xx.jpg
     var m = src.match(/[\\/]ZFSNwebsite[\\/](.+)$/i);
     if (m) src = m[1].replace(/\\/g, "/");
-    src = src.replace(/\\/g, "/");
-    if (/^(https?:|data:|\/)/.test(src)) return src;
+    if (!src) return placeholder(i || 0);
     return src;
+  }
+
+  // 作品图片路径兼容：后台可能填绝对路径（D:\...），浏览器无法直接加载，
+  // 这里自动转换成站点内的相对路径。
+  function workImg(w, i){
+    return imgPath(w.cover, i);
+  }
+
+  /* 媒体地址（视频 / 下载文件）——
+     这类文件**不在 git 仓库里**（几十 MB 的视频塞进仓库会拖慢每次构建），
+     它们存在家里服务器上，由后端经 Cloudflare 隧道流式提供。
+     所以这里必须拼到后端主机（API_BASE）上，而不是站点相对路径。
+     图片则相反：走站点相对路径 → 命中 Cloudflare 上的仓库副本，最快。 */
+  function mediaUrl(rel){
+    var s = String(rel || "").trim().replace(/\\/g, "/");
+    if (!s) return "";
+    if (/^(https?:|data:|\/)/.test(s)) return s;
+    var b = (typeof API_BASE === "string" && API_BASE) ? API_BASE : "";
+    return b + "/" + s;
+  }
+
+  /** 下载地址：走 /api/download/:workId/:idx，能保留原始文件名 */
+  function dlUrl(workId, idx){
+    var b = (typeof API_BASE === "string" && API_BASE) ? API_BASE : "";
+    return b + "/api/download/" + workId + "/" + idx;
+  }
+
+  /** 字节数 → 人类可读 */
+  function fmtSize(n){
+    var b = Number(n) || 0;
+    if (b < 1024) return b + " B";
+    if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
+    if (b < 1073741824) return (b / 1048576).toFixed(1) + " MB";
+    return (b / 1073741824).toFixed(2) + " GB";
+  }
+
+  /** 从文件名里取一个用于图标的小标签（ZIP / PDF / PSD …） */
+  function fileTag(name){
+    var m = String(name || "").match(/\.([a-z0-9]{1,6})$/i);
+    return m ? m[1].toUpperCase().slice(0, 4) : "FILE";
   }
 
   var ICON_HEART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
     '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
   var ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
     '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+  var ICON_VIDEO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+    '<rect x="2" y="5" width="14" height="14" rx="2"/><path d="M22 8l-6 4 6 4V8z"/></svg>';
+  var ICON_PICS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>' +
+    '<path d="M21 15l-5-5L5 21"/></svg>';
+  var ICON_DL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>';
 
   /** 拉取作品列表并渲染 */
   function loadGallery(){
@@ -1778,6 +1868,17 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       gallery.innerHTML = '<div class="wcmt-empty" style="grid-column:1/-1">' +
         '作品加载失败：' + esc(e.message || "未知错误") + '</div>';
     });
+  }
+
+  /** 卡片上的媒体角标：几张图 / 有视频 / 几个附件 */
+  function badgeHtml(w){
+    var parts = [];
+    var n = (w.images || []).length;
+    if (n > 1) parts.push('<span>' + ICON_PICS + n + ' 张</span>');
+    if (w.video) parts.push('<span>' + ICON_VIDEO + '视频</span>');
+    var nf = (w.files || []).length;
+    if (nf) parts.push('<span>' + ICON_DL + nf + ' 个附件</span>');
+    return parts.length ? '<div class="gbadge">' + parts.join("") + '</div>' : "";
   }
 
   function renderGallery(list){
@@ -1802,6 +1903,7 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
         '</div>' +
         '<img src="' + img + '" alt="' + esc(w.title) + '" loading="lazy">' +
         '<div class="gmeta">' +
+          badgeHtml(w) +
           '<div class="gt">' + esc(w.title) + '</div>' +
           (w.desc ? '<div class="gs">' + esc(w.desc) + '</div>' : '') +
         '</div>';
@@ -1913,9 +2015,17 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
 
   function renderWork(d){
     var w = d.item || {};
-    var img = workImg(w, 0);
     var cmts = d.commentList || [];
     var prev = d.prev, next = d.next;
+
+    /* 相册：优先用 images[]，老数据只有 cover 时当成单张 */
+    var imgs = [];
+    if (w.images && w.images.length) imgs = w.images.slice();
+    else if (w.cover) imgs = [w.cover];
+    imgs = imgs.map(function(p, i){ return imgPath(p, i); });
+
+    var files = w.files || [];
+    var hasVideo = !!w.video;
 
     var navHtml = '<div class="wd-nav">';
     navHtml += prev
@@ -1928,15 +2038,48 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       : '<span></span>';
     navHtml += '</div>';
 
+    /* ── 主媒体区：有视频先给视频，否则给（第一张）大图 ── */
+    var zoomSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/><path d="M11 8v6M8 11h6"/></svg>';
+    var mediaInner;
+    if (hasVideo){
+      var vsrc = esc(mediaUrl(w.video));
+      mediaInner =
+        '<video class="wd-video" id="wd-video" controls preload="metadata" playsinline' +
+          (imgs.length ? ' poster="' + esc(imgs[0]) + '"' : '') + '>' +
+          '<source src="' + vsrc + '">' +
+          '你的浏览器不支持内嵌播放，<a href="' + vsrc + '" target="_blank" rel="noopener">点这里打开视频</a>' +
+        '</video>';
+    } else {
+      mediaInner =
+        '<img src="' + esc(imgs.length ? imgs[0] : placeholder(0)) + '" alt="' + esc(w.title) + '" id="wd-img">' +
+        '<span class="zoombadge">' + zoomSvg + '原图</span>';
+    }
+
+    /* ── 相册缩略图条（多于一张才显示）── */
+    var thumbsHtml = imgs.length > 1
+      ? '<div class="wd-thumbs" id="wd-thumbs">' + imgs.map(function(p, i){
+          return '<button type="button" data-i="' + i + '"' + (i === 0 ? ' class="on"' : '') +
+            '><img src="' + esc(p) + '" alt="" loading="lazy"></button>';
+        }).join("") + '</div>'
+      : '';
+
+    /* ── 附件下载 ── */
+    var dlHtml = files.length
+      ? '<div class="wd-dl"><h4>' + ICON_DL + ' 附件下载（' + files.length + '）</h4>' +
+        files.map(function(f, i){
+          var nm = f.name || String(f.path || "").split("/").pop();
+          return '<a href="' + esc(dlUrl(w.id, i)) + '" download rel="noopener">' +
+            '<span class="ic">' + esc(fileTag(nm)) + '</span>' +
+            '<span class="nm" title="' + esc(nm) + '">' + esc(nm) + '</span>' +
+            '<span class="sz">' + esc(f.sizeText || fmtSize(f.size)) + '</span>' +
+            '<span class="ar">↓</span></a>';
+        }).join("") + '</div>'
+      : '';
+
     wdRoot.innerHTML =
       '<div class="wd-layout">' +
-        '<div class="wd-media" id="wd-media">' +
-          '<img src="' + esc(img) + '" alt="' + esc(w.title) + '" id="wd-img">' +
-          '<span class="zoombadge">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
-              '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/><path d="M11 8v6M8 11h6"/>' +
-            '</svg>原图</span>' +
-        '</div>' +
+        '<div class="wd-media' + (hasVideo ? ' has-video' : '') + '" id="wd-media">' + mediaInner + '</div>' +
         '<div class="wd-side">' +
           '<div class="wd-kicker">' + (w.tag ? esc(w.tag) : "Work") + '</div>' +
           '<h2 class="wd-title">' + esc(w.title) + '</h2>' +
@@ -1952,7 +2095,11 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
           '<div class="wd-stats">' +
             '<div class="wd-stat"><span class="v" id="wd-s-like">' + (w.likes || 0) + '</span><span class="k">点赞</span></div>' +
             '<div class="wd-stat"><span class="v" id="wd-s-cmt">' + cmts.length + '</span><span class="k">评论</span></div>' +
+            (imgs.length ? '<div class="wd-stat"><span class="v">' + imgs.length + '</span><span class="k">图片</span></div>' : '') +
+            (files.length ? '<div class="wd-stat"><span class="v">' + files.length + '</span><span class="k">附件</span></div>' : '') +
           '</div>' +
+          thumbsHtml +
+          dlHtml +
           navHtml +
         '</div>' +
       '</div>' +
@@ -1983,6 +2130,22 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     // 大图 → 灯箱看原图
     var imgEl = $("#wd-img");
     if (imgEl) imgEl.addEventListener("click", function(){ openLB(imgEl.src, w.title); });
+
+    // 相册缩略图：切主图；若作品带视频，则切换视频封面
+    var tbox = $("#wd-thumbs");
+    if (tbox){
+      tbox.addEventListener("click", function(e){
+        var b = e.target.closest("button[data-i]");
+        if (!b) return;
+        var i = Number(b.getAttribute("data-i"));
+        tbox.querySelectorAll("button").forEach(function(x){ x.classList.remove("on"); });
+        b.classList.add("on");
+        var v = $("#wd-video");
+        if (v && imgs[i]) v.setAttribute("poster", imgs[i]);
+        var im = $("#wd-img");
+        if (im && imgs[i]) im.src = imgs[i];
+      });
+    }
 
     // 点赞
     var lk = $("#wd-like");

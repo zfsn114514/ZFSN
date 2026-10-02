@@ -271,6 +271,59 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 .msg.ok{color:var(--green)}
 .msg.bad{color:var(--red-soft)}
 
+/* ── 多图缩略图网格 ── */
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;padding:12px}
+.thumbs.hide{display:none}
+.thumb{
+  position:relative;border-radius:10px;overflow:hidden;background:#08080d;
+  border:1px solid var(--line2);aspect-ratio:4/3;
+}
+.thumb.iscover{border-color:var(--red);box-shadow:0 0 0 1px rgba(255,45,74,.5)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .no{
+  position:absolute;top:5px;left:5px;font-size:10px;line-height:1.5;
+  background:rgba(0,0,0,.72);color:var(--silver);border-radius:5px;padding:0 6px;
+  font-family:ui-monospace,Consolas,monospace;
+}
+.thumb .acts{position:absolute;top:4px;right:4px;display:flex;gap:4px}
+.thumb .acts button{
+  width:22px;height:22px;border-radius:6px;border:none;cursor:pointer;
+  background:rgba(0,0,0,.66);color:#fff;font-size:11px;line-height:1;
+  display:flex;align-items:center;justify-content:center;padding:0;
+}
+.thumb .acts button:hover{background:var(--red)}
+.thumb .acts button:disabled{opacity:.3;cursor:default;background:rgba(0,0,0,.66)}
+.thumb .cv{
+  position:absolute;left:4px;bottom:4px;font-size:9.5px;letter-spacing:.06em;
+  border:none;cursor:pointer;border-radius:5px;padding:2px 7px;
+  background:rgba(0,0,0,.66);color:var(--silver);
+}
+.thumb .cv:hover{background:rgba(0,0,0,.85);color:#fff}
+.thumb.iscover .cv{background:var(--red);color:#fff}
+
+/* ── 视频预览 ── */
+#v-prev{width:180px;flex:0 0 180px;border-radius:9px;background:#08080d;border:1px solid var(--line2);display:block}
+
+/* ── 下载文件列表 ── */
+.flist{padding:4px 0}
+.flist.hide{display:none}
+.fitem{display:flex;align-items:center;gap:11px;padding:9px 13px;border-bottom:1px solid var(--line)}
+.fitem:last-child{border-bottom:none}
+.fitem .ic{
+  width:26px;height:26px;flex:0 0 26px;border-radius:7px;display:flex;
+  align-items:center;justify-content:center;background:rgba(255,45,74,.1);
+  color:var(--red-soft);font-size:9.5px;font-weight:600;letter-spacing:.02em;
+  text-transform:uppercase;
+}
+.fitem .nm{flex:1;min-width:0;font-size:12px;color:var(--silver);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fitem .sz{font-size:10.5px;color:var(--dim);font-family:ui-monospace,Consolas,monospace;white-space:nowrap}
+.fitem .rm{
+  width:24px;height:24px;border-radius:6px;border:none;cursor:pointer;flex:0 0 24px;
+  background:rgba(255,255,255,.06);color:var(--muted);font-size:13px;line-height:1;
+  display:flex;align-items:center;justify-content:center;padding:0;
+}
+.fitem .rm:hover{background:rgba(255,45,74,.22);color:#fff}
+
 /* 作品列表缩略图 */
 .itrow{display:flex;gap:14px;align-items:flex-start}
 .itbody{flex:1;min-width:0}
@@ -527,33 +580,69 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
           <textarea id="w-desc" rows="2" maxlength="300" placeholder="一句话描述这个作品"></textarea>
         </div>
         <div class="fld">
-          <label>作品图片</label>
-          <!-- 拖拽 / 点击上传：图片直接落到 assets/works/，
-               不用再手填目录 —— 手填容易写绝对路径或拼错文件名，页面上就裂图了 -->
+          <label>作品图片（可多张）</label>
+          <!-- 拖拽 / 点击上传：图片落到站点 assets/works/，随 git 发布到 Cloudflare，
+               访问快；视频与下载文件则存在家里服务器上（见下面两块）。
+               手填路径极易写成绝对路径或拼错文件名，页面上就裂图了。 -->
           <div class="drop" id="w-drop">
-            <input type="file" id="w-file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" hidden>
+            <input type="file" id="w-file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple hidden>
             <div class="drop-empty" id="w-drop-empty">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>
               </svg>
-              <div class="dt">点击选择图片，或把图片拖到这里</div>
-              <div class="ds">JPG / PNG / WebP / GIF / AVIF · 最大 12MB</div>
+              <div class="dt">点击选择图片（可多选），或把图片拖到这里</div>
+              <div class="ds">JPG / PNG / WebP / GIF / AVIF · 单张最大 12MB · 一次最多 20 张</div>
             </div>
-            <div class="drop-prev hide" id="w-drop-prev">
-              <img id="w-prev-img" src="" alt="">
-              <div class="pv-info">
-                <div class="pv-path" id="w-prev-path"></div>
-                <div class="pv-act">
-                  <button type="button" class="btn sm" id="w-repick">换一张</button>
-                  <button type="button" class="btn danger sm" id="w-clear">移除</button>
-                </div>
-              </div>
-            </div>
+            <div class="thumbs hide" id="w-thumbs"></div>
             <div class="drop-bar" id="w-drop-bar"><span id="w-drop-bar-in"></span></div>
           </div>
           <input type="hidden" id="w-cover">
-          <div class="hint" id="w-cover-hint">上传后会保存到 assets/works/ 并自动填入路径；留空则用渐变占位图</div>
+          <div class="hint" id="w-cover-hint">第一张自动作为封面；点缩略图右下角的「封面」可换封面，用 ← → 调整顺序</div>
+        </div>
+
+        <div class="fld">
+          <label>作品视频（可选，单个）</label>
+          <div class="drop" id="v-drop">
+            <input type="file" id="v-file" accept="video/mp4,video/webm,video/quicktime,video/x-matroska,video/ogg" hidden>
+            <div class="drop-empty" id="v-drop-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <rect x="2" y="5" width="14" height="14" rx="2"/><path d="M22 8l-6 4 6 4V8z"/>
+              </svg>
+              <div class="dt">点击选择视频，或把视频拖到这里</div>
+              <div class="ds">MP4 / WebM / MOV / MKV · 最大 100MB · 一次一个</div>
+            </div>
+            <div class="drop-prev hide" id="v-drop-prev">
+              <video id="v-prev" controls preload="metadata" playsinline></video>
+              <div class="pv-info">
+                <div class="pv-path" id="v-prev-path"></div>
+                <div class="pv-act">
+                  <button type="button" class="btn sm" id="v-repick">换一个</button>
+                  <button type="button" class="btn danger sm" id="v-clear">移除</button>
+                </div>
+              </div>
+            </div>
+            <div class="drop-bar" id="v-drop-bar"><span id="v-drop-bar-in"></span></div>
+          </div>
+          <div class="hint" id="v-hint">视频保存在家里服务器上（不进 git 仓库），由后端经隧道流式播放，支持拖动进度条</div>
+        </div>
+
+        <div class="fld">
+          <label>下载文件（可多个）</label>
+          <div class="drop" id="f-drop">
+            <input type="file" id="f-file" multiple hidden>
+            <div class="drop-empty" id="f-drop-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+              </svg>
+              <div class="dt">点击选择文件（可多选），或把文件拖到这里</div>
+              <div class="ds">ZIP / RAR / 7Z / PDF / PSD / 模型 / 音频 / 文档 … · 单个最大 50MB</div>
+            </div>
+            <div class="flist hide" id="f-list"></div>
+            <div class="drop-bar" id="f-drop-bar"><span id="f-drop-bar-in"></span></div>
+          </div>
+          <div class="hint" id="f-hint">访客在作品详情页可以下载，下载时保留原始文件名</div>
         </div>
 
         <div class="fld">
@@ -1338,60 +1427,67 @@ if ($("#refresh-inter")){
 var WORKS = [];
 var editingId = null;
 
-/* ── 图片上传 ──
- * 走 /api/upload（multipart），后端把图片存进站点 assets/works/，
- * 返回相对路径，直接写进隐藏字段 w-cover。
+/* ── 作品媒体上传 ────────────────────────────────────────────────
+ * 三类资源、两条落盘路线：
+ *   images[]  图片 → 站点 assets/works/   （随 git 发布到 Cloudflare，访问快）
+ *   video     视频 → 家里服务器 data/media/works/video/（不进 git，经隧道流式播放）
+ *   files[]   文件 → 家里服务器 data/media/works/file/ （经隧道下载）
  *
- * 为什么不让用户手填路径：
- *   手填极易写成 D:\ZFSNwebsite\assets\x.jpg 这类绝对路径、
- *   或者文件名大小写/后缀拼错 —— 浏览器加载不了，页面上直接裂图。
+ * 为什么不让用户手填路径：手填极易写成 D:\ZFSNwebsite\assets\x.jpg
+ * 这类绝对路径、或把文件名大小写/后缀拼错 —— 浏览器加载不了，页面上直接裂图。
+ *
+ * 为什么视频/文件不跟图片一样走 git：
+ *   线上站点是 Cloudflare Workers 托管的 GitHub 仓库副本，想让文件对外可见
+ *   就必须 git push。几十上百 MB 的视频塞进仓库，每次构建和克隆都会被拖慢。
+ *   代价是这些文件需要家里服务器在线才能访问（和留言板同一个前提）。
  */
-function setCoverPreview(path){
-  var prev = $("#w-drop-prev"), empty = $("#w-drop-empty");
-  if (!prev || !empty) return;
-  if (path){
-    $("#w-cover").value = path;
-    $("#w-prev-img").src = (path.indexOf("://") >= 0 || path.charAt(0) === "/") ? path : path;
-    $("#w-prev-path").textContent = path;
-    prev.classList.remove("hide");
-    empty.classList.add("hide");
-  } else {
-    $("#w-cover").value = "";
-    $("#w-prev-img").removeAttribute("src");
-    prev.classList.add("hide");
-    empty.classList.remove("hide");
-  }
+var IMGS = [];     // 图片相对路径数组，第一张即封面
+var VIDEOP = "";   // 视频相对路径
+var FILES = [];    // [{ name, path, size, sizeText }]
+
+/** 把后端相对路径拼成后台页可直接预览的地址 */
+function mUrl(rel){
+  if (!rel) return "";
+  if (/^(https?:|data:|\/)/.test(rel)) return rel;
+  return (API_BASE ? API_BASE : "") + "/" + rel;
 }
 
-function uploadImage(file){
-  if (!file) return;
-  if (!/^image\//.test(file.type || "")){
-    toast("只能上传图片文件", "bad");
-    return;
-  }
-  if (file.size > 12 * 1024 * 1024){
-    toast("图片太大了（上限 12MB）", "bad");
-    return;
-  }
-  var drop = $("#w-drop"), bar = $("#w-drop-bar"), barIn = $("#w-drop-bar-in");
-  drop.classList.add("busy");
-  bar.classList.add("on");
-  barIn.style.width = "0%";
+function fmtSize(n){
+  var b = Number(n) || 0;
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
+  if (b < 1073741824) return (b / 1048576).toFixed(1) + " MB";
+  return (b / 1073741824).toFixed(2) + " GB";
+}
+
+/**
+ * 通用上传。kind = image | video | file，list = FileList 或数组。
+ * 返回 Promise<响应体>。ui = { drop, bar, barIn } 三个元素选择器。
+ */
+function uploadFiles(kind, list, ui){
+  list = Array.prototype.slice.call(list || []);
+  if (!list.length) return Promise.resolve(null);
+  var drop = $(ui.drop), bar = $(ui.bar), barIn = $(ui.barIn);
+  if (drop) drop.classList.add("busy");
+  if (bar) bar.classList.add("on");
+  if (barIn) barIn.style.width = "0%";
 
   var fd = new FormData();
-  fd.append("file", file);
+  fd.append("kind", kind);
+  list.forEach(function(f){ fd.append("file", f); });
 
   // 不用 api()：它会给所有请求硬塞 Content-Type: application/json，
   // 那会破坏 multipart 的 boundary。这里自己带 Token。
   var t = localStorage.getItem(TOKEN_KEY);
-  detectAPI().then(function(base){
-    if (base === null) throw new Error("后端服务未启动");
+  return detectAPI().then(function(base){
+    if (base === null) throw new Error("后端服务未启动（请在 D:\\ZFSN-server 运行 node server.js）");
     return new Promise(function(resolve, reject){
       var xhr = new XMLHttpRequest();
-      xhr.open("POST", base + "/api/upload", true);
+      // kind 也放在 query 上：后端在读请求体之前就要知道按哪个额度收数据
+      xhr.open("POST", base + "/api/upload?kind=" + encodeURIComponent(kind), true);
       if (t) xhr.setRequestHeader("X-Admin-Token", t);
       xhr.upload.onprogress = function(e){
-        if (e.lengthComputable) barIn.style.width = Math.round(e.loaded / e.total * 100) + "%";
+        if (e.lengthComputable && barIn) barIn.style.width = Math.round(e.loaded / e.total * 100) + "%";
       };
       xhr.onload = function(){
         var d = {};
@@ -1403,35 +1499,139 @@ function uploadImage(file){
       xhr.send(fd);
     });
   }).then(function(d){
-    drop.classList.remove("busy");
-    barIn.style.width = "100%";
-    setTimeout(function(){ bar.classList.remove("on"); }, 380);
-    setCoverPreview(d.path);
-    toast("图片已上传 · " + Math.round(d.size / 1024) + " KB", "ok");
-    $("#w-cover-hint").textContent = "已保存到 " + d.path;
+    if (barIn) barIn.style.width = "100%";
+    setTimeout(function(){ if (bar) bar.classList.remove("on"); }, 380);
+    if (drop) drop.classList.remove("busy");
+    if (d && d.skipped && d.skipped.length) toast("部分文件被跳过：" + d.skipped.join("；"), "bad");
+    return d;
   }).catch(function(e){
-    drop.classList.remove("busy");
-    bar.classList.remove("on");
-    toast(e.message, "bad");
+    if (drop) drop.classList.remove("busy");
+    if (bar) bar.classList.remove("on");
     if (/登录|会话/.test(e.message)) backToLogin();
+    throw e;
   });
 }
 
+/* ── 多图：缩略图网格（排序 / 设为封面 / 删除）── */
+function renderThumbs(){
+  var box = $("#w-thumbs"), empty = $("#w-drop-empty");
+  if (!box) return;
+  if (!IMGS.length){
+    box.classList.add("hide");
+    box.innerHTML = "";
+    if (empty) empty.classList.remove("hide");
+  } else {
+    if (empty) empty.classList.add("hide");
+    box.classList.remove("hide");
+    box.innerHTML = IMGS.map(function(p, i){
+      return '<div class="thumb' + (i === 0 ? " iscover" : "") + '" data-i="' + i + '">' +
+        '<img src="' + esc(mUrl(p)) + '" alt="">' +
+        '<span class="no">' + (i + 1) + '</span>' +
+        '<div class="acts">' +
+          '<button type="button" data-mv="-1" title="前移"' + (i === 0 ? " disabled" : "") + '>←</button>' +
+          '<button type="button" data-mv="1" title="后移"' + (i === IMGS.length - 1 ? " disabled" : "") + '>→</button>' +
+          '<button type="button" data-del="1" title="删除这张">✕</button>' +
+        '</div>' +
+        (i === 0
+          ? '<span class="cv">封面</span>'
+          : '<button type="button" class="cv" data-cv="1">设为封面</button>') +
+      '</div>';
+    }).join("");
+  }
+  // 封面字段始终跟随第一张，保存时不用再单独维护
+  $("#w-cover").value = IMGS[0] || "";
+}
+
+/* ── 视频：单个，带播放器预览 ── */
+function renderVideo(){
+  var prev = $("#v-drop-prev"), empty = $("#v-drop-empty"), v = $("#v-prev");
+  if (!prev || !empty) return;
+  if (VIDEOP){
+    if (v) v.src = mUrl(VIDEOP);
+    $("#v-prev-path").textContent = VIDEOP;
+    prev.classList.remove("hide");
+    empty.classList.add("hide");
+  } else {
+    if (v){ v.pause(); v.removeAttribute("src"); v.load(); }
+    prev.classList.add("hide");
+    empty.classList.remove("hide");
+  }
+}
+
+/* ── 下载文件：列表 ── */
+function renderFiles(){
+  var box = $("#f-list"), empty = $("#f-drop-empty");
+  if (!box) return;
+  if (!FILES.length){
+    box.classList.add("hide");
+    box.innerHTML = "";
+    if (empty) empty.classList.remove("hide");
+  } else {
+    if (empty) empty.classList.add("hide");
+    box.classList.remove("hide");
+    box.innerHTML = FILES.map(function(f, i){
+      var ext = (String(f.name).match(/\.([a-z0-9]{1,6})$/i) || [0, "FILE"])[1].toUpperCase();
+      return '<div class="fitem" data-i="' + i + '">' +
+        '<span class="ic">' + esc(ext.slice(0, 4)) + '</span>' +
+        '<span class="nm" title="' + esc(f.name) + '">' + esc(f.name) + '</span>' +
+        '<span class="sz">' + esc(f.sizeText || fmtSize(f.size)) + '</span>' +
+        '<button type="button" class="rm" data-del="1" title="移除">✕</button>' +
+      '</div>';
+    }).join("");
+  }
+}
+
+/* ══ 图片区交互 ══ */
 (function initUpload(){
   var drop = $("#w-drop"), input = $("#w-file");
   if (!drop || !input) return;
 
   drop.addEventListener("click", function(e){
-    if (e.target.closest("#w-repick")) { e.stopPropagation(); input.value = ""; input.click(); return; }
-    if (e.target.closest("#w-clear")) { e.stopPropagation(); setCoverPreview(""); $("#w-cover-hint").textContent = "已移除图片，将使用渐变占位图"; return; }
+    // 点缩略图上的按钮 → 不触发选文件
+    var t = e.target.closest(".thumb");
+    if (t){
+      e.stopPropagation();
+      var i = Number(t.getAttribute("data-i"));
+      var mv = e.target.getAttribute("data-mv");
+      if (mv){
+        var j = i + Number(mv);
+        if (j >= 0 && j < IMGS.length){
+          var tmp = IMGS[i]; IMGS[i] = IMGS[j]; IMGS[j] = tmp;
+          renderThumbs();
+        }
+        return;
+      }
+      if (e.target.getAttribute("data-cv")){
+        // 设为封面 = 把这张挪到最前面
+        var p = IMGS.splice(i, 1)[0];
+        IMGS.unshift(p);
+        renderThumbs();
+        return;
+      }
+      if (e.target.getAttribute("data-del")){
+        IMGS.splice(i, 1);
+        renderThumbs();
+        return;
+      }
+      return;
+    }
     input.value = "";
     input.click();
   });
+
   input.addEventListener("change", function(){
-    if (input.files && input.files[0]) uploadImage(input.files[0]);
+    if (!input.files || !input.files.length) return;
+    uploadFiles("image", input.files, { drop: "#w-drop", bar: "#w-drop-bar", barIn: "#w-drop-bar-in" })
+      .then(function(d){
+        if (!d) return;
+        (d.files || []).forEach(function(f){ if (IMGS.indexOf(f.path) < 0) IMGS.push(f.path); });
+        renderThumbs();
+        toast(d.count + " 张图片已上传", "ok");
+      })
+      .catch(function(e){ toast(e.message, "bad"); });
+    input.value = "";
   });
 
-  // 拖拽上传
   ["dragenter", "dragover"].forEach(function(ev){
     drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.add("over"); });
   });
@@ -1439,15 +1639,151 @@ function uploadImage(file){
     drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.remove("over"); });
   });
   drop.addEventListener("drop", function(e){
-    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) uploadImage(f);
-  });
-
-  // 防止把图片拖到页面其它地方时浏览器直接打开图片
-  ["dragover", "drop"].forEach(function(ev){
-    window.addEventListener(ev, function(e){ e.preventDefault(); });
+    var fs = e.dataTransfer && e.dataTransfer.files;
+    if (!fs || !fs.length) return;
+    var imgs = Array.prototype.filter.call(fs, function(f){ return /^image\//.test(f.type || ""); });
+    if (!imgs.length) return toast("这里只接收图片，视频请拖到下面「作品视频」区", "bad");
+    uploadFiles("image", imgs, { drop: "#w-drop", bar: "#w-drop-bar", barIn: "#w-drop-bar-in" })
+      .then(function(d){
+        if (!d) return;
+        (d.files || []).forEach(function(f){ if (IMGS.indexOf(f.path) < 0) IMGS.push(f.path); });
+        renderThumbs();
+        toast(d.count + " 张图片已上传", "ok");
+      })
+      .catch(function(e){ toast(e.message, "bad"); });
   });
 })();
+
+/* ══ 视频区交互 ══ */
+(function initVideo(){
+  var drop = $("#v-drop"), input = $("#v-file");
+  if (!drop || !input) return;
+
+  drop.addEventListener("click", function(e){
+    if (e.target.closest("#v-repick")){ e.stopPropagation(); input.value = ""; input.click(); return; }
+    if (e.target.closest("#v-clear")){
+      e.stopPropagation();
+      VIDEOP = "";
+      renderVideo();
+      toast("已移除视频", "ok");
+      return;
+    }
+    // 点在播放器控件上时不要触发选文件
+    if (e.target.closest("video")) return;
+    input.value = "";
+    input.click();
+  });
+
+  input.addEventListener("change", function(){
+    if (!input.files || !input.files[0]) return;
+    var f = input.files[0];
+    if (f.size > 100 * 1024 * 1024) return toast("视频太大了（上限 100MB）", "bad");
+    uploadFiles("video", [f], { drop: "#v-drop", bar: "#v-drop-bar", barIn: "#v-drop-bar-in" })
+      .then(function(d){
+        if (!d) return;
+        VIDEOP = d.files[0].path;
+        renderVideo();
+        toast("视频已上传 · " + fmtSize(d.files[0].size), "ok");
+      })
+      .catch(function(e){ toast(e.message, "bad"); });
+    input.value = "";
+  });
+
+  ["dragenter", "dragover"].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.remove("over"); });
+  });
+  drop.addEventListener("drop", function(e){
+    var fs = e.dataTransfer && e.dataTransfer.files;
+    if (!fs || !fs.length) return;
+    var v = Array.prototype.filter.call(fs, function(f){ return /^video\//.test(f.type || ""); })[0];
+    if (!v) return toast("这里只接收视频文件", "bad");
+    if (v.size > 100 * 1024 * 1024) return toast("视频太大了（上限 100MB）", "bad");
+    uploadFiles("video", [v], { drop: "#v-drop", bar: "#v-drop-bar", barIn: "#v-drop-bar-in" })
+      .then(function(d){
+        if (!d) return;
+        VIDEOP = d.files[0].path;
+        renderVideo();
+        toast("视频已上传 · " + fmtSize(d.files[0].size), "ok");
+      })
+      .catch(function(e){ toast(e.message, "bad"); });
+  });
+})();
+
+/* ══ 下载文件区交互 ══ */
+(function initFiles(){
+  var drop = $("#f-drop"), input = $("#f-file");
+  if (!drop || !input) return;
+
+  function accept(d){
+    if (!d) return;
+    (d.files || []).forEach(function(f){
+      if (FILES.some(function(x){ return x.path === f.path; })) return;
+      FILES.push({
+        name: f.origin || f.name,
+        path: f.path,
+        size: f.size,
+        sizeText: f.sizeText || fmtSize(f.size)
+      });
+    });
+    renderFiles();
+    toast(d.count + " 个文件已上传", "ok");
+  }
+
+  drop.addEventListener("click", function(e){
+    var it = e.target.closest(".fitem");
+    if (it){
+      e.stopPropagation();
+      if (e.target.getAttribute("data-del")){
+        FILES.splice(Number(it.getAttribute("data-i")), 1);
+        renderFiles();
+      }
+      return;
+    }
+    input.value = "";
+    input.click();
+  });
+
+  input.addEventListener("change", function(){
+    if (!input.files || !input.files.length) return;
+    uploadFiles("file", input.files, { drop: "#f-drop", bar: "#f-drop-bar", barIn: "#f-drop-bar-in" })
+      .then(accept)
+      .catch(function(e){ toast(e.message, "bad"); });
+    input.value = "";
+  });
+
+  ["dragenter", "dragover"].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.remove("over"); });
+  });
+  drop.addEventListener("drop", function(e){
+    var fs = e.dataTransfer && e.dataTransfer.files;
+    if (!fs || !fs.length) return;
+    uploadFiles("file", fs, { drop: "#f-drop", bar: "#f-drop-bar", barIn: "#f-drop-bar-in" })
+      .then(accept)
+      .catch(function(e){ toast(e.message, "bad"); });
+  });
+})();
+
+// 防止把文件拖到页面其它地方时浏览器直接打开它
+["dragover", "drop"].forEach(function(ev){
+  window.addEventListener(ev, function(e){ e.preventDefault(); });
+});
+
+/** 把路径归一化成站点/后端可用的相对路径（兼容历史绝对路径） */
+function normPath(p){
+  var s = String(p || "").trim().replace(/\\/g, "/");
+  if (!s) return "";
+  var m = s.match(/[\\/]ZFSNwebsite[\\/](.+)$/i);
+  if (m) return m[1].replace(/\\/g, "/");
+  var m2 = s.match(/(media\/works\/.+)$/i);
+  if (m2) return m2[1];
+  return s;
+}
 
 function openWorkForm(item){
   editingId = item ? item.id : null;
@@ -1455,9 +1791,29 @@ function openWorkForm(item){
   $("#w-title").value = item ? (item.title || "") : "";
   $("#w-tag").value = item ? (item.tag || "") : "";
   $("#w-desc").value = item ? (item.desc || "") : "";
-  setCoverPreview(item ? (item.cover || "") : "");
-  $("#w-cover-hint").textContent = "上传后会保存到 assets/works/ 并自动填入路径；留空则用渐变占位图";
+
+  // 回填媒体：老数据只有 cover 没有 images，就把它当成唯一一张图
+  var imgs = (item && item.images && item.images.length)
+    ? item.images.slice()
+    : (item && item.cover ? [item.cover] : []);
+  IMGS = imgs.map(normPath).filter(Boolean);
+  VIDEOP = normPath(item ? (item.video || "") : "");
+  FILES = ((item && item.files) || []).map(function(f){
+    return {
+      name: f.name || String(f.path || "").split("/").pop(),
+      path: normPath(f.path),
+      size: Number(f.size) || 0,
+      sizeText: f.sizeText || fmtSize(f.size)
+    };
+  }).filter(function(f){ return !!f.path; });
+
+  renderThumbs();
+  renderVideo();
+  renderFiles();
+
   if ($("#w-file")) $("#w-file").value = "";
+  if ($("#v-file")) $("#v-file").value = "";
+  if ($("#f-file")) $("#f-file").value = "";
   $("#w-link").value = item ? (item.link || "") : "";
   $("#w-order").value = item ? (item.order || 0) : 0;
   $("#w-msg").textContent = "";
@@ -1470,23 +1826,23 @@ $("#add-work").addEventListener("click", function(){ openWorkForm(null); });
 $("#w-cancel").addEventListener("click", function(){
   $("#work-form").classList.add("hide");
   editingId = null;
+  IMGS = []; VIDEOP = ""; FILES = [];
 });
 
 $("#w-save").addEventListener("click", function(){
   var title = $("#w-title").value.trim();
   var msg = $("#w-msg");
   if (!title){ msg.className = "msg bad"; msg.textContent = "请填写作品标题"; return; }
-  // 图片路径归一化：万一存进来的是 D:\ZFSNwebsite\assets\works\x.jpg
-  // 这类绝对路径，转成站点内相对路径再提交，前端才能加载。
-  var cover = ($("#w-cover").value || "").trim();
-  var pm = cover.match(/[\\/]ZFSNwebsite[\\/](.+)$/i);
-  if (pm) cover = pm[1].replace(/\\/g, "/");
-
   var body = {
     title: title,
     tag: $("#w-tag").value.trim(),
     desc: $("#w-desc").value.trim(),
-    cover: cover,
+    images: IMGS.slice(),
+    cover: IMGS[0] || "",
+    video: VIDEOP || "",
+    files: FILES.map(function(f){
+      return { name: f.name, path: f.path, size: f.size, sizeText: f.sizeText };
+    }),
     link: $("#w-link").value.trim(),
     order: Number($("#w-order").value) || 0
   };
@@ -1526,8 +1882,9 @@ function loadWorks(){
       el.className = "it";
       // 显示真实缩略图：路径填错时能一眼看出来，不用去前台才发现裂图
       var th = w.cover
-        ? '<img class="thumb" src="' + esc(w.cover) + '" alt="" loading="lazy" onerror="this.classList.add(\'broken\')">'
+        ? '<img class="thumb" src="' + esc(mUrl(w.cover)) + '" alt="" loading="lazy" onerror="this.classList.add(\'broken\')">'
         : '<span class="thumb ph">无图</span>';
+      var nImg = (w.images || []).length || (w.cover ? 1 : 0);
       el.innerHTML =
         '<div class="itrow">' +
           th +
@@ -1539,7 +1896,9 @@ function loadWorks(){
             "</header>" +
             (w.desc ? '<div class="body">' + esc(w.desc) + "</div>" : "") +
             '<div class="meta">' +
-              (w.cover ? '<span class="tag">含图片</span>' : "") +
+              (nImg ? '<span class="tag">' + nImg + " 张图</span>" : "") +
+              (w.video ? '<span class="tag">含视频</span>' : "") +
+              ((w.files || []).length ? '<span class="tag">' + w.files.length + " 个附件</span>" : "") +
               (w.link ? '<span class="tag">含链接</span>' : '<span class="tag">无链接</span>') +
               '<span class="act">' +
                 '<button class="btn sm" data-edit="' + w.id + '">编辑</button>' +
