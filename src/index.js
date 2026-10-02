@@ -173,7 +173,12 @@ async function handleAPI(request, env, ctx, url) {
   const ip = L.clientIP(request);
   const ua = request.headers.get("user-agent") || "";
   const tz = env.TZ_OFFSET;
-  const ITER = Number(env.PBKDF2_ITERATIONS) || 120000;
+  // 只在记录里没存轮数时才用得上（老的 config.json 平移记录）。
+  // ⚠ 别往上调：Workers 硬上限 100000，超了 PBKDF2 直接抛错。
+  // 这里**故意不 clamp** —— 静默夹到上限只会让校验失败，
+  // 用户看到"密码错误"却不知道是轮数问题。宁可让 L.verifyPassword
+  // 抛出明确的错误信息，由登录接口转达。
+  const ITER = Number(env.PBKDF2_ITERATIONS) || L.PBKDF2_DEFAULT_ITERATIONS;
 
   /* ── 健康检查（前端靠它探测后端在不在）───────────────────── */
   if (p === "/api/health" && method === "GET") {
@@ -276,13 +281,25 @@ async function handleAPI(request, env, ctx, url) {
 
     for (let i = 0; i < Math.min(inVoi.length, MSG_MAX_VOICES); i++) {
       const v = inVoi[i];
-      const dec = M.decodeDataUrl(typeof v === "string" ? v : (v && v.data));
-      if (!dec || !dec.buf || dec.buf.length > MSG_VOICE_LIMIT) continue;
-      const ext = M.sniffAudio(dec.buf) || ".webm";
+      // 兼容两种形态：字符串 dataURL，或 { dataUrl | data, duration }。
+      // （前端以前发的是 dataUrl 字段，这里只读 data 会整条丢掉录音。）
+      const raw = typeof v === "string"
+        ? v
+        : ((v && (v.dataUrl || v.data || v.src)) || "");
+      const dec = M.decodeDataUrl(raw);
+      if (!dec || !dec.buf || !dec.buf.length || dec.buf.length > MSG_VOICE_LIMIT) continue;
+      const sniffed = M.sniffAudio(dec.buf);
+      // 认不出容器时兜底：只有客户端自己声明的就是 audio/* 才放行。
+      // 图片那边是认不出直接拒；录音这里留一点余地 —— 各家浏览器的
+      // MediaRecorder 容器不同（Chrome/Firefox=webm|ogg，Safari=mp4），
+      // 但都不能让任意字节冒充"录音"存进 KV。
+      if (!sniffed && !/^audio\//i.test(dec.type || "")) continue;
+      const ext = sniffed || ".webm";
       const fname = "v" + i + ext;
       const duration = (v && typeof v === "object" && Number(v.duration)) || 0;
       try {
-        await M.putObject(env, msgKey(id, fname), dec.buf, M.mimeOf(fname));
+        // 录音一律按音频 MIME 存（.webm 要 audio/webm 而不是 video/webm）
+        await M.putObject(env, msgKey(id, fname), dec.buf, M.audioMimeOf(ext));
         voices.push({ url: "/api/media/messages/" + id + "/" + fname, duration });
       } catch (_) { /* 单条失败不影响其它 */ }
     }
@@ -502,6 +519,52 @@ async function handleAPI(request, env, ctx, url) {
     return res;
   }
 
+  // 单件作品详情（作品详情页用）。
+  // 一次请求把详情页要的东西全给到：作品本身 + 点赞/评论明细 + 相邻作品，
+  // 免得前端"先拉列表再 find"——列表接口不返回完整明细。
+  // ⚠ 这个 GET 分支曾经漏掉，结果详情页一律报"接口不存在"，别删。
+  m = new RegExp("^/api/works/(" + ID_RE + ")$").exec(p);
+  if (m && method === "GET") {
+    const workId = m[1];
+    const row = await env.DB.prepare(
+      "SELECT w.*, " +
+      "  (SELECT COUNT(*) FROM likes l WHERE l.work_id = w.id) AS like_count, " +
+      "  (SELECT COUNT(*) FROM comments c WHERE c.work_id = w.id) AS comment_count " +
+      "FROM works w WHERE w.id = ?"
+    ).bind(workId).first();
+    if (!row) return L.fail("作品不存在", 404);
+
+    const lk = await env.DB.prepare(
+      "SELECT ip FROM likes WHERE work_id = ?"
+    ).bind(workId).all();
+    const cm = await env.DB.prepare(
+      "SELECT id, name, text, geo, ts, time FROM comments WHERE work_id = ? ORDER BY ts DESC"
+    ).bind(workId).all();
+
+    // 相邻作品：排序口径必须和 GET /api/works 完全一致
+    // （ord 升序，同 ord 新的在前），否则详情页翻页顺序会跟列表对不上
+    const all = await env.DB.prepare(
+      "SELECT id, title, cover FROM works ORDER BY ord ASC, ts DESC"
+    ).all();
+    const rows = all.results || [];
+    const i = rows.findIndex((r) => r.id === workId);
+    const nb = (j) => (i < 0 || j < 0 || j >= rows.length ? null : {
+      id: rows[j].id, title: rows[j].title, cover: rows[j].cover || ""
+    });
+
+    return L.ok({
+      item: rowToWork(row),
+      liked: (lk.results || []).some((r) => r.ip === ip),
+      commentList: (cm.results || []).map((r) => ({
+        id: r.id, name: r.name, text: r.text,
+        ts: Number(r.ts), time: r.time,
+        geo: parseJSON(r.geo, { region: "", country: "", province: "", city: "", isp: "" })
+      })),
+      prev: nb(i - 1),
+      next: nb(i + 1)
+    });
+  }
+
   // 修改 / 删除作品
   m = new RegExp("^/api/works/(" + ID_RE + ")$").exec(p);
   if (m && (method === "DELETE" || method === "PUT" || method === "POST")) {
@@ -598,9 +661,14 @@ async function handleAPI(request, env, ctx, url) {
       await L.setPasswordRecord(env, rec);
     }
 
-    if (!(await L.verifyPassword(String(body.password || ""), rec, ITER))) {
-      return L.fail("密码错误", 401);
+    let pwdOK = false;
+    try {
+      pwdOK = await L.verifyPassword(String(body.password || ""), rec, ITER);
+    } catch (e) {
+      // 轮数超上限之类的配置问题不是"密码错"，得给出能照着做的提示
+      return L.fail("密码校验配置异常：" + ((e && e.message) || e), 500);
     }
+    if (!pwdOK) return L.fail("密码错误", 401);
 
     // 登录成功：把这几次失败计数清掉，免得正常登录后立刻被锁
     await env.DB.prepare("DELETE FROM rate WHERE k = ?").bind("login:" + ip).run();
@@ -630,7 +698,11 @@ async function handleAPI(request, env, ctx, url) {
     if (newPwd.length > 128) return L.fail("新密码过长");
 
     const rec = await L.getPasswordRecord(env);
-    if (!(await L.verifyPassword(oldPwd, rec, ITER))) return L.fail("原密码错误");
+    try {
+      if (!(await L.verifyPassword(oldPwd, rec, ITER))) return L.fail("原密码错误");
+    } catch (e) {
+      return L.fail("密码校验配置异常：" + ((e && e.message) || e), 500);
+    }
 
     const next = await L.hashPassword(newPwd, null, ITER);
     await L.setPasswordRecord(env, next);

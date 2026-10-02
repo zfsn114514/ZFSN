@@ -147,8 +147,33 @@ export async function rateClean(env) {
 
 const enc = new TextEncoder();
 
+/* ⚠ Workers 运行时对 PBKDF2 迭代数有**硬上限 100000**：
+ *   超过就直接抛 "Pbkdf2 failed: iteration counts above 100000 are not supported"。
+ *   这是 workerd 的保护机制（怕有人拿它做 DoS），不是套餐限制 ——
+ *   升级付费版也不放宽。所以轮数只能 ≤ 100000。
+ *
+ *   好消息：PBKDF2 在原生加密层跑，不吃那 10ms CPU 配额，
+ *   10 万轮实测约 75ms 但不会触发 CPU 超时。
+ *
+ *   从旧后端平移来的哈希是 **120000 轮**，在 Workers 上根本无法校验，
+ *   必须用 `npm run password` 重设（轮数 ≤ 100000）。 */
+export const PBKDF2_MAX_ITERATIONS = 100000;
+export const PBKDF2_DEFAULT_ITERATIONS = 100000;
+
+function clampIterations(n) {
+  const v = Math.floor(Number(n) || PBKDF2_DEFAULT_ITERATIONS);
+  if (v > PBKDF2_MAX_ITERATIONS) {
+    throw new RangeError(
+      "PBKDF2 迭代数 " + v + " 超过 Workers 上限 " + PBKDF2_MAX_ITERATIONS +
+      "，该哈希在 Workers 上无法校验，需重设密码"
+    );
+  }
+  return Math.max(1, v);
+}
+
 export async function hashPassword(password, saltHex, iterations) {
   const salt = saltHex || randomHex(16);
+  const iter = clampIterations(iterations);
   const key = await crypto.subtle.importKey(
     "raw", enc.encode(String(password)), "PBKDF2", false, ["deriveBits"]
   );
@@ -161,11 +186,12 @@ export async function hashPassword(password, saltHex, iterations) {
    * 两边必须完全一致，否则 data/config.json 里现有的哈希会全部校验失败，
    * 迁移完管理员就登录不上了。这条注释别删，踩过。 */
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: enc.encode(salt), iterations: Number(iterations) || 120000, hash: "SHA-512" },
+    { name: "PBKDF2", salt: enc.encode(salt), iterations: iter, hash: "SHA-512" },
     key,
     512
   );
-  return { salt, hash: bytesToHex(new Uint8Array(bits)) };
+  // iter 存进记录里：以后调整轮数时，旧哈希仍能按它自己的轮数校验
+  return { salt, hash: bytesToHex(new Uint8Array(bits)), iter };
 }
 
 /** 定长比较，避免用 === 提前退出造成的时间差侧信道。 */
@@ -176,9 +202,23 @@ export function safeEqual(a, b) {
   return d === 0;
 }
 
+/**
+ * 校验密码。
+ * rec 里存了轮数就优先用它（这样调整默认轮数不会把旧密码全废掉）；
+ * 没存轮数的是从 data/config.json 平移来的老记录，用 fallback 兜底。
+ * 超过 Workers 上限的哈希**无法校验**，这里抛错而不是返回 false ——
+ * 否则用户只会看到"密码错误"，完全不知道要重设密码。
+ */
 export async function verifyPassword(password, rec, iterations) {
   if (!rec || !rec.salt || !rec.hash) return false;
-  const { hash } = await hashPassword(password, rec.salt, iterations);
+  const iter = Number(rec.iter) || Number(iterations) || PBKDF2_DEFAULT_ITERATIONS;
+  if (iter > PBKDF2_MAX_ITERATIONS) {
+    throw new RangeError(
+      "已存密码哈希是 " + iter + " 轮，超过 Workers 上限 " +
+      PBKDF2_MAX_ITERATIONS + " 轮，无法校验。请用 npm run password 重设密码"
+    );
+  }
+  const { hash } = await hashPassword(password, rec.salt, iter);
   return safeEqual(hash, rec.hash);
 }
 

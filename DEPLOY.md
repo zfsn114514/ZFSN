@@ -139,30 +139,39 @@ curl https://www.zfsnnb.dpdns.org/api/health
 
 ---
 
-## CPU 限额：一个必须先知道的坑
+## 密码哈希：100000 轮是硬上限（已踩过）
 
-免费版 Worker 单请求 CPU 上限约 **10ms**，而登录时的 PBKDF2 实测 **约 92ms**（120000 轮 SHA-512，本机 Node 的 Web Crypto 实测值）。**登录接口有可能打满 CPU。**
+**首次部署登录会直接失败**，报这个错：
 
-先按默认参数部署，登录试一次：
+```
+Pbkdf2 failed: iteration counts above 100000 are not supported (requested 120000)
+```
 
-- 能登录 → 不用管（免费计划的实际额度有时比标称宽松，且只有登录这一个接口慢，其余接口都是查 D1，很快）。
-- 报 CPU 超时（错误码 1102 或 `CPU time limit exceeded`）→ 二选一：
+原因：从旧后端 `data/config.json` 平移过来的哈希是 **120000 轮**，而 workerd 的
+WebCrypto 对 PBKDF2 迭代数有**硬上限 100000** —— 超过就直接抛错，**升级付费版也不放宽**
+（这是防 DoS 的保护，不是套餐限制）。所以 120000 轮的哈希在 Workers 上根本无法校验。
 
-**方案 A：降低轮数（免费）**
+修法（三步，已按此执行）：
 
-1. 改 `wrangler.toml`：`PBKDF2_ITERATIONS = 30000`
-2. 重设密码（旧哈希是按 120000 轮算的，轮数一改就全失效，必须重设）：
-   ```bash
-   npm run password -- --iterations=30000
-   npx wrangler d1 execute zfsn-db --remote --file=./tools/migrate/password.sql
-   ```
-3. 重新 `npm run deploy`
+```bash
+# 1. 生成 10 万轮的新哈希（用你原来的密码，登录体验不变）
+npm run password -- "你的密码"
 
-两处轮数**必须一致**，否则登录永远失败。30000 轮 SHA-512 对这种个人站点足够。
+# 2. 写进 D1（同时会清空所有会话）
+npx wrangler d1 execute zfsn-db --remote --file=./tools/migrate/password.sql
 
-**方案 B：升级 Workers 付费版（$5/月）**
+# 3. 重新部署
+npm run deploy
+```
 
-CPU 上限提到 30 秒，120000 轮随便跑，什么都不用改。
+⚠ 别忘了 `wrangler.toml` 里的 `PBKDF2_ITERATIONS` 也要 ≤ 100000，当前已是 100000。
+
+好消息：**PBKDF2 不吃那 10ms CPU 配额**。它跑在原生加密层，10 万轮实测约 75ms
+但不会触发 CPU 超时，所以不需要为了 CPU 去降轮数。
+
+另外，密码记录里现在会存 `iter`（轮数）。以后调整默认轮数时，旧哈希仍按它自己的
+轮数校验，不会突然登不上；真遇到超限的哈希，登录接口会明确告诉你"需重设密码"，
+而不是含糊地报"密码错误"。
 
 ---
 

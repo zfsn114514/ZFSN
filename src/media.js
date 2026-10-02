@@ -71,6 +71,18 @@ export function mimeOf(name) {
   return (m && MIME[m[0].toLowerCase()]) || "application/octet-stream";
 }
 
+/**
+ * 录音专用 MIME。
+ * 通用表里 .webm 对应 video/webm —— 那是给作品视频用的。
+ * 留言录音是纯音频的 WebM 容器，标成 audio/webm 才能让 <audio> 正确识别，
+ * 否则部分浏览器会因 video/* 而拒绝在音频控件里播放。
+ */
+export function audioMimeOf(ext) {
+  if (ext === ".webm") return "audio/webm";
+  if (ext === ".ogg") return "audio/ogg";
+  return mimeOf("a" + (ext || ".webm"));
+}
+
 /* ── 魔数校验 ──────────────────────────────────────────────────
  *  不能只信客户端给的 Content-Type / 扩展名 —— 那是可伪造的。
  *  以文件头为准决定扩展名，既防错也防恶意上传。
@@ -150,22 +162,44 @@ export function uploadName(ext, tzOffset) {
  *  直接转 base64 塞进 JSON 的，这里解回字节。
  *  ──────────────────────────────────────────────────────────── */
 
+/**
+ * 解码 dataURL。
+ * ⚠ 不能简单用 /^data:([^;,]*)(;base64)?,/ —— 浏览器的 MediaRecorder 产出的
+ *   MIME 是带参数的 `audio/webm;codecs=opus`，而分号后的参数会让 `[^;,]*`
+ *   提前截断，导致整条 dataURL 匹配失败、录音被静默丢弃。
+ *   所以这里按第一个逗号切开，再从头部的 MIME 里剥掉 `;codecs=...` 之类的参数。
+ *   头部形如：type/subtype(;param=value)*(;base64)?
+ */
 export function decodeDataUrl(s) {
   const str = String(s === null || s === undefined ? "" : s);
-  const m = /^data:([^;,]*)(;base64)?,([\s\S]*)$/.exec(str);
-  if (!m) return null;
-  if (m[2]) {
+  if (str.slice(0, 5).toLowerCase() !== "data:") return null;
+  const comma = str.indexOf(",");
+  if (comma < 0) return null;
+
+  let head = str.slice(5, comma);
+  const payload = str.slice(comma + 1);
+
+  let isB64 = false;
+  if (/;base64$/i.test(head)) {
+    isB64 = true;
+    head = head.slice(0, -";base64".length);
+  }
+  // 只保留主类型，丢弃 ;codecs=opus 这类参数
+  const semi = head.indexOf(";");
+  const type = (semi >= 0 ? head.slice(0, semi) : head).trim();
+
+  if (isB64) {
     try {
-      const bin = atob(m[3]);
+      const bin = atob(payload);
       const u8 = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-      return { type: m[1] || "", buf: u8 };
+      return { type, buf: u8 };
     } catch (_) {
       return null;
     }
   }
   try {
-    return { type: m[1] || "", buf: new TextEncoder().encode(decodeURIComponent(m[3])) };
+    return { type, buf: new TextEncoder().encode(decodeURIComponent(payload)) };
   } catch (_) {
     return null;
   }

@@ -1214,27 +1214,36 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   html{scroll-behavior:auto}
 }
 
-/* ══ 弹幕留言 ══ */
+/* ══ 弹幕留言 ══
+ * 层级：主体 .page 是 z-index:5，所以弹幕层压到 3 —— 落在主体**后面**，
+ * 只在页面四周的空白处飘过，不会盖住卡片和文字。
+ * （原来是 80，比弹窗还高，整个屏幕都能被弹幕糊住。）
+ */
 #danmaku-layer{
-  position:fixed;inset:0;pointer-events:none;z-index:80;
+  position:fixed;inset:0;pointer-events:none;z-index:3;
   overflow:hidden;opacity:0;transition:opacity .6s ease;
 }
 #danmaku-layer.on{opacity:1}
+
+/* 只在首页显示。data-page 由主脚本的 setActive() 维护，
+ * 切到作品/详情/B站/游戏/留言页时整层藏起来；
+ * 切换按钮一起收起，否则点了看不到任何反应，反而迷惑。
+ * JS 侧也会同步 stop()，免得弹幕在后台空转。 */
+body:not([data-page="home"]) #danmaku-layer,
+body:not([data-page="home"]) #danmaku-toggle{display:none}
+/* 弹幕气泡：不放_红框_，只用一层薄暗底保证在动画背景上也读得清 */
 .danmaku-item{
   position:absolute;white-space:nowrap;font-size:16px;font-weight:600;
   color:var(--text);letter-spacing:.02em;
-  text-shadow:0 0 10px rgba(255,45,74,.38),0 1px 3px rgba(0,0,0,.85);
+  text-shadow:0 1px 4px rgba(0,0,0,.85);
   pointer-events:none;user-select:none;will-change:transform;
   padding:5px 15px;border-radius:999px;
-  background:linear-gradient(135deg,rgba(255,45,74,.10),rgba(255,255,255,.05));
-  border:1px solid rgba(255,45,74,.32);
-  box-shadow:0 0 16px rgba(255,45,74,.16),inset 0 0 12px rgba(255,255,255,.03);
+  background:rgba(10,10,16,.42);
   backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
   max-width:62vw;overflow:hidden;text-overflow:ellipsis;
 }
 .danmaku-item .dm-name{
   color:var(--red-soft);font-weight:700;margin-right:2px;
-  text-shadow:0 0 12px rgba(255,107,127,.6);
 }
 @keyframes danmaku-move{
   from{transform:translateX(100vw)}
@@ -1257,7 +1266,9 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
 #danmaku-toggle.off{opacity:.45}
 </style>
 </head>
-<body>
+<!-- data-page 标记当前页，供弹幕层判断"是否只在首页显示"。
+     首屏默认 home；切页时由 setActive() 改写。 -->
+<body data-page="home">
 
 <canvas id="bg"></canvas>
 <canvas id="trail"></canvas>
@@ -1832,6 +1843,9 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     var navKey = (key === "work") ? "works" : key;
     navBtns.forEach(function(b){ b.classList.toggle("active", b.dataset.go === navKey); });
     current = key;
+    // 告诉 CSS（和 assets/js/danmaku.js）现在在哪一页：
+    // 弹幕只在首页显示，靠这个属性收敛。
+    document.body.setAttribute("data-page", key);
     window.scrollTo(0, 0);
     // 切到作品页时刷新一次 —— 保证后台新加的作品马上可见，
     // 也顺带同步最新的点赞/评论数。
