@@ -1125,12 +1125,20 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
 }
 #danmaku-layer.on{opacity:1}
 .danmaku-item{
-  position:absolute;white-space:nowrap;font-size:13.5px;
-  color:rgba(255,255,255,.82);text-shadow:0 1px 4px rgba(0,0,0,.55);
+  position:absolute;white-space:nowrap;font-size:16px;font-weight:600;
+  color:var(--text);letter-spacing:.02em;
+  text-shadow:0 0 10px rgba(255,45,74,.38),0 1px 3px rgba(0,0,0,.85);
   pointer-events:none;user-select:none;will-change:transform;
-  padding:3px 10px;border-radius:20px;
-  background:rgba(255,255,255,.06);backdrop-filter:blur(2px);
-  max-width:60vw;overflow:hidden;text-overflow:ellipsis;
+  padding:5px 15px;border-radius:999px;
+  background:linear-gradient(135deg,rgba(255,45,74,.10),rgba(255,255,255,.05));
+  border:1px solid rgba(255,45,74,.32);
+  box-shadow:0 0 16px rgba(255,45,74,.16),inset 0 0 12px rgba(255,255,255,.03);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  max-width:62vw;overflow:hidden;text-overflow:ellipsis;
+}
+.danmaku-item .dm-name{
+  color:var(--red-soft);font-weight:700;margin-right:2px;
+  text-shadow:0 0 12px rgba(255,107,127,.6);
 }
 @keyframes danmaku-move{
   from{transform:translateX(100vw)}
@@ -3316,7 +3324,7 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     var usedTracks = [];
 
     function calcTracks(){
-      trackHeight = 28;
+      trackHeight = 34;
       var maxH = Math.max(300, window.innerHeight - 120);
       trackCount = Math.floor(maxH / trackHeight);
       usedTracks = new Array(trackCount).fill(0);
@@ -3346,16 +3354,30 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       return best;
     }
 
-    function createItem(m){
+    function setContent(el, m){
+      el.textContent = "";
+      if (m.name) {
+        var nm = document.createElement("span");
+        nm.className = "dm-name";
+        nm.textContent = m.name + "：";
+        el.appendChild(nm);
+      }
+      el.appendChild(document.createTextNode(m.text || ""));
+    }
+
+    function createItem(m, spread){
       var el = document.createElement("div");
       el.className = "danmaku-item";
-      el.textContent = (m.name ? m.name + ": " : "") + (m.text || "");
+      setContent(el, m);
       var track = pickTrack();
       var dur = 12 + Math.random() * 16; // 12-28 秒
-      var delay = Math.random() * 3;
+      // 初始投放时给「负延迟」，让弹幕一开始就分散在屏幕上飞行，
+      // 而不是全堆在右侧外（修复刚进网站弹幕挤在一侧的 bug）。
+      // 循环复用时延迟为 0，从右侧正常飘入。
+      var delay = spread ? -(Math.random() * dur) : 0;
       el.style.top = (track * trackHeight + 60) + "px";
-      el.style.animation = "danmaku-move " + dur + "s linear " + delay + "s forwards";
-      // 标记轨道占用时间（动画时长 + 预留）
+      el.style.animation = "danmaku-move " + dur + "s linear " + delay + "s both";
+      // 标记轨道占用时间（到完全飘出左侧为止 + 预留）
       usedTracks[track] = Date.now() + (dur + delay) * 1000 + 2000;
       layer.appendChild(el);
       items.push(el);
@@ -3365,13 +3387,13 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
         // 循环：重新随机一条留言
         if (msgs.length) {
           var next = msgs[Math.floor(Math.random() * msgs.length)];
-          el.textContent = (next.name ? next.name + ": " : "") + (next.text || "");
+          setContent(el, next);
           var newTrack = pickTrack();
           var newDur = 12 + Math.random() * 16;
           el.style.top = (newTrack * trackHeight + 60) + "px";
           el.style.animation = "none";
           el.offsetHeight; // force reflow
-          el.style.animation = "danmaku-move " + newDur + "s linear forwards";
+          el.style.animation = "danmaku-move " + newDur + "s linear 0s both";
           usedTracks[newTrack] = Date.now() + newDur * 1000 + 2000;
         }
       }
@@ -3383,10 +3405,10 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       running = true;
       layer.classList.add("on");
       btn.classList.remove("off");
-      // 初始投放 8-14 条
+      // 初始投放 8-14 条（spread=true：负延迟让它们一上来就铺满屏幕）
       var batch = Math.min(msgs.length, 8 + Math.floor(Math.random() * 7));
       for (var i = 0; i < batch; i++){
-        createItem(msgs[Math.floor(Math.random() * msgs.length)]);
+        createItem(msgs[Math.floor(Math.random() * msgs.length)], true);
       }
     }
 
