@@ -240,6 +240,10 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 .drop.over{border-color:var(--red);background:rgba(255,45,74,.08)}
 .drop.busy{pointer-events:none;opacity:.7}
 .drop-empty{padding:26px 20px;text-align:center}
+/* ⚠ 必须有这条：JS 一直在给 #w-drop-empty 加 .hide，
+   但 CSS 里从来没有对应规则 —— 结果是"已经上传了图片，
+   上面还挂着『点击选择图片』的空状态提示"。（历史遗留，顺手修掉。） */
+.drop-empty.hide{display:none}
 .drop-empty svg{width:26px;height:26px;color:var(--red-soft);opacity:.85;margin-bottom:11px}
 .drop-empty .dt{font-size:12.5px;color:var(--silver);letter-spacing:.03em}
 .drop-empty .ds{font-size:10.5px;color:var(--dim);margin-top:7px;letter-spacing:.05em}
