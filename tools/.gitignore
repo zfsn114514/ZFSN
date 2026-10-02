@@ -5,3 +5,12 @@ __pycache__/
 
 # dev/ 下临时产出的截图（排查样式用，看完就删）
 dev/_shots/
+
+# ★ 含密钥的真实配置，绝不提交！
+#   历史上它曾被提交过，旧 Steam API Key 因此泄露并被 Steam 撤销。
+#   模板见 config.example.json（那个是可以提交的）。
+config.json
+
+# 临时中间文件
+_tmp_*.json
+_backup_*.json

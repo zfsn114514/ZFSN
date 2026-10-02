@@ -1,7 +1,7 @@
 /**
  * 前端内联脚本冒烟测试（桩环境）
  * ---------------------------------------------------------------
- * 目的：在 Node 里把 index.html / admin.html 的内联脚本整体跑一遍，
+ * 目的：在 Node 里把 index.html / admin/index.html 的内联脚本整体跑一遍，
  * 捕获**顶层运行时错误**（未定义变量、拼错函数名等）。
  *
  * 注意：桩里的 fetch 必然 reject，会触发各数据源的降级分支，
@@ -140,7 +140,8 @@ function run(file) {
 }
 
 let total = 0;
-["index.html", "admin.html"].forEach((f) => { total += run(f); });
+// 管理页只有一份源文件：admin/index.html（站点根的 admin.html 已合并删除）
+["index.html", "admin/index.html"].forEach((f) => { total += run(f); });
 console.log("");
 console.log(total === 0 ? "全部通过（无真实运行时错误）" : total + " 个真实错误");
 process.exit(total === 0 ? 0 : 1);

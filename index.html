@@ -732,19 +732,10 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 }
 .sgame .rel{font-size:10px;color:#4a4a5a;margin-top:9px;letter-spacing:.08em}
 
-/* ── 家庭共享 ── */
-.fbadge{
-  font-size:9px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;
-  padding:3px 9px;border-radius:20px;color:#ded1ff;
-  background:rgba(88,58,150,.5);border:1px solid rgba(167,139,250,.42);
-  white-space:nowrap;
-}
-.fnote{
-  font-size:11.5px;color:var(--muted);line-height:1.75;letter-spacing:.03em;
-  margin:-4px 0 18px;padding-left:13px;border-left:2px solid rgba(167,139,250,.35);
-}
-.fnote b{color:#c3aaff;font-weight:700}
-.fgrid{margin-bottom:6px}
+/* ── 家庭共享角标 ──
+   家庭共享的游戏**不单独成区**，直接并进"全部游戏"里，
+   只靠右上角这个小角标标明来源（hover 有说明）。
+   所以它必须做得比左侧的排名角标更轻，不能抢视觉。 */
 .sgame .fam{
   position:absolute;top:10px;right:10px;font-size:9.5px;letter-spacing:.1em;
   padding:4px 9px;border-radius:20px;color:#e4d9ff;
@@ -1294,17 +1285,6 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     <div id="recent-block" style="display:none">
       <div class="subhead">最近两周</div>
       <div class="rgrid" id="rgrid"></div>
-    </div>
-
-    <!-- 家庭共享 -->
-    <div id="family-block" style="display:none">
-      <div class="subhead">来自家庭共享 <span class="fbadge">Steam Family</span></div>
-      <div class="fnote" id="family-note"></div>
-      <div class="sgrid fgrid" id="fgrid"></div>
-      <div class="morewrap" id="family-more" style="display:none">
-        <button class="btn ghost" id="family-morebtn">展开全部</button>
-        <div class="mtxt" id="family-moretxt"></div>
-      </div>
     </div>
 
     <div class="subhead" id="all-head">全部游戏</div>
@@ -2140,7 +2120,7 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   function makeCard(g){
     var idx = ALL_GAMES.indexOf(g);
     var a = document.createElement("a");
-    a.className = "sgame";
+    a.className = "sgame" + (g.family ? " famcard" : "");
     a.href = g.store || ("https://store.steampowered.com/app/" + g.appid + "/");
     a.target = "_blank"; a.rel = "noopener";
 
@@ -2151,11 +2131,14 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       : '<div class="pt"><span>' + esc(g.playtime || "未玩过") + '</span>' +
         '<span class="bar"><i style="width:3%;opacity:.35"></i></span></div>';
 
+    // 家庭共享的游戏跟自己拥有的一起排在同一个网格里，
+    // 只多一个右上角角标标明来源（不单独成区）。
     a.innerHTML =
       '<div class="cover">' +
         '<img src="' + esc(g.cover || coverUrl(g.appid)) + '" alt="" loading="lazy" ' +
         'onerror="this.style.visibility=\'hidden\'">' +
         '<span class="rank">#' + (idx >= 0 ? idx + 1 : "—") + '</span>' +
+        (g.family ? '<span class="fam" title="来自 Steam 家庭共享（不是自己购买的）">家庭</span>' : '') +
       '</div>' +
       '<div class="meta"><div class="nt" title="' + esc(g.name) + '">' + esc(g.name) + '</div>' +
       pt + '</div>';
@@ -2283,128 +2266,88 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     }
   }
 
+  /* ═══ Steam 家庭共享游戏（合并进主列表）═══
+     数据来自 tools/build_steam_family.py → steam_family.json：
+       ① 本机 <Steam>/userdata/<id>/config/localconfig.vdf 的 FamilyGroup → 成员名单
+       ② 逐个成员查 GetOwnedGames 取并集
+       ③ 减去 steam_games.json 里「自己拥有」的 → 家庭共享游戏
+
+     为什么单独一个文件而不是直接写进 steam_games.json：
+       两个抓取脚本就能互不依赖。API Key 失效时 build_steam_owned.py 会失败，
+       但家庭共享那份仍能刷新（反过来也一样），不会互相拖累。
+
+     ⚠ 展示上**不单独成区** —— 直接并进"全部游戏"，
+       只挂一个右上角「家庭」角标标明来源。
+     ─────────────────────────────────────────────── */
+  function loadFamily(){
+    return fetch("steam_family.json")
+      .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function(d){ return (d && d.games && d.games.length) ? d : null; })
+      .catch(function(){ return null; });   // 没有这个文件就当作没有家庭共享
+  }
+
+  /* 把家庭共享游戏并进自己拥有的列表 */
+  function mergeFamily(owned, famDoc){
+    var list = (owned || []).slice();
+    var seen = {};
+    list.forEach(function(g){ seen[g.appid] = 1; });
+    var added = 0;
+    ((famDoc && famDoc.games) || []).forEach(function(g){
+      if (seen[g.appid]) return;      // 两边都有就保留自己那条（时长更准）
+      seen[g.appid] = 1;
+      g.family = true;
+      list.push(g);
+      added++;
+    });
+    return { games: list, familyCount: added };
+  }
+
+  function sumHours(list){
+    var h = 0;
+    list.forEach(function(g){ h += (g.hours || 0); });
+    return Math.round(h * 10) / 10;
+  }
+
+  /* 一次性渲染合并后的完整游戏库 */
+  function applySteam(owned, famDoc){
+    var m = mergeFamily(owned.games, famDoc);
+    var games = m.games;
+    var totalHours = sumHours(games);
+
+    renderGames(games);
+    renderStats({
+      count: games.length,
+      total_hours: totalHours,
+      games: games,
+      player: owned.player
+    });
+    renderRecent(owned.recent);
+
+    scount.textContent = "共 " + games.length + " 款游戏" +
+      (totalHours ? " · " + totalHours.toLocaleString() + " 小时总时长" : "") +
+      (m.familyCount ? " · 其中 " + m.familyCount + " 款来自家庭共享" : "");
+
+    // ── 首页 Steam 概览卡 ──
+    var hvs = $("#hs-steam-v"), hss = $("#hs-steam-s");
+    if (hvs) hvs.textContent = games.length + " 款游戏";
+    if (hss) hss.textContent = totalHours
+      ? totalHours.toLocaleString() + " 小时总时长"
+      : "暂无时长数据";
+  }
+
   fetch("steam_games.json")
     .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function(d){
       var data = (d && d.games && d.games.length) ? d : FALLBACK;
-      renderGames(data.games);
-      renderStats(data);
-      renderRecent(data.recent);
-      scount.textContent = "\u5171 " + (data.count || data.games.length) + " \u6b3e\u6e38\u620f" +
-        (data.total_hours ? "\u00b7 " + data.total_hours.toLocaleString() + " \u5c0f\u65f6\u603b\u65f6\u957f" : "");
-      // ── 首页 Steam 概览卡 ──
-      var hvs = $("#hs-steam-v"), hss = $("#hs-steam-s");
-      if (hvs) hvs.textContent = (data.count || data.games.length) + " 款游戏";
-      if (hss) hss.textContent = data.total_hours
-        ? data.total_hours.toLocaleString() + " 小时总时长"
-        : "暂无时长数据";
+      // 家庭共享是可选增量：拿不到就只显示自己拥有的
+      return loadFamily().then(function(famDoc){ applySteam(data, famDoc); });
     })
     .catch(function(){
+      // 只有连"自己拥有"都读不到才会走到这里
       renderGames(FALLBACK.games);
       renderStats(FALLBACK);
       scount.textContent = "\u964d\u7ea7\u6570\u636e";
     });
-
-  /* ═══ Steam 家庭共享 ═══
-     数据来自 tools/build_steam_family.py，生成 steam_family.json：
-       本机 <Steam>/config/libraryfolders.vdf 里「已安装」的 appid
-       减去 steam_games.json 里「自己拥有」的 appid
-       → 剩下的用无需 API Key 的商店接口补名称 / 封面 / 过滤掉 DLC·音乐·Demo
-     ⚠ 固有限制：只能列出本机装过的共享游戏。家庭其他成员库里没下载过的，
-       本地没有任何记录，无法列出 —— 所以这里不是"家庭库全集"。
-     ─────────────────────────────────────────────── */
-  var fgrid = $("#fgrid"), fblock = $("#family-block"), fnote = $("#family-note");
-  var fmorewrap = $("#family-more"), fmorebtn = $("#family-morebtn"), fmoretxt = $("#family-moretxt");
-  var FAM_ALL = [], famShown = 0, famMaxH = 1;
-  var FAM_BATCH = 12;   // 首屏只放 12 张，别把"全部游戏"顶到很下面
-
-  /* 家庭卡片：结构与 makeCard 一致，但
-     · 不参与 #sgrid 的排序/分页，所以不显示名次，改挂"家庭"角标
-     · 时长条按家庭区块自己的最大值缩放（跟拥有的游戏分开算） */
-  function makeFamilyCard(g, maxH){
-    var a = document.createElement("a");
-    a.className = "sgame famcard";
-    a.href = g.store || ("https://store.steampowered.com/app/" + g.appid + "/");
-    a.target = "_blank"; a.rel = "noopener";
-
-    var pct = Math.max(3, Math.round(((g.hours || 0) / maxH) * 100));
-    var pt = (g.hours > 0)
-      ? '<div class="pt"><span>' + esc(g.playtime) + '</span>' +
-        '<span class="bar"><i style="width:' + pct + '%"></i></span></div>'
-      : '<div class="pt"><span>未玩过</span>' +
-        '<span class="bar"><i style="width:3%;opacity:.35"></i></span></div>';
-
-    a.innerHTML =
-      '<div class="cover">' +
-        '<img src="' + esc(g.cover || coverUrl(g.appid)) + '" alt="" loading="lazy" ' +
-        'onerror="this.style.visibility=\'hidden\'">' +
-        '<span class="fam">家庭</span>' +
-      '</div>' +
-      '<div class="meta"><div class="nt" title="' + esc(g.name) + '">' + esc(g.name) + '</div>' +
-      pt + '</div>';
-    return a;
-  }
-
-  /* 家庭区块自己的分批渲染。
-     首屏只放 FAM_BATCH 张（别把"全部游戏"顶到很下面），
-     点「展开全部」后一次性补齐剩下的 —— 按钮文案和行为必须一致。
-     图片都带 loading="lazy"，一次插完也不会集中拉网络。 */
-  function famRender(from, to){
-    var frag = document.createDocumentFragment();
-    for (var i = from; i < to; i++) frag.appendChild(makeFamilyCard(FAM_ALL[i], famMaxH));
-    fgrid.appendChild(frag);
-    famShown = to;
-  }
-
-  function famSyncMore(){
-    fmorewrap.style.display = "block";
-    if (famShown >= FAM_ALL.length){
-      fmorebtn.style.display = "none";
-      fmoretxt.textContent = "已显示全部 " + FAM_ALL.length + " 款家庭共享游戏";
-    } else {
-      fmorebtn.style.display = "";
-      fmorebtn.textContent = "展开全部 " + FAM_ALL.length + " 款";
-      fmoretxt.textContent = "已显示 " + famShown + " / " + FAM_ALL.length + " 款";
-    }
-  }
-
-  function appendFamBatch(){
-    if (famShown >= FAM_ALL.length) return;
-    famRender(famShown, Math.min(famShown + FAM_BATCH, FAM_ALL.length));
-    famSyncMore();
-  }
-
-  function expandFamAll(){
-    if (famShown >= FAM_ALL.length) return;
-    famRender(famShown, FAM_ALL.length);
-    famSyncMore();
-  }
-
-  if (fmorebtn) fmorebtn.addEventListener("click", expandFamAll);
-
-  fetch("steam_family.json")
-    .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(function(d){
-      var games = (d && d.games) || [];
-      if (!games.length) return;
-
-      FAM_ALL = games.slice().sort(byHours);
-      famMaxH = 1;
-      FAM_ALL.forEach(function(g){ if ((g.hours || 0) > famMaxH) famMaxH = g.hours; });
-
-      fblock.style.display = "block";
-      var hrs = d.total_hours || 0;
-      fnote.innerHTML =
-        "共 <b>" + FAM_ALL.length + "</b> 款 · 累计 <b>" +
-        (hrs ? hrs.toLocaleString() : "0") + "</b> 小时" +
-        "　·　只列出本机已安装的共享游戏，其他家庭成员库里没下载过的无法显示。";
-
-      appendFamBatch();
-
-      // 头部概要也带上家庭共享，避免"165 款"看着像全部
-      scount.textContent += " · 家庭共享 " + FAM_ALL.length + " 款";
-    })
-    .catch(function(){ /* 文件不存在 / 解析失败都静默跳过，不影响原有内容 */ });
 
   /* ═══ B站数据 ═══
      数据结构（由 tools/build_bili.py 生成）：

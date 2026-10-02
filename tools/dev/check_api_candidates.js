@@ -86,7 +86,8 @@ const CASES = [
 let bad = 0;
 const ok = (c, m) => { console.log((c ? "  OK " : "  \u2717 ") + m); if (!c) bad++; };
 
-["index.html", "admin.html"].forEach(function (file) {
+// 管理页只有一份源文件：admin/index.html（站点根的 admin.html 已合并删除）
+["index.html", "admin/index.html"].forEach(function (file) {
   console.log("\n[" + file + "]");
   const html = fs.readFileSync(path.join(ROOT, file), "utf8");
   let src;

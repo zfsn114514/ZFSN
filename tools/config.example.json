@@ -1,0 +1,56 @@
+{
+  "_readme": [
+    "配置模板 —— 复制成 config.json 再填自己的值。",
+    "（config.json 已在 .gitignore 里，不会被提交；本文件可以提交。）",
+    "",
+    "  copy config.example.json config.json      (Windows)",
+    "  cp config.example.json config.json        (Git Bash)",
+    "",
+    "敏感项也可用环境变量覆盖：STEAM_API_KEY / STEAM_ID / SITE_ROOT",
+    "",
+    "Steam API Key 申请地址：https://steamcommunity.com/dev/apikey",
+    "（该页面国内打不开，需要换网络或走代理去申请）",
+    "申请时填的「域名名称」写什么都行，本地脚本调用不校验它。",
+    "",
+    "⚠ 千万不要把真实 api_key 提交到公开仓库 ——",
+    "  一旦泄露，Steam 会撤销这个 key（实测踩过：旧 key 被提交后失效）。"
+  ],
+  "steam": {
+    "api_key": "",
+    "steamid": "76561199577166952",
+    "profile_url": "https://steamcommunity.com/id/ZFSN114514/",
+    "max_games": 0,
+    "min_playtime": 0
+  },
+  "steam_local": {
+    "_comment": "本机 Steam 安装位置。留空则自动探测。家庭组信息也从这里读。",
+    "steam_root": "C:/Program Files (x86)/Steam",
+    "include_types": [
+      "game"
+    ],
+    "exclude_appids": [
+      228980
+    ]
+  },
+  "steam_family": {
+    "_comment": [
+      "家庭共享游戏：逐个成员查 GetOwnedGames 取并集，再减去自己拥有的。",
+      "include_members: 留空 = 用本机 FamilyGroup 里的全部成员（推荐）。",
+      "  想只同步部分成员，就填他们的 SteamID64。",
+      "skip_self: true = 不把自己算进共享来源（自己拥有的已在 steam_games.json）。",
+      "verify_with_store: true = 用商店接口确认每条的类型，过滤掉 DLC/原声带/Demo。",
+      "  首次运行会查 300+ 个接口（约 2-3 分钟），结果永久缓存，之后很快。"
+    ],
+    "include_members": [],
+    "skip_self": true,
+    "verify_with_store": true,
+    "delay": 0.35
+  },
+  "bili": {
+    "uid": "1220210222",
+    "space_url": "https://space.bilibili.com/1220210222"
+  },
+  "xbox": {
+    "profile_url": "https://www.xbox.com/zh-CN/play/user/ZFSN114514"
+  }
+}
