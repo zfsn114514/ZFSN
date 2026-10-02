@@ -1445,9 +1445,10 @@ var editingId = null;
  *   就必须 git push。几十上百 MB 的视频塞进仓库，每次构建和克隆都会被拖慢。
  *   代价是这些文件需要家里服务器在线才能访问（和留言板同一个前提）。
  */
-var IMGS = [];     // 图片相对路径数组，第一张即封面
-var VIDEOP = "";   // 视频相对路径
-var FILES = [];    // [{ name, path, size, sizeText }]
+var IMGS = [];        // 图片相对路径数组，第一张即封面
+var VIDEOP = "";      // 视频相对路径
+var VIDEO_COVER = ""; // 从视频抓帧生成的封面（仅当作品没有任何图片时用作封面）
+var FILES = [];       // [{ name, path, size, sizeText }]
 
 /** 把后端相对路径拼成后台页可直接预览的地址 */
 function mUrl(rel){
@@ -1542,8 +1543,14 @@ function renderThumbs(){
       '</div>';
     }).join("");
   }
-  // 封面字段始终跟随第一张，保存时不用再单独维护
-  $("#w-cover").value = IMGS[0] || "";
+  // 封面优先级：第一张图片 > 视频抓帧生成的封面 > 空（用渐变占位图）
+  $("#w-cover").value = IMGS[0] || VIDEO_COVER || "";
+  var hint = $("#w-cover-hint");
+  if (hint){
+    hint.textContent = (!IMGS.length && VIDEO_COVER)
+      ? "封面取自视频画面（自动生成）；传了图片后会改用第一张图片"
+      : "第一张自动作为封面；点缩略图右下角的「封面」可换封面，用 ← → 调整顺序";
+  }
 }
 
 /* ── 视频：单个，带播放器预览 ── */
@@ -1551,15 +1558,114 @@ function renderVideo(){
   var prev = $("#v-drop-prev"), empty = $("#v-drop-empty"), v = $("#v-prev");
   if (!prev || !empty) return;
   if (VIDEOP){
-    if (v) v.src = mUrl(VIDEOP);
+    if (v){
+      v.src = mUrl(VIDEOP);
+      // 抓到的帧设为 poster —— 播放前就显示这一帧，一眼能确认封面对不对
+      if (VIDEO_COVER) v.setAttribute("poster", mUrl(VIDEO_COVER));
+      else v.removeAttribute("poster");
+    }
     $("#v-prev-path").textContent = VIDEOP;
     prev.classList.remove("hide");
     empty.classList.add("hide");
   } else {
-    if (v){ v.pause(); v.removeAttribute("src"); v.load(); }
+    if (v){ v.pause(); v.removeAttribute("src"); v.removeAttribute("poster"); v.load(); }
     prev.classList.add("hide");
     empty.classList.remove("hide");
   }
+}
+
+/* ══ 用视频画面当封面 ══
+ * 纯视频作品（一张图都没传）在作品墙上会是个空框，很难看。
+ * 这里从视频里抓一帧上传成封面图。
+ *
+ * 为什么抓下来的帧要上传成图片、而不是直接把 <video> 放上作品墙：
+ *   封面存进 assets/works/ → 走 git → Cloudflare CDN，
+ *   家里服务器关机时作品墙依然有封面；而 <video> 走的隧道关机就断了。
+ *   这也符合本项目"图片走 CF、视频走隧道"的分层。
+ *
+ * 为什么能用 canvas 抓跨域视频的画面：
+ *   后端 sendFile 带 Access-Control-Allow-Origin: *，
+ *   配合 crossOrigin="anonymous"，canvas 不会被污染（否则 toBlob 抛安全错误）。
+ */
+function grabVideoFrame(url, seekTo){
+  return new Promise(function(resolve, reject){
+    var v = document.createElement("video");
+    v.crossOrigin = "anonymous";   // 关键：让 canvas 可以读取跨域视频的像素
+    v.preload = "auto";
+    v.muted = true;
+    v.playsInline = true;
+
+    var finished = false;
+    var timer = setTimeout(function(){
+      done(new Error("抓帧超时（视频编码可能比较特殊）"));
+    }, 20000);
+
+    function done(err, blob){
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      try { v.pause(); v.removeAttribute("src"); v.load(); } catch (e) {}
+      err ? reject(err) : resolve(blob);
+    }
+
+    v.addEventListener("error", function(){
+      done(new Error("视频无法加载，抓帧失败"));
+    });
+
+    v.addEventListener("loadeddata", function(){
+      // 片头常有黑场/Logo，默认取第 1 秒；视频太短就取中段
+      var dur = v.duration || 0;
+      var t = (dur > 1.5) ? (seekTo || 1) : (dur * 0.5);
+      if (!isFinite(t) || t < 0) t = 0;
+      v.addEventListener("seeked", onSeeked, { once: true });
+      v.currentTime = t;
+    });
+
+    function onSeeked(){
+      try {
+        var w0 = v.videoWidth || 0, h0 = v.videoHeight || 0;
+        if (!w0 || !h0) return done(new Error("取不到视频画面尺寸"));
+        // 限制宽度，避免 4K 视频生成十几 MB 的封面图
+        var scale = Math.min(1, 1280 / w0);
+        var c = document.createElement("canvas");
+        c.width = Math.round(w0 * scale);
+        c.height = Math.round(h0 * scale);
+        c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+        c.toBlob(function(blob){
+          blob ? done(null, blob) : done(new Error("画面转图片失败"));
+        }, "image/jpeg", 0.85);
+      } catch (e) {
+        done(new Error("抓帧失败：" + e.message));
+      }
+    }
+
+    v.src = url;
+    v.load();
+  });
+}
+
+/** 视频传完后调用：还没有任何图片时，自动抓一帧当封面 */
+function autoVideoCover(videoPath){
+  if (!videoPath) return Promise.resolve(null);
+  return grabVideoFrame(mUrl(videoPath), 1)
+    .then(function(blob){
+      var f = new File([blob], "video-cover-" + Date.now() + ".jpg", { type: "image/jpeg" });
+      return uploadFiles("image", [f],
+        { drop: "#v-drop", bar: "#v-drop-bar", barIn: "#v-drop-bar-in" });
+    })
+    .then(function(d){
+      if (!d || !d.files || !d.files.length) return null;
+      VIDEO_COVER = d.files[0].path;
+      renderVideo();
+      renderThumbs();
+      toast("已从视频生成封面", "ok");
+      return VIDEO_COVER;
+    })
+    .catch(function(e){
+      // 抓帧失败只提示，不回滚 —— 视频本身已经传好了，手动补张图即可
+      toast("视频已上传；自动封面失败，可手动传一张图", "bad");
+      return null;
+    });
 }
 
 /* ── 下载文件：列表 ── */
@@ -1663,12 +1769,24 @@ function renderFiles(){
   var drop = $("#v-drop"), input = $("#v-file");
   if (!drop || !input) return;
 
+  /** 视频上传成功后的统一处理（点选 / 拖拽两条路径共用）*/
+  function onVideoUploaded(d){
+    if (!d || !d.files || !d.files.length) return;
+    VIDEOP = d.files[0].path;
+    renderVideo();
+    toast("视频已上传 · " + fmtSize(d.files[0].size), "ok");
+    // 一张图都没传时，自动从视频抓一帧当封面
+    if (!IMGS.length) autoVideoCover(VIDEOP);
+  }
+
   drop.addEventListener("click", function(e){
     if (e.target.closest("#v-repick")){ e.stopPropagation(); input.value = ""; input.click(); return; }
     if (e.target.closest("#v-clear")){
       e.stopPropagation();
       VIDEOP = "";
+      VIDEO_COVER = "";   // 封面是从这个视频抓的，视频没了封面也没意义
       renderVideo();
+      renderThumbs();
       toast("已移除视频", "ok");
       return;
     }
@@ -1683,12 +1801,7 @@ function renderFiles(){
     var f = input.files[0];
     if (f.size > 100 * 1024 * 1024) return toast("视频太大了（上限 100MB）", "bad");
     uploadFiles("video", [f], { drop: "#v-drop", bar: "#v-drop-bar", barIn: "#v-drop-bar-in" })
-      .then(function(d){
-        if (!d) return;
-        VIDEOP = d.files[0].path;
-        renderVideo();
-        toast("视频已上传 · " + fmtSize(d.files[0].size), "ok");
-      })
+      .then(onVideoUploaded)
       .catch(function(e){ toast(e.message, "bad"); });
     input.value = "";
   });
@@ -1706,12 +1819,7 @@ function renderFiles(){
     if (!v) return toast("这里只接收视频文件", "bad");
     if (v.size > 100 * 1024 * 1024) return toast("视频太大了（上限 100MB）", "bad");
     uploadFiles("video", [v], { drop: "#v-drop", bar: "#v-drop-bar", barIn: "#v-drop-bar-in" })
-      .then(function(d){
-        if (!d) return;
-        VIDEOP = d.files[0].path;
-        renderVideo();
-        toast("视频已上传 · " + fmtSize(d.files[0].size), "ok");
-      })
+      .then(onVideoUploaded)
       .catch(function(e){ toast(e.message, "bad"); });
   });
 })();
@@ -1796,12 +1904,18 @@ function openWorkForm(item){
   $("#w-tag").value = item ? (item.tag || "") : "";
   $("#w-desc").value = item ? (item.desc || "") : "";
 
-  // 回填媒体：老数据只有 cover 没有 images，就把它当成唯一一张图
-  var imgs = (item && item.images && item.images.length)
+  // 回填媒体
+  var hasImages = !!(item && item.images && item.images.length);
+  // 老数据只有 cover 没有 images：
+  //   · 没有视频 → 那 cover 就是唯一一张图，进相册
+  //   · 有视频   → 那 cover 多半是自动抓的视频帧，归 VIDEO_COVER，不混进相册
+  var imgs = hasImages
     ? item.images.slice()
-    : (item && item.cover ? [item.cover] : []);
+    : (item && item.cover && !item.video ? [item.cover] : []);
   IMGS = imgs.map(normPath).filter(Boolean);
   VIDEOP = normPath(item ? (item.video || "") : "");
+  VIDEO_COVER = (item && item.video && item.cover && !hasImages)
+    ? normPath(item.cover) : "";
   FILES = ((item && item.files) || []).map(function(f){
     return {
       name: f.name || String(f.path || "").split("/").pop(),
@@ -1830,7 +1944,7 @@ $("#add-work").addEventListener("click", function(){ openWorkForm(null); });
 $("#w-cancel").addEventListener("click", function(){
   $("#work-form").classList.add("hide");
   editingId = null;
-  IMGS = []; VIDEOP = ""; FILES = [];
+  IMGS = []; VIDEOP = ""; VIDEO_COVER = ""; FILES = [];
 });
 
 $("#w-save").addEventListener("click", function(){
@@ -1842,7 +1956,8 @@ $("#w-save").addEventListener("click", function(){
     tag: $("#w-tag").value.trim(),
     desc: $("#w-desc").value.trim(),
     images: IMGS.slice(),
-    cover: IMGS[0] || "",
+    // 封面优先级：第一张图片 > 视频抓帧 > 空（前端用渐变占位图）
+    cover: IMGS[0] || VIDEO_COVER || "",
     video: VIDEOP || "",
     files: FILES.map(function(f){
       return { name: f.name, path: f.path, size: f.size, sizeText: f.sizeText };
