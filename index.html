@@ -1196,7 +1196,16 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
      改成 auto-fill + 小 minmax，让手机端也是 2~3 列网格。 */
   .vgrid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
   .sgrid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  /* ★ 上次漏改 .rgrid —— 截图 bug 根因：手机端「最近两周」还是单列全宽，
+     一个游戏独占一整行，封面图 460:215 比例拉得老高。 */
+  .rgrid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
   .xgrid{grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:12px}
+  /* 460:215 的 Steam 封面在 150px 宽列里变成 ~70px 高，整个卡片紧凑多了 */
+  .sgame .cover{aspect-ratio:460/215}
+  .rcard img{aspect-ratio:460/215}
+  .sgame .nt,.rcard .rn{font-size:12px}
+  .sgame .meta{padding:10px 12px 12px}
+  .rcard .rm{padding:8px 10px 10px}
   .xbox-hero{padding:16px 17px}
   .xbox-hero svg{width:28px;height:28px;flex:0 0 28px}
 }
