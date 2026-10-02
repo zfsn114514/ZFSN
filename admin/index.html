@@ -7,6 +7,11 @@
 <title>管理后台 — ZFSN</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙</text></svg>">
 <style>
+/* ── 内联图标安全网 ──
+ * <svg> 不写 width/height 时会按默认对象尺寸（300×150）渲染成巨大方块。
+ * 给所有"标签上没写 width"的 svg 一个跟随字号的兜底尺寸。
+ * 放在最前面，后面各处的具体规则按源顺序覆盖它。 */
+svg:not([width]){width:1em;height:1em;flex:0 0 auto}
 :root{
   --bg:#07070b;--surface:#0e0e15;--surface2:#13131c;
   --line:#1e1e2a;--line2:#2b2b3a;
@@ -393,6 +398,7 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 }
 .dist .d b{color:var(--blue);font-weight:700}
 .dist .d span{color:var(--muted)}
+.dist .d svg{width:12px;height:12px;flex:0 0 12px}
 
 /* 提示条 */
 .toast{

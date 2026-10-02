@@ -19,6 +19,13 @@
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="apple-touch-icon" href="assets/avatar.jpg">
 <style>
+/* ── 内联图标安全网 ──
+ * <svg> 不写 width/height 时，浏览器按默认对象尺寸（300×150）渲染成一整块
+ * 巨大方块 —— 作品详情页「附件下载」标题里那个大箭头就是这么来的。
+ * 这里给所有"标签上没写 width"的 svg 一个跟随当前字号的兜底尺寸。
+ * 必须放在样式表最前面：后面各处的具体规则（如 .card svg）特异性相同，
+ * 靠源顺序覆盖它。带 width 属性的 svg（渐变占位图那种）不受影响。 */
+svg:not([width]){width:1em;height:1em;flex:0 0 auto}
 :root{
   --bg:#07070b;
   --bg2:#0d0d14;
@@ -416,6 +423,7 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
   font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
   font-weight:600;margin-bottom:11px;
 }
+.wd-dl h4 svg{width:11px;height:11px;flex:0 0 11px;vertical-align:-1px}
 .wd-dl a{
   display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:10px;
   border:1px solid var(--line);background:var(--surface);text-decoration:none;
@@ -897,7 +905,8 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
   padding:2px 8px;border-radius:20px;
   background:rgba(102,163,217,.1);border:1px solid rgba(102,163,217,.22);
 }
-.glist > .gitem .loc svg{width:9px;height:9px}
+.glist > .gitem .loc svg,
+.loc svg{width:9px;height:9px}
 .glist > .gitem .when{margin-left:auto;font-size:10px;color:#4a4a5a;letter-spacing:.06em}
 /* 正文最多显示 6 行 —— 长留言折叠，避免个别超长内容把整列撑爆 */
 .glist > .gitem .body{
