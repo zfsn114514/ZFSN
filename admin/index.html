@@ -664,16 +664,23 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 var $ = function(s){ return document.querySelector(s); };
 var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
 
-/* ── 后端地址探测：多候选并发探测，取第一个响应的 ──
+/* ── 后端地址探测：多候选并发探测，取优先级最高的那个成功地址 ──
    ⚠ https 页面不能请求 http 接口（浏览器按混合内容直接拦掉，
      请求根本发不出去），所以候选地址的协议必须跟页面一致。
-     例外：http://localhost / http://127.0.0.1 属可信来源，https 下也可用。 */
+     例外：http://localhost / http://127.0.0.1 属可信来源，https 下也可用。
+   ★ 线上方案：静态页在 Cloudflare Workers，接口经 Cloudflare 隧道暴露为
+     https://api.zfsnnb.dpdns.org。管理页现在也能从公网 https 访问 ——
+     比走明文 http://域名:3000 更安全（请求全程加密）。 */
 var API_BASE = "";
 var API_READY = null;
 
 /* 与 D:\ZFSN-server\server.js 的 PORT / HTTPS_PORT 默认值保持一致 */
 var HTTP_API_PORT = 3000;
 var HTTPS_API_PORT = 3443;
+
+/* Cloudflare 隧道暴露的后端地址。
+   ★ 改隧道主机名时，这里要和 index.html、D:\ZFSN-server\cloudflared\config.yml 一起改。 */
+var TUNNEL_API = "https://api.zfsnnb.dpdns.org";
 
 function isHttpsPage(){ return location.protocol === "https:"; }
 /** 当前页面协议下应该用的后端端口 */
@@ -691,20 +698,32 @@ function apiCandidates(){
   var isWeb = (proto === "http:" || proto === "https:");
   var isHttps = (proto === "https:");
 
+  /* 页面是不是 Cloudflare 静态托管（Workers）？同源 /api/* 必然 404，
+     所以隧道要排在同源前面，否则每次都要白探一轮。 */
+  var isCFHost = /^www\.zfsnnb\.dpdns\.org$/i.test(host || "") &&
+                 (location.port === "" || location.port === "443");
+
   // ① 同源：只要页面本身就是后端提供的，"" 就成立。
   //    直接无条件优先探测，不预设端口号 —— 这样外部端口被映射成
   //    3000 以外的任意值（如 38472）时也能正常工作。
-  if (isWeb) list.push("");
+  if (isWeb && !isCFHost) list.push("");
 
-  // ② 当前主机名的后端端口 —— 覆盖"页面在 IIS:88、后端在 3000/3443"的场景。
+  // ② Cloudflare 隧道 —— 线上方案
+  if (isHttps) list.push(TUNNEL_API);
+
+  // ③ CF 静态托管下的同源（已知 404，成本极低，留着以防 CF 侧以后代理 /api/*）
+  if (isWeb && isCFHost) list.push("");
+
+  // ④ 当前主机名的后端端口 —— 覆盖"页面在 IIS:88、后端在 3000/3443"的场景。
   //    若页面端口本来就等于后端端口，说明 ① 的同源候选已经覆盖它。
+  //    ⚠ CF 托管下跳过：CF 免费版不代理 :3443，连接会一直挂到超时。
   var samePort = isWeb && (portOf(location) === String(isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
-  if (host && !samePort){
+  if (host && !samePort && !isCFHost){
     list.push((isHttps ? "https://" : "http://") + host + ":" +
               (isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
   }
 
-  // ③ 本机兜底：页面在 file:// 时用得上
+  // ⑤ 本机兜底：页面在 file:// 时用得上
   if (isHttps){
     list.push("https://localhost:" + HTTPS_API_PORT);
     list.push("https://127.0.0.1:" + HTTPS_API_PORT);
@@ -720,7 +739,8 @@ function apiCandidates(){
 function probe(base){
   return new Promise(function(resolve){
     var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    var timer = setTimeout(function(){ if (ctl) ctl.abort(); resolve(null); }, 2200);
+    // 3500ms：走 CF 隧道实测 TTFB ≈ 1.0s，2200ms 余量太薄（同 index.html）
+    var timer = setTimeout(function(){ if (ctl) ctl.abort(); resolve(null); }, 3500);
     var url = (base || "") + "/api/health" + (base ? "" : "?_=" + Date.now());
     fetch(url, { signal: ctl ? ctl.signal : undefined, cache: "no-store" })
       .then(function(r){ return r.ok ? r.json() : null; })
@@ -732,12 +752,41 @@ function probe(base){
 function detectAPI(){
   if (API_READY) return API_READY;
   var bases = apiCandidates();
-  API_READY = Promise.all(bases.map(probe)).then(function(res){
-    var hit = null;
-    for (var i = 0; i < res.length; i++){ if (res[i] !== null){ hit = res[i]; break; } }
-    // null = 全部候选都失败（后端确实没起来）；"" = 同源可用
-    API_BASE = (hit === null) ? null : (hit || "");
-    return hit;
+
+  /* 并发探测，但不等全部返回：优先级最高的成功候选一确定就收工。
+     否则候选里那个走不通的地址（CF 不代理的 :3443）会一直挂到超时，
+     隧道明明 1s 就通了也要白等满 3.5s。 */
+  API_READY = new Promise(function(resolve){
+    var n = bases.length;
+    if (!n){ API_BASE = null; return resolve(null); }
+    var res = new Array(n);       // undefined=未定论 / null=失败 / 字符串=成功
+    var settledCount = 0, done = false;
+
+    function finish(v){
+      if (done) return;
+      done = true;
+      // null = 全部候选都失败（后端确实没起来）；"" = 同源可用
+      API_BASE = (v === null) ? null : (v || "");
+      resolve(v);
+    }
+    function bestSoFar(){
+      for (var i = 0; i < n; i++){
+        if (res[i] === undefined) return undefined;
+        if (res[i] !== null) return res[i];
+      }
+      return null;
+    }
+
+    bases.forEach(function(base, i){
+      probe(base).then(function(v){
+        if (done) return;
+        res[i] = v;
+        settledCount++;
+        if (settledCount === n){ finish(bestSoFar()); return; }
+        var b = bestSoFar();
+        if (b !== undefined) finish(b);
+      });
+    });
   });
   return API_READY;
 }
@@ -995,13 +1044,24 @@ function runNetCheck(){
     }
 
     // ③ 代理头信任状态 —— 影响归属地识别的准确性
-    if (d.trust_proxy){
-      rows.push(nrow("ok", "已启用代理头信任",
-        "当前会采信 <code>X-Forwarded-For</code>，适合部署在 nginx / Cloudflare 后面。"));
+    //    ★ 2026-10 起服务端改成「对端是回环才信任代理头」：
+    //      Cloudflare 隧道从 127.0.0.1 连入 → 采信 CF-Connecting-IP（真实访客 IP）；
+    //      公网直连的访客 TCP 对端不是回环 → 代理头一律不看，伪造不了。
+    var peerShown = d.peer_ip || d.your_ip;
+    if (d.via_proxy){
+      rows.push(nrow("ok", "代理头已生效（经本机隧道/反代进入）",
+        "TCP 对端是 <code>" + peerShown + "</code>（回环），说明请求是从本机的 " +
+        "<code>cloudflared</code> / nginx 转进来的，已采信 <code>CF-Connecting-IP</code> " +
+        "得到真实访客 IP。"));
+    } else if (d.trust_proxy){
+      rows.push(nrow("ok", "已强制信任代理头",
+        "当前设了 <code>TRUST_PROXY=1</code>，会无条件采信 <code>CF-Connecting-IP</code> / " +
+        "<code>X-Forwarded-For</code>。<br>⚠ 只有前面确实有可信反代时才该这样，" +
+        "否则访客可以自己伪造归属地。"));
     } else {
-      rows.push(nrow("ok", "未信任代理头（默认，更安全）",
-        "直接使用 TCP 连接的真实 IP，访客无法伪造归属地。" +
-        "若以后在前面加了反向代理，再设 <code>TRUST_PROXY=1</code> 环境变量。"));
+      rows.push(nrow("ok", "直连访问（未走代理）",
+        "TCP 对端 <code>" + peerShown + "</code> 就是访客本人，直接拿它判断归属地，" +
+        "访客无法伪造。<br>经 Cloudflare 隧道访问时会自动变成上面的「代理头已生效」。"));
     }
 
     // ④ 当前这个管理员会话是从哪来的 —— 这才是"公网通没通"的真正判据
@@ -1026,6 +1086,29 @@ function runNetCheck(){
     //   · 回连失败 → 说明不了什么，要看下面 ⑥ 的真实外部来源判断
     var host = location.hostname;
     var isPublicHost = host && !/^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+    var onCF = /^www\.zfsnnb\.dpdns\.org$/i.test(host || "");
+
+    // ⑤-a 隧道自检：页面挂在 Cloudflare 上时，"公网回连本机端口"毫无意义
+    //      （根本没有入站端口），改探隧道端点。
+    if (onCF){
+      var tp = /^https?:\/\/([^\/:]+)(?::(\d+))?/.exec(TUNNEL_API) || [];
+      var tHost = tp[1] || "api.zfsnnb.dpdns.org";
+      var tPort = tp[2] || (/^https:/.test(TUNNEL_API) ? "443" : "80");
+      return probePublic(tHost, tPort, "https:").then(function(reachable){
+        rows.push(nrow(reachable ? "ok" : "bad",
+          reachable ? "Cloudflare 隧道连通 ✅" : "Cloudflare 隧道连不上 ❌",
+          "<code>" + TUNNEL_API + "/api/health</code> " +
+          (reachable
+            ? "返回正常。<br>说明家里的 <code>cloudflared</code> 和 Node 后端都在跑，" +
+              "公网访客可以正常浏览和留言。"
+            : "没有响应。<br>请检查：<br>" +
+              "① 任务计划程序里 <code>ZFSN-Cloudflare-Tunnel</code> 是否在运行；<br>" +
+              "② Node 后端（<code>D:\\ZFSN-server\\启动服务.bat</code>）是否已启动。<br>" +
+              "（隧道走 Cloudflare 边缘，首包约 1 秒属正常，这里已给到 6 秒。）")));
+        render(rows, reachable);
+      });
+    }
+
     if (!isPublicHost){
       rows.push(nrow("warn", "当前不是通过公网域名访问",
         "浏览器地址是 <code>" + (host || "本地") + "</code>。<br>" +
@@ -1063,13 +1146,28 @@ function runNetCheck(){
     var guideScheme = isHttpsPage() ? "https:" : "http:";
     var html = list.join("");
     if (!allGood){
+      // 页面是不是 CF 静态托管 —— 是的话端口映射那套指引完全不适用
+      var onCF = /^www\.zfsnnb\.dpdns\.org$/i.test(location.hostname || "");
       html +=
         '<div class="nguide">' +
+        (onCF
+          ? '<h3>本站走 Cloudflare 隧道，<b>不需要</b>任何端口映射</h3>' +
+            '<p>页面由 Cloudflare Workers 提供，接口经隧道 <code>' + TUNNEL_API + '</code> ' +
+            '回到家里的 Node 后端。也就是说：<br>' +
+            '· 路由器上<b>不用开放任何入站端口</b>；<br>' +
+            '· 访客也无法通过你的公网 IP 直连到这台电脑（更安全）；<br>' +
+            '· 证书由 Cloudflare 签发，不会有"不安全"警告。<br>' +
+            '连不上时按顺序查：<br>' +
+            '① 任务计划程序里 <code>ZFSN-Cloudflare-Tunnel</code> 是否在运行；<br>' +
+            '② Node 后端（<code>D:\\ZFSN-server\\启动服务.bat</code>）是否已启动；<br>' +
+            '③ 直接打开 <code>' + TUNNEL_API + '/api/health</code>，正常应返回一段 JSON。</p>'
+          : '') +
         '<h3>先确认一件事</h3>' +
         '<p>判断公网有没有通，<b>只看第 ④ 项</b>：若显示「你正从外部网络访问」，' +
         '说明已经通了，下面的步骤都不用做。<br>' +
         '第 ⑤ 项「公网回连」失败是<b>正常现象</b>——家用路由器普遍不支持 NAT 回环，' +
         '内网连自己的公网地址本就连不上，与访客能否访问无关。</p>' +
+        (onCF ? '' :
         '<h3>如果确实还不通（第 ④ 项也显示本机访问，且手机流量打不开）</h3>' +
         '<ol>' +
         '<li>登录路由器管理页（一般 <code>192.168.0.1</code> 或 <code>192.168.1.1</code>）</li>' +
@@ -1083,17 +1181,21 @@ function runNetCheck(){
         guidePort + '" -Direction Inbound -LocalPort ' + guidePort +
         ' -Protocol TCP -Action Allow</code></li>' +
         '<li>再不通：确认宽带是否有公网 IP（很多家宽是内网 IP，需要联系运营商）</li>' +
-        '</ol>' +
+        '</ol>') +
         (isHttpsPage()
           ? '<h3>HTTPS 补充说明</h3>' +
-            '<p>当前用的是 <b>自签名证书</b>（后端首次启动时自动签发），' +
-            '访客第一次打开会看到「您的连接不是私密连接」，点「高级 → 继续前往」即可，' +
-            '页面和留言都正常。<br>' +
-            '想去掉这个提示，把真实证书（如 Let\'s Encrypt 的 <code>fullchain.pem</code> / ' +
-            '<code>privkey.pem</code>）放到 <code>D:\\ZFSN-server\\certs\\</code>，' +
-            '或设环境变量 <code>TLS_CERT</code> / <code>TLS_KEY</code> 指向它们，然后重启服务。<br>' +
-            '另外 HTTPS 用的是 <code>' + HTTPS_API_PORT + '</code> 端口，' +
-            '路由器上要<b>单独再映射一条</b>（HTTP 的 ' + HTTP_API_PORT + ' 端口映射不会自动覆盖它）。</p>'
+            '<p>' + (onCF
+              ? '当前证书由 Cloudflare 签发（受信），访客不会看到任何安全警告。'
+              : '当前用的是 <b>自签名证书</b>（后端首次启动时自动签发），' +
+                '访客第一次打开会看到「您的连接不是私密连接」，点「高级 → 继续前往」即可，' +
+                '页面和留言都正常。<br>' +
+                '想去掉这个提示，把真实证书（如 Let\'s Encrypt 的 <code>fullchain.pem</code> / ' +
+                '<code>privkey.pem</code>）放到 <code>D:\\ZFSN-server\\certs\\</code>，' +
+                '或设环境变量 <code>TLS_CERT</code> / <code>TLS_KEY</code> 指向它们，然后重启服务。') +
+            '<br>⚠ 注意：<b>Cloudflare 免费版只回源固定端口</b>' +
+            '（80/443/8080/8443/2052/2053/2082/2083/2086/2087/2095/2096），' +
+            '<code>' + HTTPS_API_PORT + '</code> <b>不在名单里</b>，' +
+            '所以别再写 <code>https://域名:' + HTTPS_API_PORT + '</code> 了 —— 连不上。</p>'
           : '') +
         '</div>';
     }

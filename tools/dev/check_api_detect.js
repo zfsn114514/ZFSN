@@ -1,26 +1,34 @@
 /**
- * 前端内联脚本冒烟测试（桩环境）
+ * 后端地址「探测结果」契约检查（桩环境，不需要真实网络）
  * ---------------------------------------------------------------
- * 目的：在 Node 里把 index.html / admin/index.html 的内联脚本整体跑一遍，
- * 捕获**顶层运行时错误**（未定义变量、拼错函数名等）。
+ * 为什么需要它：
+ *   check_api_candidates.js 只验证**候选列表的顺序**，证明不了"最终真的选中了隧道"。
+ *   而线上最关键的一件事恰恰是：
+ *     在 https://www.zfsnnb.dpdns.org/ 这种 CF 静态托管页上，
+ *     本地 localhost 是**不可达**的（访客不在你的局域网），
+ *     探测必须落到 https://api.zfsnnb.dpdns.org（Cloudflare 隧道）。
  *
- * ⚠ 两个曾经让本测试"假通过"的桩缺陷（已修，别再改回去）：
- *   1. getContext("2d") 返回 null —— index.html 顶层就会
- *      ctx.setTransform(...)，一抛错后面的数据加载全被带停，
- *      测试却把它当"桩限制"忽略，等于什么都没测到。
- *      现在返回一个完整的 no-op 上下文桩。
- *   2. parentNode 返回 null —— 脚本里有 el.parentNode.appendChild(...)，
- *      同样会在顶层抛错。现在返回一个惰性创建的元素桩。
+ *   但开发机上 localhost:3000 永远是通的，浏览器一跑就会回落到本机兜底 ——
+ *   于是"线上修好了没有"这件事在本地怎么测都测不出来。
+ *   所以这里用桩 fetch 人为制造"只有隧道可用"的环境，把结论钉死。
  *
- * 注意：桩里的 fetch 必然 reject，会触发各数据源的降级分支，
- * 那些分支依赖真实 DOM，报错属正常 —— 按错误类型排除即可。
- */
+ * 做法：
+ *   把 index.html 的内联脚本整段跑起来，fetch 换成记录型桩：
+ *     · 只有 TUNNEL/api/health 返回 ok
+ *     · 其余一律 reject（模拟访客那边 localhost / :3443 全都不通）
+ *   然后断言：
+ *     ① 隧道 health 被请求过
+ *     ② 后续业务请求（/api/messages 等）也打在隧道域名上
+ *        —— 这一条才真正证明 API_BASE 被判成了隧道
+ *     ③ 没有去请求 https://www.zfsnnb.dpdns.org:3443
+ *        —— CF 不代理 3443，这个候选必须被跳过（否则白挂到超时）
+ *
+ * 用法：node tools/dev/check_api_detect.js
+ * ───────────────────────────────────────────────────────────── */
 "use strict";
 const fs = require("fs");
 const path = require("path");
 
-// 站点根目录：从本文件所在目录逐级往上找，直到看见 index.html。
-// （本脚本在 tools/dev/ 下，所以不能简单地用 ".."）
 const ROOT = (function () {
   let d = __dirname;
   for (let i = 0; i < 5; i++) {
@@ -32,7 +40,14 @@ const ROOT = (function () {
   return path.resolve(__dirname, "..", "..");
 })();
 
-/** canvas 2d 上下文桩（见文件头说明 1） */
+const PAGE = "https://www.zfsnnb.dpdns.org/";
+const TUNNEL = (fs.readFileSync(path.join(ROOT, "index.html"), "utf8")
+  .match(/var TUNNEL_API = "([^"]+)"/) || [])[1];
+if (!TUNNEL) { console.log("\u2717 index.html 里找不到 TUNNEL_API"); process.exit(1); }
+
+/* ── DOM 桩（与 sanity_frontend.js 同源，够跑通顶层脚本即可） ── */
+/* canvas 2d 上下文桩：index.html 在顶层就会 getContext("2d").setTransform(...)，
+   如果返回 null 会直接抛错、把后面的数据加载全带停（sanity_frontend 就被这个坑到过）。 */
 function makeCtx() {
   const noop = function () { return makeCtx(); };
   const ctx = {
@@ -82,20 +97,24 @@ function makeEl(tag) {
     getContext() { return makeCtx(); },
     toDataURL() { return ""; }
   };
-  // 不能返回 null（见文件头说明 2）
+  // 注意：不能返回 null —— 脚本里有 el.parentNode.appendChild(...) 的写法，
+  // 返回 null 会抛错并把顶层执行带停（sanity_frontend 就是被这个坑到过）。
   Object.defineProperty(el, "parentNode", { get() { return makeEl("div"); } });
   return el;
 }
 
-function run(file) {
-  const html = fs.readFileSync(path.join(ROOT, file), "utf8");
+let bad = 0;
+const ok = (c, m) => { console.log((c ? "  OK " : "  \u2717 ") + m); if (!c) bad++; };
+
+function run() {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
-  let m, idx = 0, failures = 0;
+  let m;
+  const calls = [];          // { url, ok }
 
   while ((m = re.exec(html))) {
-    idx++;
     const src = m[1];
-    if (!src.trim()) continue;
+    if (!src.trim() || src.indexOf("apiCandidates") < 0) continue;   // 只跑主脚本
 
     const document = {
       body: makeEl("body"),
@@ -111,7 +130,10 @@ function run(file) {
     const store = {};
     const window = {
       document,
-      location: { href: "http://localhost:3000/", origin: "http://localhost:3000", protocol: "http:", hostname: "localhost", pathname: "/", search: "", hash: "" },
+      location: {
+        href: PAGE, origin: PAGE.replace(/\/$/, ""), protocol: "https:",
+        hostname: "www.zfsnnb.dpdns.org", pathname: "/", search: "", hash: "", port: ""
+      },
       navigator: { userAgent: "stub", language: "zh-CN", clipboard: null },
       localStorage: {
         getItem: (k) => (k in store ? store[k] : null),
@@ -123,12 +145,32 @@ function run(file) {
       matchMedia: () => ({ matches: false, addEventListener() {}, addListener() {} }),
       getComputedStyle: () => ({ getPropertyValue: () => "" }),
       devicePixelRatio: 1,
-      innerWidth: 1280, innerHeight: 800,
+      innerWidth: 430, innerHeight: 900,
       scrollTo() {}, scrollY: 0,
       requestAnimationFrame: (fn) => setTimeout(() => fn(Date.now()), 0),
       cancelAnimationFrame: (id) => clearTimeout(id),
       setTimeout, clearTimeout, setInterval, clearInterval,
-      fetch: () => Promise.reject(new Error("stub: no network")),
+      /* ★ 核心：只有隧道的 /api/health 通，其余一律失败 */
+      fetch: function (url) {
+        const u = String(url);
+        const isTunnelHealth = u === TUNNEL + "/api/health";
+        const isTunnelApi = u.indexOf(TUNNEL + "/api/") === 0;
+        if (!isTunnelApi) {
+          calls.push({ url: u, ok: false });
+          return Promise.reject(new Error("stub: unreachable"));
+        }
+        calls.push({ url: u, ok: true });
+        if (isTunnelHealth) {
+          return Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve({ ok: true, service: "ZFSN site backend" })
+          });
+        }
+        // 业务接口返回空数据，让页面渲染降级分支
+        const empty = /\/api\/(messages|works)/.test(u)
+          ? { ok: true, count: 0, items: [] } : { ok: true };
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(empty) });
+      },
       XMLHttpRequest: function () {
         this.open = () => {}; this.setRequestHeader = () => {};
         this.send = () => { if (this.onerror) setTimeout(() => this.onerror(new Error("stub")), 0); };
@@ -137,12 +179,9 @@ function run(file) {
       FormData: function () { this.append = () => {}; },
       console, JSON, Math, Date, Object, Array, String, Number, Boolean, RegExp, Error,
       Promise, Map, Set, parseInt, parseFloat, isNaN, encodeURIComponent, decodeURIComponent,
-      URLSearchParams: function () {}, Intl, JSON2: JSON
+      URLSearchParams: function () {}, Intl
     };
-    window.window = window;
-    window.self = window;
-    window.top = window;
-    window.globalThis = window;
+    window.window = window; window.self = window; window.top = window; window.globalThis = window;
 
     try {
       // eslint-disable-next-line no-new-func
@@ -155,25 +194,33 @@ function run(file) {
         window.fetch, window.XMLHttpRequest, window.FormData,
         window.requestAnimationFrame, window.cancelAnimationFrame,
         window.matchMedia, window.getComputedStyle);
-      console.log("  ✓ " + file + " script#" + idx + " 顶层执行无异常");
     } catch (e) {
-      const msg = e && e.message ? e.message : String(e);
-      // 桩环境必然触发的降级分支报错，属桩限制而非真实 bug
-      if (/appendChild|querySelector|null|undefined|not a function|Cannot read/i.test(msg)) {
-        console.log("  ~ " + file + " script#" + idx + " 桩限制（可忽略）: " + msg);
-      } else {
-        failures++;
-        console.log("  ✗ " + file + " script#" + idx + " 运行时错误: " + msg);
-        if (e && e.stack) console.log("      " + e.stack.split("\n")[1]);
-      }
+      console.log("  ~ 桩限制（可忽略）: " + (e && e.message));
     }
+    return calls;
   }
-  return failures;
+  throw new Error("index.html 里找不到主脚本");
 }
 
-let total = 0;
-// 管理页只有一份源文件：admin/index.html（站点根的 admin.html 已合并删除）
-["index.html", "admin/index.html"].forEach((f) => { total += run(f); });
-console.log("");
-console.log(total === 0 ? "全部通过（无真实运行时错误）" : total + " 个真实错误");
-process.exit(total === 0 ? 0 : 1);
+const calls = run();
+
+// 等所有 Promise 微任务 / 定时器跑完
+setTimeout(function () {
+  const okUrls = calls.filter((c) => c.ok).map((c) => c.url);
+  const badUrls = calls.filter((c) => !c.ok).map((c) => c.url);
+  const hit = (p) => okUrls.some((u) => u.indexOf(p) === 0);
+  const tried = (p) => calls.some((c) => c.url.indexOf(p) === 0);
+
+  console.log("\n[探测结果]");
+  ok(hit(TUNNEL + "/api/health"), "隧道的 /api/health 被成功请求：" + TUNNEL + "/api/health");
+  ok(hit(TUNNEL + "/api/messages"), "★ 业务请求打在隧道上（证明 API_BASE 判成了隧道）");
+  ok(!tried("https://www.zfsnnb.dpdns.org:3443"),
+     "没有去请求 :3443（CF 不代理该端口，必须跳过）");
+  ok(!okUrls.some((u) => /^https?:\/\/(localhost|127\.0\.0\.1)/.test(u)),
+     "本机兜底地址没有被采信（模拟的是外网访客）");
+
+  console.log("\n  成功: " + (okUrls.length ? okUrls.join("\n        ") : "（无）"));
+  console.log("  失败: " + (badUrls.length ? badUrls.slice(0, 6).join("\n        ") : "（无）"));
+  console.log(bad ? "\n" + bad + " 项未通过" : "\n全部通过");
+  process.exit(bad ? 1 : 0);
+}, 300);

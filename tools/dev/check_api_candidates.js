@@ -22,7 +22,7 @@ const ROOT = (function () {
   return path.resolve(__dirname, "..", "..");
 })();
 
-/** 从 html 里抠出 apiCandidates 函数体（含它依赖的两个端口常量） */
+/** 从 html 里抠出 apiCandidates 函数体（含它依赖的端口常量和隧道地址） */
 function extract(html, file) {
   const i = html.indexOf("function apiCandidates()");
   if (i < 0) throw new Error(file + " 里找不到 apiCandidates()");
@@ -34,8 +34,13 @@ function extract(html, file) {
     else if (html[j] === "}") { depth--; if (depth === 0) { j++; break; } }
   }
   const body = html.slice(i, j);
-  const consts = html.match(/var (HTTP_API_PORT|HTTPS_API_PORT) = \d+;/g);
-  if (!consts || consts.length < 2) throw new Error(file + " 里找不到端口常量");
+  // 逐个常量单独找，缺哪个就报哪个（比原来"数量<2 就报错"更容易定位）
+  const consts = ["HTTP_API_PORT", "HTTPS_API_PORT", "TUNNEL_API"].map(function (name) {
+    const re = new RegExp("var " + name + " = [^;]+;");
+    const m = html.match(re);
+    if (!m) throw new Error(file + " 里找不到常量 " + name);
+    return m[0];
+  });
   const portOf = html.slice(html.indexOf("function portOf(loc)"),
     html.indexOf("}", html.indexOf("function portOf(loc)")) + 1);
   return consts.join("\n") + "\n" + portOf + "\n" + body + "\nreturn apiCandidates();";
@@ -54,23 +59,38 @@ function loc(href) {
   };
 }
 
+// 隧道地址直接从 index.html 里读出来，避免"实现改了、测试没改"而漏检
+const INDEX_HTML = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+const TUNNEL = (INDEX_HTML.match(/var TUNNEL_API = "([^"]+)"/) || [])[1];
+if (!TUNNEL) {
+  console.log("\u2717 index.html 里找不到 TUNNEL_API 常量");
+  process.exit(1);
+}
+
 const CASES = [
-  { url: "https://zfsnnb.dpdns.org:3443/", expect: [
-      "", "https://localhost:3443", "https://127.0.0.1:3443",
-      "http://localhost:3000", "http://127.0.0.1:3000" ],
-    why: "HTTPS 同源（后端自己提供页面）" },
-  { url: "https://zfsnnb.dpdns.org/", expect: [
-      "", "https://zfsnnb.dpdns.org:3443",
+  { url: "https://www.zfsnnb.dpdns.org/", expect: [
+      TUNNEL, "",
       "https://localhost:3443", "https://127.0.0.1:3443",
       "http://localhost:3000", "http://127.0.0.1:3000" ],
-    why: "HTTPS 走 443（CDN/反代终止 TLS），需跨到 3443" },
+    why: "★ 线上主入口：CF Workers 静态页，同源 404，必须走隧道" },
+  { url: "https://zfsnnb.dpdns.org:3443/", expect: [
+      "", TUNNEL,
+      "https://localhost:3443", "https://127.0.0.1:3443",
+      "http://localhost:3000", "http://127.0.0.1:3000" ],
+    why: "HTTPS 同源（后端自己提供页面），同源排第一" },
+  { url: "https://zfsnnb.dpdns.org/", expect: [
+      "", TUNNEL, "https://zfsnnb.dpdns.org:3443",
+      "https://localhost:3443", "https://127.0.0.1:3443",
+      "http://localhost:3000", "http://127.0.0.1:3000" ],
+    why: "apex 的 DNS 没走 CF（指向家里），不算 CF 托管，仍试 :3443" },
   { url: "https://localhost:88/", expect: [
-      "", "https://localhost:3443", "https://127.0.0.1:3443",
+      "", TUNNEL,
+      "https://localhost:3443", "https://127.0.0.1:3443",
       "http://localhost:3000", "http://127.0.0.1:3000" ],
     why: "HTTPS 在 IIS 88 端口" },
   { url: "http://zfsnnb.dpdns.org:3000/", expect: [
       "", "http://localhost:3000", "http://127.0.0.1:3000" ],
-    why: "HTTP 同源（当前公网方案）" },
+    why: "HTTP 同源（公网直连方案；http 下不推隧道）" },
   { url: "http://zfsnnb.dpdns.org:38472/", expect: [
       "", "http://zfsnnb.dpdns.org:3000",
       "http://localhost:3000", "http://127.0.0.1:3000" ],

@@ -2675,15 +2675,25 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
 
   /* ── 后端服务地址探测 ──────────────────────────────────
      页面可能通过多种方式打开，后端地址各不相同：
+       · https://api.zfsnnb.dpdns.org → 隧道（**当前线上方案**）
        · http://localhost:3000        → 同源，最省事
-       · http://域名:3000             → 同源（公网推荐方案）
-       · https://域名:3443            → 同源（HTTPS 方案）
+       · http://域名:3000             → 同源（公网直连方案）
+       · https://域名:3443            → 同源（本机自签名 HTTPS 方案）
        · http://localhost:88          → 同源不通，需跨到 :3000
        · http://192.168.x.x:88        → 同上，用当前主机名的 3000
        · file://                      → 只能写死 localhost:3000
-     所以列出所有候选地址并发探测 /api/health，取第一个响应的。
+     所以列出所有候选地址并发探测 /api/health，取**优先级最高的那个成功地址**。
 
-     ⚠ 三个必须避开的坑：
+     ★ 线上现状（2026-10 起）：
+       静态页挂在 Cloudflare Workers（https://www.zfsnnb.dpdns.org），
+       接口由家里的 Node 后端经 **Cloudflare 隧道** 暴露为
+       https://api.zfsnnb.dpdns.org。两端都是 https，且证书由
+       Cloudflare 签发（受信），所以既没有混合内容问题，
+       访客也不会看到自签名证书的"不安全"警告。
+       隧道请求路径：访客 → CF 边缘(LAX) → 家里 cloudflared → Node:3000，
+       实测 TTFB ≈ 1.0s。
+
+     ⚠ 四个必须避开的坑：
        1. 缓存污染 —— sessionStorage 里可能残留上次的地址（比如上次用
           localhost 打开、这次用公网域名），换个浏览器标签就失效。
           所以缓存命中后仍要复验，失败就重跑全量探测。
@@ -2693,10 +2703,18 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
           协议必须跟页面一致，不能"反正都试一遍"。
           例外：http://localhost 与 http://127.0.0.1 被浏览器视为
           可信来源，https 页面下也允许请求，所以可以保留。
+       4. CF 只代理固定端口 —— 免费版 Cloudflare 只回源
+          80/443/8080/8443/2052/2053/2082/2083/2086/2087/2095/2096。
+          **:3443 不在名单里**，写 `https://域名:3443` 是连不上的
+          （旧版本的提示文案就是踩了这个坑，已改）。
      ──────────────────────────────────────────────────── */
   var API_BASE = "";          // 探测完成前为空
   var API_READY = null;       // Promise
   var API_CACHE_KEY = "zfsn_api_base";
+
+  /* Cloudflare 隧道暴露的后端地址。
+     ★ 改隧道主机名时，这里要和 D:\ZFSN-server\cloudflared\config.yml 一起改。 */
+  var TUNNEL_API = "https://api.zfsnnb.dpdns.org";
 
   /* 后端两个监听端口，需与 D:\ZFSN-server\server.js 保持一致
      （那边由 PORT / HTTPS_PORT 环境变量控制，默认 3000 / 3443） */
@@ -2715,23 +2733,42 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     var isWeb = (proto === "http:" || proto === "https:");
     var isHttps = (proto === "https:");
 
-    // ① 同源：只要页面本身就是后端提供的，"" 就成立。
+    /* 页面是不是 Cloudflare 静态托管（Workers）？
+       特征：主机名 www.zfsnnb.dpdns.org 且走默认 443。
+       这种情况同源 /api/* 落在静态资源里 → 404，所以隧道必须排在同源前面，
+       否则每次首屏都要先白探一轮。（apex 域名 zfsnnb.dpdns.org 的 DNS 没走
+       Cloudflare，指向家里，不算 CF 托管；带上 :3443 时更是本地后端自己提供页面。） */
+    var isCFHost = /^www\.zfsnnb\.dpdns\.org$/i.test(host || "") &&
+                   (location.port === "" || location.port === "443");
+
+    // ① 同源：只要页面本身就是后端提供的（本地 3000/3443、IIS 反代等），"" 就成立。
     //    判断方法：探一下同源的 /api/health —— 探测函数自带失败兜底，
     //    所以这里可以无条件优先试同源，不用预先猜端口号。
     //    这样即使外部端口映射成了 38472 之类的任意值也能工作。
-    if (isWeb) list.push("");
+    //    ⚠ 唯独 CF 静态托管时例外（同源必然 404），见下面 ③。
+    if (isWeb && !isCFHost) list.push("");
 
-    // ② 当前主机名的后端端口 —— 覆盖"页面在 IIS:88、后端在 3000/3443"的场景。
+    // ② Cloudflare 隧道 —— **线上方案**。
+    //    两端都是 https、证书由 CF 签发（受信），既无混合内容问题，
+    //    访客也不会看到自签名证书的"不安全"警告。
+    if (isHttps) list.push(TUNNEL_API);
+
+    // ③ CF 静态托管下的同源 —— 已知会 404，但成本极低（秒回）。
+    //    留着是为了：万一以后 CF 那边也代理了 /api/*，这里能自动生效。
+    if (isWeb && isCFHost) list.push("");
+
+    // ④ 当前主机名的后端端口 —— 覆盖"页面在 443/IIS:88、后端在 3000/3443"的场景。
     //    协议必须跟页面一致（见上面第 3 条坑）。
-    //    若页面端口本来就等于后端端口，说明 ① 的同源候选已经覆盖它，
-    //    不必再探一遍。
+    //    若页面端口本来就等于后端端口，说明 ① 的同源候选已经覆盖它，不必再探。
+    //    ⚠ CF 托管下跳过：CF 免费版只代理 80/443/8080/8443 等固定端口，
+    //      :3443 不在名单里，连接会一直挂到超时，纯属浪费。
     var samePort = isWeb && (portOf(location) === String(isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
-    if (host && !samePort){
+    if (host && !samePort && !isCFHost){
       list.push((isHttps ? "https://" : "http://") + host + ":" +
                 (isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
     }
 
-    // ③ 本机兜底：页面在 file:// 时用得上。
+    // ⑤ 本机兜底：页面在 file:// 时用得上。
     //    https 页面下 localhost 只能走 https（自签名证书需先手动信任一次），
     //    但 http://localhost 属于浏览器豁免的"可信来源"，仍然可用。
     if (isHttps){
@@ -2750,10 +2787,14 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   function probe(base){
     return new Promise(function(resolve){
       var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+      // ★ 超时给到 3500ms：走 Cloudflare 隧道时请求要绕到境外边缘再回到家里，
+      //   实测 TTFB 约 1.0s（境外节点首连偶尔到 1.5s）。2200ms 余量太薄，
+      //   网络稍差就会误判成"后端挂了"，然后白探一圈其他候选。
+      //   代价只是：后端真挂了时用户多等 1.3s 才看到提示。
       var timer = setTimeout(function(){
         if (ctl) ctl.abort();
         resolve(null);
-      }, 2200);
+      }, 3500);
       // 同源请求会被浏览器/CDN 缓存，加时间戳绕过
       var url = (base || "") + "/api/health" + (base ? "" : "?_=" + Date.now());
       fetch(url, { signal: ctl ? ctl.signal : undefined, cache: "no-store" })
@@ -2776,16 +2817,44 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     var bases = apiCandidates();
     var cacheValid = (cached !== null && bases.indexOf(cached) >= 0);
 
+    /* 并发探测所有候选，但**不等全部返回**：
+       一旦"优先级最高的那个成功候选"确定，就立刻收工。
+       原因：候选里有走不通的地址（如 Cloudflare 不代理的 :3443，连接会一直挂到
+       超时），若用 Promise.all 等全部返回，隧道明明 1s 就通了也要白等满 3.5s。
+       规则：候选 i 成功时，只有排在它前面的候选都已落败，它才是最优解。 */
     function raceAll(list){
-      return Promise.all(list.map(probe)).then(function(res){
-        var hit = null;
-        for (var i = 0; i < res.length; i++){
-          if (res[i] !== null){ hit = res[i]; break; }
+      return new Promise(function(resolve){
+        var n = list.length;
+        if (!n) return resolve(null);
+        var res = new Array(n);          // undefined=未定论 / null=失败 / 字符串=成功
+        var settledCount = 0;
+        var done = false;
+
+        function finish(v){
+          if (done) return;
+          done = true;
+          if (v !== null){ try { sessionStorage.setItem(API_CACHE_KEY, v); } catch (e) {} }
+          resolve(v);
         }
-        if (hit !== null){
-          try { sessionStorage.setItem(API_CACHE_KEY, hit); } catch (e) {}
+        // 从前往后扫：遇到未定论就返回 undefined（还得等），否则返回最优（或 null=全败）
+        function bestSoFar(){
+          for (var i = 0; i < n; i++){
+            if (res[i] === undefined) return undefined;
+            if (res[i] !== null) return res[i];
+          }
+          return null;
         }
-        return hit;
+
+        list.forEach(function(base, i){
+          probe(base).then(function(v){
+            if (done) return;
+            res[i] = v;
+            settledCount++;
+            if (settledCount === n){ finish(bestSoFar()); return; }
+            var b = bestSoFar();
+            if (b !== undefined) finish(b);
+          });
+        });
       });
     }
 
@@ -2900,14 +2969,25 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     var isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || "");
 
     if (proto === "https:"){
-      lines.push('当前页面是 <b style="color:#ff8a9c">https</b> 协议。' +
-        '如果后端只开了 http，浏览器会按「混合内容」把接口请求直接拦掉，' +
-        '作品墙和留言就会空着 —— 这不是后端坏了，是协议不匹配。');
-      lines.push('请改用 <b style="color:#cfe3f5">https://' + location.hostname +
-        ':' + HTTPS_API_PORT + '</b> 访问本站（后端自带 HTTPS，页面和接口同源）。');
-      lines.push('若后端没开 HTTPS，就退回 <b style="color:#cfe3f5">http://' +
-        location.hostname + ':' + HTTP_API_PORT + '</b>。');
-      lines.push('注：自签名证书首次访问会提示「不安全」，点「继续前往」信任一次即可。');
+      // ★ 线上方案：页面在 Cloudflare（Workers 静态资源），后端经 Cloudflare
+      //   隧道暴露为 https://api.zfsnnb.dpdns.org。两端都是 https 且证书受信，
+      //   正常情况下不会再有"混合内容"问题。
+      //   ⚠ 不要再建议用户去访问 https://域名:3443 —— Cloudflare 免费版只代理
+      //     80/443/8080/8443 等固定端口，3443 不在名单里，走不通。
+      if (/zfsnnb\.dpdns\.org$/i.test(location.hostname || "")){
+        lines.push('本站后端由 <b style="color:#cfe3f5">Cloudflare 隧道</b> ' +
+          '（<code style="color:#cfe3f5">' + TUNNEL_API + '</code>）提供。');
+        lines.push('如果你是站主：多半是家里那台机器上的 <code style="color:#ff8a9c">cloudflared</code> ' +
+          '没在跑，或 Node 后端（:3000）没启动。');
+        lines.push('排查：任务计划程序里看 <code style="color:#ff8a9c">ZFSN-Cloudflare-Tunnel</code> ' +
+          '是否在运行；再确认 <code style="color:#ff8a9c">D:\\ZFSN-server\\启动服务.bat</code> 已执行。');
+      } else {
+        lines.push('当前页面是 <b style="color:#ff8a9c">https</b> 协议。' +
+          '如果后端只开了 http，浏览器会按「混合内容」把接口请求直接拦掉，' +
+          '作品墙和留言就会空着 —— 这不是后端坏了，是协议不匹配。');
+        lines.push('若后端没开 HTTPS，请退回 <b style="color:#cfe3f5">http://' +
+          location.hostname + ':' + HTTP_API_PORT + '</b> 访问本站（页面和接口同源）。');
+      }
     } else if (proto === "file:"){
       lines.push('当前是直接双击打开的本地文件，后端地址无法自动推断。');
       lines.push('请改用 <b style="color:#cfe3f5">http://localhost:' + HTTP_API_PORT +
