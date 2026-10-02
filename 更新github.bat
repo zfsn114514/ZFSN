@@ -38,8 +38,20 @@ if errorlevel 1 (
 )
 
 echo [3/3] 推送到 GitHub ...
-git push
-if errorlevel 1 (
+rem git 在国内推 GitHub 时偶发 schannel / Recv failure（握手被重置）。
+rem 这是网络层抖动，不是提交内容有问题 —— 加几次重试基本都能过。
+rem 之所以用 start /wait 而不是直接重跑 git push，是因为有时候它会卡住不退，
+rem 必须 kill 才能继续，所以每次都给一个独立的限时窗口。
+set PUSH_OK=0
+setlocal enabledelayedexpansion
+for /l %%R in (1,1,4) do (
+  if "!PUSH_OK!"=="0" (
+    echo    推送第 %%R / 4 次 ...
+    start /wait /min "" git push
+    if not errorlevel 1 set PUSH_OK=1
+  )
+)
+if "!PUSH_OK!"=="0" (
   echo.
   echo [X] 推送失败! 请把上面的报错信息截图给我.
   echo     如果提示 rejected / non-fast-forward,
