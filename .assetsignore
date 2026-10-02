@@ -1,0 +1,39 @@
+# ── Cloudflare Workers 静态资源排除清单 ─────────────────────────────
+#
+# 本站的构建配置是 assets.directory = "." —— 也就是**整个仓库目录**
+# 都会被当成静态资源上传。不排除的话，`.git` 目录本身也会被上传，
+# 而它的对象库已经超过 Workers 的单文件上限：
+#
+#   ✘ [ERROR] Asset too large.
+#     Workers supports assets with sizes of up to 25 MiB.
+#     We found a file /repo/.git/objects/pack/pack-*.pack with a size of 31 MiB.
+#
+# 为什么会这么大：git 的 pack 文件里压着全部历史对象。B站 108 张封面
+# （21 MB）、作品原图（7.9 MB）、Xbox 封面（3.9 MB）都是二进制，
+# 每次提交都会留一份，历史越积越厚，最终把 pack 撑过 25 MiB。
+#
+# 语法与 .gitignore 相同。
+# ──────────────────────────────────────────────────────────────────
+
+# ★ 最关键：git 对象库
+.git/
+.gitignore
+
+# 本地抓取 / 构建脚本与工具缓存，线上站点完全用不到
+# （排除后单次部署少传约 22 MB、上百个文件，构建也更快）
+tools/
+*.py
+*.bat
+*.ps1
+.commitmsg.txt
+.wrangler/
+
+# 数据备份
+*.bak
+*.bak_*
+
+# 编辑器 / 系统杂项
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
