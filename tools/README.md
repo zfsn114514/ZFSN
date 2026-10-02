@@ -32,7 +32,8 @@ tools/
     ├── check_steam_merge.js    ← Steam 自有 + 家庭共享 的合并契约检查
     ├── check_api_candidates.js ← 后端地址探测 / 混合内容规则检查
     ├── check_api_detect.js     ← 「只有隧道可用」时的地址判定桩测试
-    └── cdp_capture.js          ← 诊断工具：钩住空间页的 fetch，看接口真实返回
+    ├── cdp_capture.js          ← 诊断工具：钩住空间页的 fetch，看接口真实返回
+    └── shot_bili.js            ← 打开页面切到 B站 页并截图（验证渲染效果）
 ```
 
 ---
@@ -347,3 +348,12 @@ node dev/cdp_capture.js
 `#steam` / `#bili` / `#guest` 是页面的 hash 路由，可以直接定位到某个标签页。
 访问自签名证书的 https 站点时还要加 `--ignore-certificate-errors`。
 `_shots/` 已在 `.gitignore` 里，不会进仓库。
+
+**★ 一个坑：卡片封面是 `loading="lazy"` 的，视口外的图永远不会加载。**
+所以用 `--window-size` 拉高 + 一次截长图时，**下半屏的封面会全是空白**。
+要截长图得先滚动触发加载；只截首屏则没这个问题。
+需要「打开 → 切到 B站 页 → 截图」这种带交互的截图，用现成脚本：
+
+```bash
+node dev/shot_bili.js     # 产出 tools/dev/_shots/bili_108.png
+```
