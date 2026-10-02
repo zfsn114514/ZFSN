@@ -1,5 +1,20 @@
 # -*- coding: utf-8 -*-
 """
+⚠ 已被 tools/build_bili_full.py 取代，日常不用跑本脚本。
+
+    新流程：
+        node tools/fetch_bili_list_cdp.js   抓全量投稿列表（真实 Chrome）
+        python tools/build_bili_full.py     补详情 + 封面 + 账号信息
+
+    build_bili_full.py 已经包含了本脚本的全部职责（账号信息 + 逐条详情），
+    而且账号信息改走 m.bilibili.com 的 SSR 数据（acc/info 常年被 -352 风控）。
+
+    本脚本保留作为**应急兜底**：当缓存列表丢失、只想给现有
+    bili_videos.json 补互动数据时，它仍然可用。
+
+
+────────────── 以下为原始说明 ──────────────
+
 给现有的 bili_videos.json 补上账号总览（profile）与视频详情字段。
 
 用途：当 build_bili.py 因为 B站 风控（412 / -352）拿不到 space 列表时，

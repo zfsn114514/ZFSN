@@ -28,6 +28,18 @@ if not defined PY (
 echo 使用 Python: %PY%
 echo.
 
+REM ── 找 Node ──
+REM [3/5] 的 B站 投稿列表要靠 Node 驱动无头 Chrome，没有 Node 就跳过该步。
+set NODE=
+if exist "%ProgramFiles%\nodejs\node.exe" set NODE=%ProgramFiles%\nodejs\node.exe
+if not defined NODE if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" set NODE=%LOCALAPPDATA%\Programs\nodejs\node.exe
+if not defined NODE (
+  where node >nul 2>nul
+  if not errorlevel 1 set NODE=node
+)
+if defined NODE (echo 使用 Node: %NODE%) else (echo [提示] 没找到 Node.js，B站 投稿列表步骤将被跳过)
+echo.
+
 REM 关掉 Python 的 stdout 缓冲，否则日志要等脚本跑完才一次性出现
 set PYTHONUNBUFFERED=1
 REM 中文输出统一按 UTF-8，避免个别环境下 UnicodeEncodeError
@@ -56,22 +68,37 @@ echo.
 echo.
 
 echo --------------------------------------------
-echo [3/5] B站 投稿 + 账号数据（含封面下载）
+echo [3/5] B站 投稿列表（无头 Chrome 抓取）
 echo --------------------------------------------
-echo 提示：B站 有风控限制，脚本内置了自动退避重试。
-echo       若最终仍失败，等 5~10 分钟再运行即可，旧数据不会被覆盖。
-echo       投稿较多时本步骤可能要几分钟，请耐心等待。
+echo 说明：B站 的投稿列表接口 /x/space/wbi/arc/search 对本机 IP 是
+echo       **IP 级风控封禁**（HTTP 412）。实测换 UA、补 dm_img_* 风控参数、
+echo       刷新 buvid cookie、换旧版接口、换 APP 端接口 —— 全部无效。
+echo       所以本步骤改用**真实 Chrome** 渲染空间页，再把页面自己发出的
+echo       接口响应钩下来，从而拿到**全部投稿**（含翻页）。
 echo.
-"%PY%" build_bili.py
+echo       注意：风控是「概率性放行」，脚本会自动重试若干轮，通常 1~3 分钟。
+echo             需要本机装了 Chrome 与 Node.js。
+echo.
+if not defined NODE (
+  echo [跳过] 没找到 Node.js，无法抓全量投稿列表。
+  echo        下一步会退回用「现有 bili_videos.json 里的列表」继续补数据，
+  echo        站点不受影响，只是拿不到新投稿。
+  echo        想抓全量请先安装 Node.js： https://nodejs.org/
+) else (
+  "%NODE%" fetch_bili_list_cdp.js
+)
 echo.
 
 echo --------------------------------------------
-echo [4/5] 补全 B站 账号信息与视频互动数据
+echo [4/5] B站 详情 + 封面 + 账号信息
 echo --------------------------------------------
-echo 说明：上一步若因风控拿不到账号信息（昵称/粉丝/获赞），
-echo       本步骤会用另一组限流较松的接口单独补齐。
+echo 说明：读上一步的投稿列表，逐条补齐 点赞/投币/收藏/分区，
+echo       并把封面下载到 assets/bili/（B站 CDN 有防盗链，必须本地化）。
+echo       108 条大约 5 分钟。
+echo       昵称/签名/等级走 m.bilibili.com 的 SSR 数据（acc/info 常年被风控）。
+echo       上一步失败时本步骤会用现有列表兜底，旧数据不会被覆盖。
 echo.
-"%PY%" build_bili_profile.py
+"%PY%" build_bili_full.py
 echo.
 
 echo --------------------------------------------

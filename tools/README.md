@@ -18,15 +18,21 @@ tools/
 │
 ├── build_steam_owned.py      ← Steam「自己拥有」的游戏（需 API Key）
 ├── build_steam_family.py     ← Steam「家庭共享」的游戏（需 API Key）
-├── build_bili.py             ← B站 投稿 + 封面 + 账号信息
-├── build_bili_profile.py     ← B站 账号信息补抓（风控时的补救）
+├── fetch_bili_list_cdp.js    ← B站 全量投稿列表（真实 Chrome + CDP，需 Node.js）
+├── build_bili_full.py        ← B站 详情 + 封面 + 账号信息 → bili_videos.json
 ├── build_xbox_covers.py      ← Xbox 游戏封面（微软官方商店）
 ├── fetch_covers.py           ← B站 封面补抓（修复工具，平时不用跑）
 │
+├── build_bili.py             ← ⚠ 历史脚本（Python 直连抓列表，现必失败，仅作参考）
+├── build_bili_profile.py     ← ⚠ 历史脚本（职责已被 build_bili_full.py 覆盖）
+│
 └── dev/
     ├── sanity_frontend.js      ← 前端脚本冒烟测试（顶层运行时错误）
+    ├── check_bili_render.js    ← B站 页渲染回归（条数 / 懒加载 / 排序 / 搜索 / 破图）
     ├── check_steam_merge.js    ← Steam 自有 + 家庭共享 的合并契约检查
-    └── check_api_candidates.js ← 后端地址探测 / 混合内容规则检查
+    ├── check_api_candidates.js ← 后端地址探测 / 混合内容规则检查
+    ├── check_api_detect.js     ← 「只有隧道可用」时的地址判定桩测试
+    └── cdp_capture.js          ← 诊断工具：钩住空间页的 fetch，看接口真实返回
 ```
 
 ---
@@ -102,17 +108,83 @@ Steam 的 `GetOwnedGames` 只返回自己拥有的游戏，共享来的一律不
 
 Steam 路径写在 `config.json` → `steam_local.steam_root`，留空会自动探测。
 
-### `build_bili.py` → `bili_videos.json`
+### `fetch_bili_list_cdp.js` → `tools/.cache/bili_list.json`（B站 全量投稿列表）
 
-抓 B站 投稿列表、封面（下载到 `assets/bili/`）、账号信息、视频互动数据。
+**这是 B站 投稿列表现在唯一可靠的来源。** 用真实 Chrome 渲染空间页，
+再把页面自己发出的 `arc/search` 响应钩下来。
 
-B站 有风控（`-352` / `412`）。脚本已内置退避重试，**抓不到时会保留旧数据**，
-不会把 json 清空。风控严的时候等 5~10 分钟再跑。
+#### 为什么不能用 Python 直接调接口
 
-### `build_bili_profile.py`
+`/x/space/wbi/arc/search` 对本机 IP 是**纯 IP 级风控封禁**（HTTP 412）。
+以下手段**全部实测无效**，不要再试：
 
-单独补账号信息（昵称 / 等级 / 签名 / 粉丝数）与视频互动数据。
-走的是限流较松的 `view` / `relation/stat` 接口，`build_bili.py` 被风控时可以用它救急。
+| 试过的办法 | 结果 |
+|---|---|
+| 换 UA（Chrome / Edge / 手机 Chrome） | 全 412 |
+| 补新版风控参数 `dm_img_list` / `dm_img_str` / `dm_cover_img_str` / `dm_img_inter` | `-352 风控校验失败`（带 `v_voucher` 挑战） |
+| 刷新 buvid3 / buvid4 cookie | 无效 |
+| 旧版非 wbi 接口 `/x/space/arc/search` | `-799 请求过于频繁` → 412 |
+| APP 端 `/x/v2/space/archive/cursor` | `-400 请求错误`（需要 appkey+sign） |
+| 动态接口 `polymer/web-dynamic/v1/feed/space` | `-352` |
+| 移动端 SSR `m.bilibili.com/space/{mid}` 的 `feedList` | 返回空数组（客户端异步加载） |
+
+**结论：这不是签名问题，是 IP 信誉问题。** 但真实浏览器（TLS 指纹 +
+完整 cookie + JS 环境）能过 —— 所以改用 Chrome。
+
+#### 三个必须知道的坑
+
+1. **风控是「概率性放行」**
+   同一条命令连续跑，会随机出现「渲染出 40 张卡片」和「列表为空
+   （页面显示*空间主人还没投过视频…*）」两种结果。
+   第 1 页经常要试 2~4 次才出来。**脚本必须重试，不能一次失败就放弃。**
+
+2. **登录不是必要条件**
+   用全新临时 profile 重试也能成功（验证过）。
+   所以可以用**独立 profile** 起 Chrome，不干扰用户正在用的浏览器。
+
+3. **必须点击翻页，URL 参数无效**
+   `?pn=2` / `?page=2` 一律无效：`/video` 会 302 到 `/upload/video`
+   并**重置回第 1 页**。只能点 DOM 里的分页按钮，而且
+   headless 下 JS 的 `el.click()` 不可靠，要用 CDP 的真实鼠标事件。
+
+#### 成功判据
+
+用**「出现了没见过的 BV 号」**判断翻页成功。
+不要用「首个 BV 变了」—— 页面可能把新卡片追加在后面，首个 BV 不变，
+会导致明明成功却判失败（踩过，白跑了 8 轮重试）。
+
+产出 `tools/.cache/bili_list.json`，含 108 条投稿的 bvid / title / cover /
+pub / ts / length / views / danmaku / reply / desc / typeid。
+
+### `build_bili_full.py` → `bili_videos.json`
+
+读上一步的缓存列表，逐条补齐 **点赞 / 投币 / 收藏 / 分区**，
+把封面下载到 `assets/bili/`（B站 CDN 有防盗链，必须带 Referer + 三子域轮询），
+并抓账号总览。**108 条约 5 分钟。**
+
+```bash
+python build_bili_full.py                # 全量
+python build_bili_full.py --no-detail    # 只用列表数据（秒级）
+python build_bili_full.py --reuse-detail # 复用已有 like/coin/favorite，只补封面/账号（秒级）
+python build_bili_full.py --limit 5      # 只处理前 5 条（调试）
+```
+
+几个设计要点：
+
+- **`tname` 要靠本地映射。** `/x/web-interface/view` 对本账号返回的
+  `tname` 是**空串**（108/108 全空），但同一条响应里的 `tid` 有值。
+  所以脚本内置了 `TID_NAME` 表把 tid 翻成分区名。
+- **账号信息走 `m.bilibili.com` 的 SSR 数据**，不走 `acc/info`
+  （后者常年 `-352`）。取不到时依次回落到 `acc/info` → 已有 JSON，**绝不把真实值刷成空**。
+- **缓存列表缺失时不报错退出**，而是退回用现有 `bili_videos.json` 的列表继续补数据。
+- 只在全部成功时**原子替换**（先写 `.tmp` 再 `os.replace`），中途失败不会毁掉旧数据。
+
+### `build_bili.py` / `build_bili_profile.py`（历史脚本，日常不用跑）
+
+`build_bili.py` 是旧的「Python 直连 API 抓列表」实现，**现在必然失败**
+（412 封禁），仅保留其 wbi 签名与降级逻辑作参考。
+`build_bili_profile.py` 的职责已被 `build_bili_full.py` 覆盖，
+留作应急兜底（缓存列表丢失、只想给现有 JSON 补互动数据时可用）。
 
 ### `build_xbox_covers.py` → 回写 `xbox_games.json`
 
@@ -123,7 +195,7 @@ Xbox 的**游玩时长和成就无法通过接口获取**，只能从 Xbox 应�
 
 ### `fetch_covers.py`
 
-**修复工具**，日常流程里用不到（`build_bili.py` 抓投稿时会顺带下封面）。
+**修复工具**，日常流程里用不到（`build_bili_full.py` 会顺带下封面）。
 当封面缺失 / 被风控挡掉 / 手工改坏了路径时，单独跑它补齐。
 已存在的会跳过，可反复执行。
 
@@ -162,6 +234,18 @@ Xbox 的**游玩时长和成就无法通过接口获取**，只能从 Xbox 应�
 要查 300+ 个商店接口，约 10 分钟。结果永久缓存在 `tools/.cache/appdetails.json`，
 之后重跑只要几秒。中途 Ctrl-C 也不会全丢（每 25 条落一次盘）。
 
+**Q: B站 投稿少了 / 抓不到？**
+`[3/5]` 那一步失败最可能。它是**概率性放行**的，脚本自己会重试几轮；
+如果整轮都失败，直接再跑一次 `更新数据.bat` 即可（旧数据不会被覆盖）。
+另外确认本机装了 **Chrome** 和 **Node.js** —— 这一步靠无头 Chrome 驱动。
+想单独重试就 `cd tools && node fetch_bili_list_cdp.js`。
+
+**Q: B站 视频的「分区」标签是空的？**
+B站 的 `view` 接口对本账号返回的 `tname` 就是空串（108/108 全空），
+这是接口的真实行为，不是脚本 bug。脚本改用 `tid` + 本地分区表映射，
+所以正常情况**应该**有值；若某条确实没有，说明该 `tid` 还没加进
+`build_bili_full.py` 的 `TID_NAME` 表，补一行即可。
+
 **Q: 数据文件的结构能改吗？**
 **不能随便改字段名**。前端的渲染逻辑是按字段名硬编码的，
 改了字段名页面会整块渲染失败。新增字段没问题，重命名/删除要同步改前端。
@@ -177,7 +261,7 @@ Xbox 的**游玩时长和成就无法通过接口获取**，只能从 Xbox 应�
 
 ## 开发用
 
-三个脚本都是只读检查，改完前端建议都跑一遍。
+以下几个脚本都是只读检查，改完前端建议都跑一遍。
 
 ### `dev/sanity_frontend.js` —— 顶层运行时错误
 
@@ -218,6 +302,34 @@ https 的 IIS / http 同源 / 非常规端口 / http 的 IIS / file://）下
 
 ```bash
 node dev/check_api_candidates.js
+```
+
+### `dev/check_bili_render.js` —— B站 页渲染回归
+
+起本地静态服务 + 无头 Chrome，真的把页面打开、切到 B站 页，断言 11 项：
+json 已加载、计数文案、**首屏 24 条**、工具栏计数、6 个统计格子、
+总播放文案、**触底能加载到 108 条**、按播放排序、搜索命中、
+封面无破图、无控制台错误。
+
+**为什么需要它**：`bili_videos.json` 从 12 条涨到 108 条是一次量级跃迁，
+只校验 JSON 结构不够 —— 分页批量、懒加载、排序、搜索都可能在新数据下出问题。
+而这些问题在页面上表现为"少几条"，肉眼根本发现不了。
+
+```bash
+node dev/check_bili_render.js
+```
+
+### `dev/cdp_capture.js` —— B站 接口诊断
+
+钩住空间页的 `fetch` / `XHR`，把 `arc/search` 的**真实请求 URL 与响应体**
+打印并落盘到 `dev/_shots/cap_*.json`。
+
+**什么时候用**：当 `fetch_bili_list_cdp.js` 翻页失败、想知道页面到底请求了
+什么、返回了什么 code 时。这是排查"活动页码变了但列表不刷新"这类问题的
+第一手证据（实测就是靠它才发现三页其实都能返回 `code=0`，纯粹是概率性放行）。
+
+```bash
+node dev/cdp_capture.js
 ```
 
 ### 样式排查（可选）

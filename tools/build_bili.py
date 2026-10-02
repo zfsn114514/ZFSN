@@ -1,5 +1,22 @@
 # -*- coding: utf-8 -*-
 """
+⚠ 已降级为「历史脚本」，日常请勿再直接使用本脚本抓列表。
+
+    原因：/x/space/wbi/arc/search 对本机 IP 是**纯 IP 级风控封禁**（HTTP 412）。
+    实测无效：换 UA（Chrome/Edge/手机三种全 412）、补 dm_img_* 风控参数（-352）、
+    刷新 buvid cookie、旧版 /x/space/arc/search（-799 → 412）、APP 端 cursor（-400）。
+    这不是签名问题，Python 侧无解。
+
+    现在的正确流程（见 tools/README.md）：
+        1) node tools/fetch_bili_list_cdp.js   ← 用真实 Chrome 渲染空间页抓全量列表
+        2) python tools/build_bili_full.py     ← 补详情 + 下载封面 + 账号信息
+
+    本脚本保留的原因：它里面的 wbi 签名实现、风控退避策略、
+    以及「列表失败时绝不覆盖旧数据」的降级逻辑仍然有参考价值，
+    而且 build_bili_full.py 的很多设计沿用了这里。
+
+────────────── 以下为原始说明 ──────────────
+
 拉取 ZFSN（UID 1220210222）的 B站 完整数据：
   · 全部投稿（自动分页）
   · 每条视频的完整互动数据（播放/弹幕/评论/点赞/投币/收藏/分享）
