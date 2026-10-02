@@ -32,6 +32,8 @@ tools/
     ├── check_steam_merge.js    ← Steam 自有 + 家庭共享 的合并契约检查
     ├── check_api_candidates.js ← 后端地址探测 / 混合内容规则检查
     ├── check_api_detect.js     ← 「只有隧道可用」时的地址判定桩测试
+    ├── check_media_api.js      ← 作品媒体接口自测（多图 / 视频 / Range / 下载 / 反例）
+    ├── check_work_media.js     ← 作品媒体冒烟（无头 Chrome 跑前台详情页 + 后台表单）
     ├── cdp_capture.js          ← 诊断工具：钩住空间页的 fetch，看接口真实返回
     └── shot_bili.js            ← 打开页面切到 B站 页并截图（验证渲染效果）
 ```
@@ -319,6 +321,46 @@ json 已加载、计数文案、**首屏 24 条**、工具栏计数、6 个统�
 ```bash
 node dev/check_bili_render.js
 ```
+
+### `dev/check_media_api.js` —— 作品媒体接口自测（纯接口）
+
+不开浏览器，直接打后端接口，断言 **48 项**：多图上传（含"魔数优先"——
+PNG 内容 + `.jpg` 文件名仍存成 `.png`）、视频上传、文件上传、
+建作品后读回校验 `images/video/files`、**视频 Range**（206 / Content-Range /
+`Accept-Ranges` / 尾部区间 / 越界 416）、附件下载（`Content-Disposition`
+带 RFC5987 原始中文名）、以及反例（文本冒充图片、白名单外扩展名、无 token）。
+
+```bash
+cd D:\ZFSN-server && set PORT=3100 && set HTTPS=0 && node server.js   # 另开一个窗口
+node dev/check_media_api.js
+```
+
+**为什么要用 3100 测试端口**：线上那个 3000 是计划任务托管的正式服务，
+拿它跑自测会往真实作品库里写数据。测试端口连的是同一份 `data/`，
+但作品会被脚本自己删掉。
+
+### `dev/check_work_media.js` —— 作品媒体冒烟（无头 Chrome，26 项）
+
+真的开浏览器，走完整用户路径：
+
+* **前台详情页** —— `<video>` 的 src 指向后端隧道、相册缩略图 3 张、
+  下载列表 2 条且显示原始文件名与体积、统计条含「图片/附件」、
+  点缩略图能切换视频封面；
+* **前台作品墙** —— 卡片角标「3 张 / 视频 / 2 个附件」；
+* **后台表单** —— 点「作品」标签 → 点这条作品的「编辑」，
+  校验三块上传区都正确回填，点「设为封面」能把第 2 张挪到最前；
+* 无控制台错误；跑完自动删掉测试作品与上传的图片。
+
+```bash
+node dev/check_work_media.js          # 默认打 http://127.0.0.1:3100
+```
+
+截图落在 `dev/_shots/work_media_*.png`。
+
+**★ 一个坑：`admin/index.html` 的脚本整体包在 `(function(){…})()` 里**，
+`WORKS`、`openWorkForm` 这些都不是全局变量，测试里**不能直接调**。
+必须走真实路径（点标签 → 点编辑按钮），否则会拿到 `typeof WORKS === "undefined"`
+而误判成"后台坏了"。
 
 ### `dev/cdp_capture.js` —— B站 接口诊断
 
