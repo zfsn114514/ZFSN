@@ -11,7 +11,18 @@
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = path.resolve(__dirname, "..");
+// 站点根目录：从本文件所在目录逐级往上找，直到看见 index.html。
+// （本脚本在 tools/dev/ 下，所以不能简单地用 ".."）
+const ROOT = (function () {
+  let d = __dirname;
+  for (let i = 0; i < 5; i++) {
+    if (fs.existsSync(path.join(d, "index.html"))) return d;
+    const up = path.dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  return path.resolve(__dirname, "..", "..");
+})();
 
 function makeEl(tag) {
   const el = {

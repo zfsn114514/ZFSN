@@ -19,13 +19,12 @@
 import json
 import os
 import re
+import sys
 import time
-import urllib.request
 import urllib.parse
-import urllib.error
 
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import common  # noqa: E402
 
 CATALOG = ("https://displaycatalog.mp.microsoft.com/v7.0/productFamilies/Games/products"
            "?query={}&market=CN&languages=zh-cn&fieldsTemplate=Details")
@@ -33,38 +32,26 @@ CATALOG = ("https://displaycatalog.mp.microsoft.com/v7.0/productFamilies/Games/p
 # 优先取图的顺序（Xbox 卡片用竖版海报最好看，其次 BoxArt）
 IMG_ORDER = ["Poster", "BoxArt", "BrandedKeyArt", "FeaturePromotionalSquareArt", "Logo", "Image"]
 
+# 微软 catalog 的请求头
+HEADERS = {
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Accept": "application/json,text/html,*/*",
+}
+
 
 def site_root():
-    """定位站点根目录（存放 index.html 的地方）。"""
-    here = os.path.dirname(os.path.abspath(__file__))
-    if os.path.exists(os.path.join(here, "index.html")):
-        return here
-    parent = os.path.dirname(here)
-    if os.path.exists(os.path.join(parent, "index.html")):
-        return parent
-    return here
+    """定位站点根目录。实现已统一到 common.site_root()，这里只做转发。"""
+    return common.site_root()
 
 
 def http_get(url, timeout=20, retry=3):
-    last = None
-    for i in range(retry):
-        try:
-            req = urllib.request.Request(url, headers={
-                "User-Agent": UA,
-                "Accept-Language": "zh-CN,zh;q=0.9",
-                "Accept": "application/json,text/html,*/*",
-            })
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read()
-        except urllib.error.HTTPError as e:
-            last = e
-            if e.code == 404:
-                break
-        except Exception as e:
-            last = e
-        if i < retry - 1:
-            time.sleep(2 * (i + 1))
-    raise last
+    """GET 返回 bytes。
+
+    走 common.http_get，但把「不重试」的状态码放宽到只有 404 ——
+    微软 catalog 偶尔会返回临时 403，那种情况值得重试。
+    """
+    return common.http_get(url, headers=HEADERS, timeout=timeout, retry=retry,
+                           quiet=True, no_retry_codes=(404,))
 
 
 def search(name):

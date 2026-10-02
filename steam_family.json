@@ -1,0 +1,768 @@
+{
+  "source": "本机 Steam 库（libraryfolders.vdf）+ 商店接口补全",
+  "note": "家庭共享游戏：只包含本机库里**已安装**的部分。其他成员库中未安装的游戏本地无记录，无法列出。",
+  "updated": "2026-10-02 11:07:39",
+  "steam_root": "C:/Program Files (x86)/Steam",
+  "count": 43,
+  "total_hours": 777.0,
+  "games": [
+    {
+      "appid": 250820,
+      "name": "SteamVR",
+      "minutes": 33570,
+      "hours": 559.5,
+      "playtime": "560 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/250820/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/250820/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/250820/",
+      "release": "",
+      "genres": [],
+      "free": true,
+      "family": true
+    },
+    {
+      "appid": 1245620,
+      "name": "艾尔登法环",
+      "minutes": 6393,
+      "hours": 106.5,
+      "playtime": "107 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1245620/",
+      "release": "2022 年 2 月 24 日",
+      "genres": [
+        "动作",
+        "角色扮演"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 2001120,
+      "name": "双影奇境",
+      "minutes": 1167,
+      "hours": 19.4,
+      "playtime": "19.4 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/2001120/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/2001120/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/2001120/",
+      "release": "2025 年 3 月 6 日",
+      "genres": [
+        "动作",
+        "冒险"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1551360,
+      "name": "极限竞速：地平线 5",
+      "minutes": 940,
+      "hours": 15.7,
+      "playtime": "15.7 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1551360/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1551360/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1551360/",
+      "release": "2021 年 11 月 8 日",
+      "genres": [
+        "动作",
+        "冒险",
+        "竞速"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 977950,
+      "name": "冰与火之舞 A Dance of Fire and Ice",
+      "minutes": 871,
+      "hours": 14.5,
+      "playtime": "14.5 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/977950/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/977950/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/977950/",
+      "release": "2019 年 1 月 24 日",
+      "genres": [
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 646570,
+      "name": "Slay the Spire",
+      "minutes": 741,
+      "hours": 12.3,
+      "playtime": "12.3 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/646570/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/646570/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/646570/",
+      "release": "2019 年 1 月 23 日",
+      "genres": [
+        "独立",
+        "策略"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 374320,
+      "name": "DARK SOULS™ III",
+      "minutes": 541,
+      "hours": 9.0,
+      "playtime": "9.0 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/374320/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/374320/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/374320/",
+      "release": "2016 年 4 月 11 日",
+      "genres": [
+        "动作"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 2835570,
+      "name": "恶魔轮盘",
+      "minutes": 287,
+      "hours": 4.8,
+      "playtime": "4.8 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/2835570/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/2835570/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/2835570/",
+      "release": "2024 年 4 月 4 日",
+      "genres": [
+        "动作",
+        "独立",
+        "模拟"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 2527500,
+      "name": "米塔 MiSide",
+      "minutes": 268,
+      "hours": 4.5,
+      "playtime": "4.5 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/2527500/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/2527500/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/2527500/",
+      "release": "2024 年 12 月 10 日",
+      "genres": [
+        "冒险",
+        "独立",
+        "角色扮演"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1071870,
+      "name": "知只大冒险",
+      "minutes": 212,
+      "hours": 3.5,
+      "playtime": "3.5 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1071870/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1071870/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1071870/",
+      "release": "2020 年 3 月 26 日",
+      "genres": [
+        "动作",
+        "冒险",
+        "休闲"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1942280,
+      "name": "土豆兄弟(Brotato)",
+      "minutes": 199,
+      "hours": 3.3,
+      "playtime": "3.3 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1942280/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1942280/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1942280/",
+      "release": "2023 年 6 月 23 日",
+      "genres": [
+        "动作",
+        "休闲",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 524220,
+      "name": "NieR:Automata™",
+      "minutes": 191,
+      "hours": 3.2,
+      "playtime": "3.2 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/524220/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/524220/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/524220/",
+      "release": "2017 年 3 月 17 日",
+      "genres": [
+        "动作",
+        "角色扮演"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1057090,
+      "name": "Ori and the Will of the Wisps",
+      "minutes": 175,
+      "hours": 2.9,
+      "playtime": "2.9 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1057090/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1057090/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1057090/",
+      "release": "2020 年 3 月 10 日",
+      "genres": [
+        "动作"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 3167020,
+      "name": "逃离鸭科夫",
+      "minutes": 135,
+      "hours": 2.2,
+      "playtime": "2.2 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/3167020/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/3167020/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/3167020/",
+      "release": "2025 年 10 月 16 日",
+      "genres": [
+        "动作",
+        "冒险",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 379720,
+      "name": "DOOM",
+      "minutes": 105,
+      "hours": 1.8,
+      "playtime": "1.8 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/379720/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/379720/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/379720/",
+      "release": "2016 年 5 月 12 日",
+      "genres": [
+        "动作"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 837470,
+      "name": "Untitled Goose Game",
+      "minutes": 73,
+      "hours": 1.2,
+      "playtime": "1.2 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/837470/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/837470/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/837470/",
+      "release": "2020 年 9 月 23 日",
+      "genres": [
+        "动作",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 2868840,
+      "name": "Slay the Spire 2",
+      "minutes": 64,
+      "hours": 1.1,
+      "playtime": "1.1 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/2868840/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/2868840/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/2868840/",
+      "release": "2026 年 3 月 5 日",
+      "genres": [
+        "独立",
+        "策略",
+        "抢先体验"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 3036080,
+      "name": "沙威玛传奇 - Shawarma Legend",
+      "minutes": 65,
+      "hours": 1.1,
+      "playtime": "1.1 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/3036080/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/3036080/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/3036080/",
+      "release": "2024 年 7 月 19 日",
+      "genres": [
+        "模拟"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 588650,
+      "name": "Dead Cells",
+      "minutes": 62,
+      "hours": 1.0,
+      "playtime": "1.0 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/588650/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/588650/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/588650/",
+      "release": "2018 年 8 月 6 日",
+      "genres": [
+        "动作",
+        "冒险",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 2379780,
+      "name": "Balatro",
+      "minutes": 54,
+      "hours": 0.9,
+      "playtime": "54 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/2379780/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/2379780/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/2379780/",
+      "release": "2024 年 2 月 20 日",
+      "genres": [
+        "休闲",
+        "独立",
+        "策略"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 3590,
+      "name": "Plants vs. Zombies GOTY Edition",
+      "minutes": 57,
+      "hours": 0.9,
+      "playtime": "57 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/3590/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/3590/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/3590/",
+      "release": "2009 年 5 月 5 日",
+      "genres": [
+        "策略"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 413150,
+      "name": "Stardew Valley",
+      "minutes": 48,
+      "hours": 0.8,
+      "playtime": "48 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/413150/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/413150/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/413150/",
+      "release": "2016 年 2 月 27 日",
+      "genres": [
+        "独立",
+        "角色扮演",
+        "模拟"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 367520,
+      "name": "Hollow Knight",
+      "minutes": 42,
+      "hours": 0.7,
+      "playtime": "42 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/367520/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/367520/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/367520/",
+      "release": "2017 年 2 月 24 日",
+      "genres": [
+        "动作",
+        "冒险",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 434650,
+      "name": "Lost Castle / 失落城堡",
+      "minutes": 39,
+      "hours": 0.7,
+      "playtime": "39 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/434650/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/434650/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/434650/",
+      "release": "2016 年 8 月 31 日",
+      "genres": [
+        "动作",
+        "冒险",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 410110,
+      "name": "12 is Better Than 6",
+      "minutes": 34,
+      "hours": 0.6,
+      "playtime": "34 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/410110/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/410110/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/410110/",
+      "release": "2015 年 11 月 20 日",
+      "genres": [
+        "动作",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1145360,
+      "name": "Hades",
+      "minutes": 37,
+      "hours": 0.6,
+      "playtime": "37 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1145360/",
+      "release": "2020 年 9 月 17 日",
+      "genres": [
+        "动作",
+        "独立",
+        "角色扮演"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 259810,
+      "name": "送小羊回家",
+      "minutes": 33,
+      "hours": 0.6,
+      "playtime": "33 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/259810/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/259810/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/259810/",
+      "release": "2014 年 2 月 17 日",
+      "genres": [
+        "动作",
+        "冒险",
+        "休闲"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1130410,
+      "name": "Cyber Hook",
+      "minutes": 32,
+      "hours": 0.5,
+      "playtime": "32 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1130410/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1130410/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1130410/",
+      "release": "2020 年 9 月 24 日",
+      "genres": [
+        "动作",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 448510,
+      "name": "Overcooked",
+      "minutes": 27,
+      "hours": 0.5,
+      "playtime": "27 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/448510/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/448510/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/448510/",
+      "release": "2016 年 8 月 3 日",
+      "genres": [
+        "动作",
+        "休闲",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 346010,
+      "name": "围攻",
+      "minutes": 31,
+      "hours": 0.5,
+      "playtime": "31 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/346010/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/346010/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/346010/",
+      "release": "2020 年 2 月 18 日",
+      "genres": [
+        "独立",
+        "模拟"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 815370,
+      "name": "绿色地狱",
+      "minutes": 22,
+      "hours": 0.4,
+      "playtime": "22 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/815370/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/815370/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/815370/",
+      "release": "2019 年 9 月 5 日",
+      "genres": [
+        "动作",
+        "冒险",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 240720,
+      "name": "Getting Over It with Bennett Foddy",
+      "minutes": 15,
+      "hours": 0.2,
+      "playtime": "15 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/240720/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/240720/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/240720/",
+      "release": "2017 年 12 月 6 日",
+      "genres": [
+        "动作"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 70,
+      "name": "Half-Life",
+      "minutes": 14,
+      "hours": 0.2,
+      "playtime": "14 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/70/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/70/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/70/",
+      "release": "1998 年 11 月 19 日",
+      "genres": [
+        "动作"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 2644470,
+      "name": "PICO PARK 2",
+      "minutes": 15,
+      "hours": 0.2,
+      "playtime": "15 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/2644470/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/2644470/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/2644470/",
+      "release": "2024 年 9 月 12 日",
+      "genres": [
+        "动作",
+        "休闲"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 3607790,
+      "name": "打砖块创作家",
+      "minutes": 12,
+      "hours": 0.2,
+      "playtime": "12 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/3607790/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/3607790/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/3607790/",
+      "release": "2025 年 4 月 19 日",
+      "genres": [
+        "休闲",
+        "独立",
+        "免费开玩"
+      ],
+      "free": true,
+      "family": true
+    },
+    {
+      "appid": 1230140,
+      "name": "ATRI -My Dear Moments-",
+      "minutes": 9,
+      "hours": 0.1,
+      "playtime": "9 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1230140/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1230140/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1230140/",
+      "release": "2020 年 6 月 18 日",
+      "genres": [
+        "冒险",
+        "休闲"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1345820,
+      "name": "Ragnarock",
+      "minutes": 7,
+      "hours": 0.1,
+      "playtime": "7 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1345820/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1345820/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1345820/",
+      "release": "2021 年 7 月 15 日",
+      "genres": [
+        "动作",
+        "休闲",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 3167550,
+      "name": "动物栏：桌面牧场",
+      "minutes": 6,
+      "hours": 0.1,
+      "playtime": "6 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/3167550/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/3167550/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/3167550/",
+      "release": "2025 年 2 月 17 日",
+      "genres": [
+        "休闲",
+        "独立",
+        "模拟"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 952040,
+      "name": "同步音律喵赛克",
+      "minutes": 8,
+      "hours": 0.1,
+      "playtime": "8 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/952040/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/952040/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/952040/",
+      "release": "2018 年 12 月 4 日",
+      "genres": [
+        "独立",
+        "模拟"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1318690,
+      "name": "异形工厂（Shapez）",
+      "minutes": 5,
+      "hours": 0.1,
+      "playtime": "5 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1318690/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1318690/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1318690/",
+      "release": "2020 年 6 月 7 日",
+      "genres": [
+        "休闲",
+        "独立",
+        "模拟"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 632360,
+      "name": "雨中冒险 2",
+      "minutes": 8,
+      "hours": 0.1,
+      "playtime": "8 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/632360/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/632360/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/632360/",
+      "release": "2020 年 8 月 11 日",
+      "genres": [
+        "动作",
+        "独立"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 629520,
+      "name": "Soundpad",
+      "minutes": 1,
+      "hours": 0.0,
+      "playtime": "1 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/629520/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/629520/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/629520/",
+      "release": "2017 年 9 月 30 日",
+      "genres": [
+        "音频制作",
+        "实用工具"
+      ],
+      "free": false,
+      "family": true
+    },
+    {
+      "appid": 1426210,
+      "name": "双人成行",
+      "minutes": 2,
+      "hours": 0.0,
+      "playtime": "2 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1426210/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1426210/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1426210/",
+      "release": "2021 年 3 月 25 日",
+      "genres": [
+        "动作",
+        "冒险"
+      ],
+      "free": false,
+      "family": true
+    }
+  ],
+  "skipped": [
+    {
+      "appid": 1495710,
+      "reason": "类型 dlc 非游戏"
+    },
+    {
+      "appid": 1741240,
+      "reason": "类型 music 非游戏"
+    },
+    {
+      "appid": 4673900,
+      "reason": "商店无数据（多半是工具/已下架）"
+    },
+    {
+      "appid": 5253140,
+      "reason": "类型 demo 非游戏"
+    }
+  ]
+}

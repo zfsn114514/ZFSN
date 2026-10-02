@@ -664,10 +664,20 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 var $ = function(s){ return document.querySelector(s); };
 var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
 
-/* ── 后端地址：同源优先，否则 localhost:3000 ── */
-/* ── 后端地址探测：多候选并发探测，取第一个响应的 ── */
+/* ── 后端地址探测：多候选并发探测，取第一个响应的 ──
+   ⚠ https 页面不能请求 http 接口（浏览器按混合内容直接拦掉，
+     请求根本发不出去），所以候选地址的协议必须跟页面一致。
+     例外：http://localhost / http://127.0.0.1 属可信来源，https 下也可用。 */
 var API_BASE = "";
 var API_READY = null;
+
+/* 与 D:\ZFSN-server\server.js 的 PORT / HTTPS_PORT 默认值保持一致 */
+var HTTP_API_PORT = 3000;
+var HTTPS_API_PORT = 3443;
+
+function isHttpsPage(){ return location.protocol === "https:"; }
+/** 当前页面协议下应该用的后端端口 */
+function apiPort(){ return isHttpsPage() ? HTTPS_API_PORT : HTTP_API_PORT; }
 
 function portOf(loc){
   if (loc.port) return loc.port;
@@ -678,19 +688,29 @@ function apiCandidates(){
   var list = [];
   var host = location.hostname;
   var proto = location.protocol;
-  var isHttp = (proto === "http:" || proto === "https:");
+  var isWeb = (proto === "http:" || proto === "https:");
+  var isHttps = (proto === "https:");
 
   // ① 同源：只要页面本身就是后端提供的，"" 就成立。
   //    直接无条件优先探测，不预设端口号 —— 这样外部端口被映射成
   //    3000 以外的任意值（如 38472）时也能正常工作。
-  if (isHttp) list.push("");
+  if (isWeb) list.push("");
 
-  // ② 当前主机名的 3000 端口 —— 覆盖"页面在 88、后端在 3000"的场景
-  if (proto === "http:" && host) list.push("http://" + host + ":3000");
+  // ② 当前主机名的后端端口 —— 覆盖"页面在 IIS:88、后端在 3000/3443"的场景。
+  //    若页面端口本来就等于后端端口，说明 ① 的同源候选已经覆盖它。
+  var samePort = isWeb && (portOf(location) === String(isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
+  if (host && !samePort){
+    list.push((isHttps ? "https://" : "http://") + host + ":" +
+              (isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
+  }
 
-  // ③ 本机兜底：页面在 file:// 或 https 时用得上
-  list.push("http://localhost:3000");
-  list.push("http://127.0.0.1:3000");
+  // ③ 本机兜底：页面在 file:// 时用得上
+  if (isHttps){
+    list.push("https://localhost:" + HTTPS_API_PORT);
+    list.push("https://127.0.0.1:" + HTTPS_API_PORT);
+  }
+  list.push("http://localhost:" + HTTP_API_PORT);
+  list.push("http://127.0.0.1:" + HTTP_API_PORT);
 
   var seen = {}, out = [];
   list.forEach(function(u){ if (!(u in seen)){ seen[u] = 1; out.push(u); } });
@@ -902,8 +922,10 @@ function nrow(level, title, desc){
   '</div>';
 }
 
-/** 从公网回连自己，验证端口映射是否真的生效 */
-function probePublic(host, port){
+/** 从公网回连自己，验证端口映射是否真的生效。
+    协议必须跟当前页面一致 —— https 页面发 http 请求会被浏览器
+    按混合内容拦掉，那样"回连失败"就是假象，会把结论带偏。 */
+function probePublic(host, port, proto){
   return new Promise(function(resolve){
     var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
     var done = false;
@@ -913,7 +935,7 @@ function probePublic(host, port){
       if (ctl) ctl.abort();
       resolve(false);
     }, 6000);
-    fetch("http://" + host + ":" + port + "/api/health?_=" + Date.now(),
+    fetch((proto || "http:") + "//" + host + ":" + port + "/api/health?_=" + Date.now(),
           { cache: "no-store", signal: ctl ? ctl.signal : undefined })
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(d){
@@ -943,6 +965,24 @@ function runNetCheck(){
     rows.push(nrow("ok", "后端服务运行中",
       "监听 <code>" + d.listen.host + ":" + d.listen.port + "</code> · " +
       "Node " + d.node + " · 已运行 " + d.uptime));
+
+    // ①b HTTPS 监听状态 —— 关系到 https 页面下作品/留言能否正常加载
+    if (d.https && d.https.enabled){
+      rows.push(nrow("ok", "HTTPS 已启用",
+        "端口 <code>" + d.https.port + "</code> · " +
+        (d.https.self_signed
+          ? "自签名证书（访客首次访问需点「继续前往」信任一次）"
+          : "自定义证书") +
+        "<br>路由器上要<b>单独再映射一条</b> TCP <code>" + d.https.port +
+        "</code> → 本机同一端口；只映射 " + d.listen.port +
+        " 的话 https 是打不进来的。"));
+    } else if (d.https){
+      rows.push(nrow("warn", "HTTPS 未启用",
+        "后端没加载到证书 —— 用 https 打开本站时，作品墙和留言会被浏览器的" +
+        "「混合内容」策略拦掉，表现为接口静默失败。<br>" +
+        "检查 <code>D:\\ZFSN-server\\certs\\server.crt</code> 与 <code>server.key</code> " +
+        "是否存在，或重启一次服务让它自动签发。"));
+    }
 
     // ② 本机网卡地址 —— 路由器端口映射要转发到这里
     if (localIps.length){
@@ -989,21 +1029,22 @@ function runNetCheck(){
     if (!isPublicHost){
       rows.push(nrow("warn", "当前不是通过公网域名访问",
         "浏览器地址是 <code>" + (host || "本地") + "</code>。<br>" +
-        "要检验端口映射，请用公网域名（如 <code>zfsnnb.dpdns.org:3000</code>）打开本页再看。"));
+        "要检验端口映射，请用公网域名（如 <code>zfsnnb.dpdns.org:" +
+        (isHttpsPage() ? HTTPS_API_PORT : HTTP_API_PORT) + "</code>）打开本页再看。"));
       render(rows, false);
       return;
     }
 
-    return probePublic(host, location.port || "3000").then(function(reachable){
+    return probePublic(host, location.port || apiPort(), location.protocol).then(function(reachable){
       if (reachable){
         rows.push(nrow("ok", "公网回连成功（端口映射确认生效）",
-          "<code>" + host + ":" + (location.port || "3000") + "</code> 可以从本机绕公网访问 —— " +
+          "<code>" + host + ":" + (location.port || apiPort()) + "</code> 可以从本机绕公网访问 —— " +
           "端口映射已生效，访客可以正常留言。"));
         render(rows, true);
       } else {
         // 回连失败：大概率是路由器不支持 NAT 回环，而非映射有问题
         rows.push(nrow("warn", "公网回连未通过（多半是正常的）",
-          "从本机连 <code>" + host + ":" + (location.port || "3000") + "</code> 没成功。<br>" +
+          "从本机连 <code>" + host + ":" + (location.port || apiPort()) + "</code> 没成功。<br>" +
           "<b>但这不是故障</b> —— 绝大多数家用路由器不支持 NAT 回环（hairpin），" +
           "内网访问自己的公网地址会被丢弃，外网访客却完全正常。<br>" +
           "要看真实结论，请参照上面 <b>④ 本次请求来源</b>：<br>" +
@@ -1018,6 +1059,8 @@ function runNetCheck(){
   });
 
   function render(list, allGood){
+    var guidePort = location.port || apiPort();
+    var guideScheme = isHttpsPage() ? "https:" : "http:";
     var html = list.join("");
     if (!allGood){
       html +=
@@ -1031,12 +1074,27 @@ function runNetCheck(){
         '<ol>' +
         '<li>登录路由器管理页（一般 <code>192.168.0.1</code> 或 <code>192.168.1.1</code>）</li>' +
         '<li>找到「端口转发 / 虚拟服务器 / NAT」</li>' +
-        '<li>外部端口 <code>3000</code> → 内部 IP 填上面那个局域网地址 → 内部端口 <code>3000</code>，协议选 <b>TCP</b></li>' +
-        '<li>保存后，用手机流量（关掉 WiFi）访问 <code>http://你的域名:3000</code> 验证</li>' +
-        '<li>若仍不通：检查 Windows 防火墙是否放行 3000 —— ' +
-        '在管理员 PowerShell 执行 <code>New-NetFirewallRule -DisplayName "ZFSN 3000" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow</code></li>' +
+        '<li>外部端口 <code>' + guidePort + '</code> → 内部 IP 填上面那个局域网地址 → ' +
+        '内部端口 <code>' + guidePort + '</code>，协议选 <b>TCP</b></li>' +
+        '<li>保存后，用手机流量（关掉 WiFi）访问 <code>' + guideScheme + '//你的域名:' +
+        guidePort + '</code> 验证</li>' +
+        '<li>若仍不通：检查 Windows 防火墙是否放行 ' + guidePort + ' —— ' +
+        '在管理员 PowerShell 执行 <code>New-NetFirewallRule -DisplayName "ZFSN ' +
+        guidePort + '" -Direction Inbound -LocalPort ' + guidePort +
+        ' -Protocol TCP -Action Allow</code></li>' +
         '<li>再不通：确认宽带是否有公网 IP（很多家宽是内网 IP，需要联系运营商）</li>' +
         '</ol>' +
+        (isHttpsPage()
+          ? '<h3>HTTPS 补充说明</h3>' +
+            '<p>当前用的是 <b>自签名证书</b>（后端首次启动时自动签发），' +
+            '访客第一次打开会看到「您的连接不是私密连接」，点「高级 → 继续前往」即可，' +
+            '页面和留言都正常。<br>' +
+            '想去掉这个提示，把真实证书（如 Let\'s Encrypt 的 <code>fullchain.pem</code> / ' +
+            '<code>privkey.pem</code>）放到 <code>D:\\ZFSN-server\\certs\\</code>，' +
+            '或设环境变量 <code>TLS_CERT</code> / <code>TLS_KEY</code> 指向它们，然后重启服务。<br>' +
+            '另外 HTTPS 用的是 <code>' + HTTPS_API_PORT + '</code> 端口，' +
+            '路由器上要<b>单独再映射一条</b>（HTTP 的 ' + HTTP_API_PORT + ' 端口映射不会自动覆盖它）。</p>'
+          : '') +
         '</div>';
     }
     box.innerHTML = html;

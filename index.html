@@ -22,6 +22,7 @@
   --bili:#00aeec;
   --steam:#66a3d9;
   --xbox:#52b043;
+  --fam:#a78bfa;
   --r:18px;
   --ease:cubic-bezier(.2,.8,.3,1);
 }
@@ -731,6 +732,28 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 }
 .sgame .rel{font-size:10px;color:#4a4a5a;margin-top:9px;letter-spacing:.08em}
 
+/* ── 家庭共享 ── */
+.fbadge{
+  font-size:9px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;
+  padding:3px 9px;border-radius:20px;color:#ded1ff;
+  background:rgba(88,58,150,.5);border:1px solid rgba(167,139,250,.42);
+  white-space:nowrap;
+}
+.fnote{
+  font-size:11.5px;color:var(--muted);line-height:1.75;letter-spacing:.03em;
+  margin:-4px 0 18px;padding-left:13px;border-left:2px solid rgba(167,139,250,.35);
+}
+.fnote b{color:#c3aaff;font-weight:700}
+.fgrid{margin-bottom:6px}
+.sgame .fam{
+  position:absolute;top:10px;right:10px;font-size:9.5px;letter-spacing:.1em;
+  padding:4px 9px;border-radius:20px;color:#e4d9ff;
+  background:rgba(74,48,132,.8);border:1px solid rgba(167,139,250,.45);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.sgame.famcard:hover{border-color:rgba(167,139,250,.55);box-shadow:0 20px 50px rgba(0,0,0,.6),0 0 34px rgba(167,139,250,.22)}
+.sgame.famcard .pt .bar i{background:linear-gradient(90deg,var(--fam),#d8c8ff);box-shadow:0 0 8px rgba(167,139,250,.7)}
+
 /* 筛选工具条 */
 .sbar{
   display:flex;align-items:center;gap:12px;flex-wrap:wrap;
@@ -937,7 +960,7 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
   border:1px solid rgba(63,214,63,.22);
 }
 .xbox-hero .l{display:flex;align-items:center;gap:15px}
-.xbox-hero svg{width:34px;height:34px;color:#3fd63f;flex:0 0 34px}
+.xbox-hero svg{width:34px;height:34px;color:var(--xbox);flex:0 0 34px}
 .xbox-hero .t{font-size:15px;font-weight:600}
 .xbox-hero .s{font-size:11.5px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
 
@@ -1116,7 +1139,7 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       </a>
 
       <a class="card xbox" href="https://www.xbox.com/zh-CN/play/user/ZFSN114514" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.102 3.906C6.111 2.124 8.9 1 11.984 1c3.098 0 5.906 1.134 7.894 2.919-2.026-.086-4.005.745-5.642 2.245-1.618-1.47-3.578-2.3-5.578-2.263-1.72.032-3.142.65-4.013 1.31zM2.62 5.703C1.6 7.487 1 9.646 1 11.94 1 18.052 5.925 23 12 23s11-4.948 11-11.06c0-2.294-.6-4.453-1.62-6.237C19.9 4.14 17.62 3.6 15.3 4.86c-.53.29-1.02.68-1.5 1.15-.87-.83-1.83-1.45-2.85-1.86-.36.5-.7 1.06-1.02 1.66 1.06.28 2.06.87 2.95 1.7-1.02 1.05-2.02 2.33-2.94 3.75-.98 1.5-1.83 3.08-2.5 4.6-.98-.98-1.83-2.1-2.5-3.29-.02-1.06.13-2.09.45-3.05.47-.62 1.03-1.24 1.67-1.85.02-.02.05-.04.07-.06a8.9 8.9 0 0 1-.02 0z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.102 21.033C6.211 22.881 8.977 24 12 24c3.026 0 5.789-1.119 7.902-2.967 1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417zm11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912C23.002 17.48 24 14.861 24 12.004c0-3.34-1.365-6.362-3.57-8.536 0 0-.027-.022-.082-.042-.063-.022-.152-.045-.281-.045-.592 0-1.985.434-4.805 3.246zM3.654 3.426c-.057.02-.082.041-.086.042C1.365 5.642 0 8.664 0 12.004c0 2.854.998 5.473 2.661 7.533-1.401-2.605 3.579-9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245-.131 0-.223.021-.281.046v-.002zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C7.379.646 9.659 0 11.984 0H12c2.334 0 4.605.646 6.766 2.085-.068-.046-.615-.372-1.52-.339C14.946 1.828 12 3.545 12 3.545v.006z"/></svg>
         <span class="txt"><span class="t">Xbox</span><span class="s" id="home-xbox-sub">ZFSN114514</span></span>
         <span class="arrow">↗</span>
       </a>
@@ -1146,7 +1169,7 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       </a>
       <a class="hs-card" data-go="steam">
         <div class="hs-ic xbox">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.102 3.906C6.111 2.124 8.9 1 11.984 1c3.098 0 5.906 1.134 7.894 2.919-2.026-.086-4.005.745-5.642 2.245-1.618-1.47-3.578-2.3-5.578-2.263-1.72.032-3.142.65-4.013 1.31zM2.62 5.703C1.6 7.487 1 9.646 1 11.94 1 18.052 5.925 23 12 23s11-4.948 11-11.06c0-2.294-.6-4.453-1.62-6.237C19.9 4.14 17.62 3.6 15.3 4.86c-.53.29-1.02.68-1.5 1.15-.87-.83-1.83-1.45-2.85-1.86-.36.5-.7 1.06-1.02 1.66 1.06.28 2.06.87 2.95 1.7-1.02 1.05-2.02 2.33-2.94 3.75-.98 1.5-1.83 3.08-2.5 4.6-.98-.98-1.83-2.1-2.5-3.29-.02-1.06.13-2.09.45-3.05.47-.62 1.03-1.24 1.67-1.85.02-.02.05-.04.07-.06a8.9 8.9 0 0 1-.02 0z"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.102 21.033C6.211 22.881 8.977 24 12 24c3.026 0 5.789-1.119 7.902-2.967 1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417zm11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912C23.002 17.48 24 14.861 24 12.004c0-3.34-1.365-6.362-3.57-8.536 0 0-.027-.022-.082-.042-.063-.022-.152-.045-.281-.045-.592 0-1.985.434-4.805 3.246zM3.654 3.426c-.057.02-.082.041-.086.042C1.365 5.642 0 8.664 0 12.004c0 2.854.998 5.473 2.661 7.533-1.401-2.605 3.579-9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245-.131 0-.223.021-.281.046v-.002zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C7.379.646 9.659 0 11.984 0H12c2.334 0 4.605.646 6.766 2.085-.068-.046-.615-.372-1.52-.339C14.946 1.828 12 3.545 12 3.545v.006z"/></svg>
         </div>
         <div class="hs-body">
           <div class="hs-k">Xbox</div>
@@ -1273,6 +1296,17 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       <div class="rgrid" id="rgrid"></div>
     </div>
 
+    <!-- 家庭共享 -->
+    <div id="family-block" style="display:none">
+      <div class="subhead">来自家庭共享 <span class="fbadge">Steam Family</span></div>
+      <div class="fnote" id="family-note"></div>
+      <div class="sgrid fgrid" id="fgrid"></div>
+      <div class="morewrap" id="family-more" style="display:none">
+        <button class="btn ghost" id="family-morebtn">展开全部</button>
+        <div class="mtxt" id="family-moretxt"></div>
+      </div>
+    </div>
+
     <div class="subhead" id="all-head">全部游戏</div>
 
     <!-- 筛选工具条 -->
@@ -1305,7 +1339,7 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
 
     <div class="xbox-hero">
       <div class="l">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.102 3.906C6.111 2.124 8.9 1 11.984 1c3.098 0 5.906 1.134 7.894 2.919-2.026-.086-4.005.745-5.642 2.245-1.618-1.47-3.578-2.3-5.578-2.263-1.72.032-3.142.65-4.013 1.31zM2.62 5.703C1.6 7.487 1 9.646 1 11.94 1 18.052 5.925 23 12 23s11-4.948 11-11.06c0-2.294-.6-4.453-1.62-6.237C19.9 4.14 17.62 3.6 15.3 4.86c-.53.29-1.02.68-1.5 1.15-.87-.83-1.83-1.45-2.85-1.86-.36.5-.7 1.06-1.02 1.66 1.06.28 2.06.87 2.95 1.7-1.02 1.05-2.02 2.33-2.94 3.75-.98 1.5-1.83 3.08-2.5 4.6-.98-.98-1.83-2.1-2.5-3.29-.02-1.06.13-2.09.45-3.05.47-.62 1.03-1.24 1.67-1.85.02-.02.05-.04.07-.06a8.9 8.9 0 0 1-.02 0z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.102 21.033C6.211 22.881 8.977 24 12 24c3.026 0 5.789-1.119 7.902-2.967 1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417zm11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912C23.002 17.48 24 14.861 24 12.004c0-3.34-1.365-6.362-3.57-8.536 0 0-.027-.022-.082-.042-.063-.022-.152-.045-.281-.045-.592 0-1.985.434-4.805 3.246zM3.654 3.426c-.057.02-.082.041-.086.042C1.365 5.642 0 8.664 0 12.004c0 2.854.998 5.473 2.661 7.533-1.401-2.605 3.579-9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245-.131 0-.223.021-.281.046v-.002zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C7.379.646 9.659 0 11.984 0H12c2.334 0 4.605.646 6.766 2.085-.068-.046-.615-.372-1.52-.339C14.946 1.828 12 3.545 12 3.545v.006z"/></svg>
         <div>
           <div class="t" id="xbox-persona">ZFSN114514</div>
           <div class="s" id="xbox-count">正在载入…</div>
@@ -2271,6 +2305,107 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       scount.textContent = "\u964d\u7ea7\u6570\u636e";
     });
 
+  /* ═══ Steam 家庭共享 ═══
+     数据来自 tools/build_steam_family.py，生成 steam_family.json：
+       本机 <Steam>/config/libraryfolders.vdf 里「已安装」的 appid
+       减去 steam_games.json 里「自己拥有」的 appid
+       → 剩下的用无需 API Key 的商店接口补名称 / 封面 / 过滤掉 DLC·音乐·Demo
+     ⚠ 固有限制：只能列出本机装过的共享游戏。家庭其他成员库里没下载过的，
+       本地没有任何记录，无法列出 —— 所以这里不是"家庭库全集"。
+     ─────────────────────────────────────────────── */
+  var fgrid = $("#fgrid"), fblock = $("#family-block"), fnote = $("#family-note");
+  var fmorewrap = $("#family-more"), fmorebtn = $("#family-morebtn"), fmoretxt = $("#family-moretxt");
+  var FAM_ALL = [], famShown = 0, famMaxH = 1;
+  var FAM_BATCH = 12;   // 首屏只放 12 张，别把"全部游戏"顶到很下面
+
+  /* 家庭卡片：结构与 makeCard 一致，但
+     · 不参与 #sgrid 的排序/分页，所以不显示名次，改挂"家庭"角标
+     · 时长条按家庭区块自己的最大值缩放（跟拥有的游戏分开算） */
+  function makeFamilyCard(g, maxH){
+    var a = document.createElement("a");
+    a.className = "sgame famcard";
+    a.href = g.store || ("https://store.steampowered.com/app/" + g.appid + "/");
+    a.target = "_blank"; a.rel = "noopener";
+
+    var pct = Math.max(3, Math.round(((g.hours || 0) / maxH) * 100));
+    var pt = (g.hours > 0)
+      ? '<div class="pt"><span>' + esc(g.playtime) + '</span>' +
+        '<span class="bar"><i style="width:' + pct + '%"></i></span></div>'
+      : '<div class="pt"><span>未玩过</span>' +
+        '<span class="bar"><i style="width:3%;opacity:.35"></i></span></div>';
+
+    a.innerHTML =
+      '<div class="cover">' +
+        '<img src="' + esc(g.cover || coverUrl(g.appid)) + '" alt="" loading="lazy" ' +
+        'onerror="this.style.visibility=\'hidden\'">' +
+        '<span class="fam">家庭</span>' +
+      '</div>' +
+      '<div class="meta"><div class="nt" title="' + esc(g.name) + '">' + esc(g.name) + '</div>' +
+      pt + '</div>';
+    return a;
+  }
+
+  /* 家庭区块自己的分批渲染。
+     首屏只放 FAM_BATCH 张（别把"全部游戏"顶到很下面），
+     点「展开全部」后一次性补齐剩下的 —— 按钮文案和行为必须一致。
+     图片都带 loading="lazy"，一次插完也不会集中拉网络。 */
+  function famRender(from, to){
+    var frag = document.createDocumentFragment();
+    for (var i = from; i < to; i++) frag.appendChild(makeFamilyCard(FAM_ALL[i], famMaxH));
+    fgrid.appendChild(frag);
+    famShown = to;
+  }
+
+  function famSyncMore(){
+    fmorewrap.style.display = "block";
+    if (famShown >= FAM_ALL.length){
+      fmorebtn.style.display = "none";
+      fmoretxt.textContent = "已显示全部 " + FAM_ALL.length + " 款家庭共享游戏";
+    } else {
+      fmorebtn.style.display = "";
+      fmorebtn.textContent = "展开全部 " + FAM_ALL.length + " 款";
+      fmoretxt.textContent = "已显示 " + famShown + " / " + FAM_ALL.length + " 款";
+    }
+  }
+
+  function appendFamBatch(){
+    if (famShown >= FAM_ALL.length) return;
+    famRender(famShown, Math.min(famShown + FAM_BATCH, FAM_ALL.length));
+    famSyncMore();
+  }
+
+  function expandFamAll(){
+    if (famShown >= FAM_ALL.length) return;
+    famRender(famShown, FAM_ALL.length);
+    famSyncMore();
+  }
+
+  if (fmorebtn) fmorebtn.addEventListener("click", expandFamAll);
+
+  fetch("steam_family.json")
+    .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(d){
+      var games = (d && d.games) || [];
+      if (!games.length) return;
+
+      FAM_ALL = games.slice().sort(byHours);
+      famMaxH = 1;
+      FAM_ALL.forEach(function(g){ if ((g.hours || 0) > famMaxH) famMaxH = g.hours; });
+
+      fblock.style.display = "block";
+      var hrs = d.total_hours || 0;
+      fnote.innerHTML =
+        "共 <b>" + FAM_ALL.length + "</b> 款 · 累计 <b>" +
+        (hrs ? hrs.toLocaleString() : "0") + "</b> 小时" +
+        "　·　只列出本机已安装的共享游戏，其他家庭成员库里没下载过的无法显示。";
+
+      appendFamBatch();
+
+      // 头部概要也带上家庭共享，避免"165 款"看着像全部
+      scount.textContent += " · 家庭共享 " + FAM_ALL.length + " 款";
+    })
+    .catch(function(){ /* 文件不存在 / 解析失败都静默跳过，不影响原有内容 */ });
+
   /* ═══ B站数据 ═══
      数据结构（由 tools/build_bili.py 生成）：
        profile: { name, face_local, face, sign, level, followers, following,
@@ -2599,20 +2734,31 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
      页面可能通过多种方式打开，后端地址各不相同：
        · http://localhost:3000        → 同源，最省事
        · http://域名:3000             → 同源（公网推荐方案）
+       · https://域名:3443            → 同源（HTTPS 方案）
        · http://localhost:88          → 同源不通，需跨到 :3000
        · http://192.168.x.x:88        → 同上，用当前主机名的 3000
        · file://                      → 只能写死 localhost:3000
      所以列出所有候选地址并发探测 /api/health，取第一个响应的。
 
-     ⚠ 两个必须避开的坑：
+     ⚠ 三个必须避开的坑：
        1. 缓存污染 —— sessionStorage 里可能残留上次的地址（比如上次用
           localhost 打开、这次用公网域名），换个浏览器标签就失效。
           所以缓存命中后仍要复验，失败就重跑全量探测。
        2. 端口相同即同源 —— 判断"同源"要看 location.port，不能只看协议。
+       3. 混合内容 —— https 页面请求 http 接口会被浏览器直接拦掉
+          （请求根本发不出去，表现为接口静默失败）。所以候选地址的
+          协议必须跟页面一致，不能"反正都试一遍"。
+          例外：http://localhost 与 http://127.0.0.1 被浏览器视为
+          可信来源，https 页面下也允许请求，所以可以保留。
      ──────────────────────────────────────────────────── */
   var API_BASE = "";          // 探测完成前为空
   var API_READY = null;       // Promise
   var API_CACHE_KEY = "zfsn_api_base";
+
+  /* 后端两个监听端口，需与 D:\ZFSN-server\server.js 保持一致
+     （那边由 PORT / HTTPS_PORT 环境变量控制，默认 3000 / 3443） */
+  var HTTP_API_PORT = 3000;
+  var HTTPS_API_PORT = 3443;
 
   function portOf(loc){
     if (loc.port) return loc.port;
@@ -2623,21 +2769,34 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     var list = [];
     var host = location.hostname;
     var proto = location.protocol;
-    var isHttp = (proto === "http:" || proto === "https:");
-    var port = portOf(location);
+    var isWeb = (proto === "http:" || proto === "https:");
+    var isHttps = (proto === "https:");
 
     // ① 同源：只要页面本身就是后端提供的，"" 就成立。
     //    判断方法：探一下同源的 /api/health —— 探测函数自带失败兜底，
     //    所以这里可以无条件优先试同源，不用预先猜端口号。
     //    这样即使外部端口映射成了 38472 之类的任意值也能工作。
-    if (isHttp) list.push("");
+    if (isWeb) list.push("");
 
-    // ② 当前主机名的 3000 端口 —— 覆盖"页面在 88、后端在 3000"的场景
-    if (proto === "http:" && host) list.push("http://" + host + ":3000");
+    // ② 当前主机名的后端端口 —— 覆盖"页面在 IIS:88、后端在 3000/3443"的场景。
+    //    协议必须跟页面一致（见上面第 3 条坑）。
+    //    若页面端口本来就等于后端端口，说明 ① 的同源候选已经覆盖它，
+    //    不必再探一遍。
+    var samePort = isWeb && (portOf(location) === String(isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
+    if (host && !samePort){
+      list.push((isHttps ? "https://" : "http://") + host + ":" +
+                (isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
+    }
 
-    // ③ 本机兜底：页面在 file:// 或 https 时用得上
-    list.push("http://localhost:3000");
-    list.push("http://127.0.0.1:3000");
+    // ③ 本机兜底：页面在 file:// 时用得上。
+    //    https 页面下 localhost 只能走 https（自签名证书需先手动信任一次），
+    //    但 http://localhost 属于浏览器豁免的"可信来源"，仍然可用。
+    if (isHttps){
+      list.push("https://localhost:" + HTTPS_API_PORT);
+      list.push("https://127.0.0.1:" + HTTPS_API_PORT);
+    }
+    list.push("http://localhost:" + HTTP_API_PORT);
+    list.push("http://127.0.0.1:" + HTTP_API_PORT);
 
     // 去重，保持顺序
     var seen = {}, out = [];
@@ -2798,13 +2957,18 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     var isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || "");
 
     if (proto === "https:"){
-      lines.push('当前页面是 <b style="color:#ff8a9c">https</b> 协议，' +
-        '浏览器会拦截对 http 后端的请求（混合内容限制）。');
-      lines.push('请改用 <b style="color:#cfe3f5">http://' + location.hostname +
-        ':3000</b> 访问本站——后端自带页面托管，这样页面和接口同源，不会有跨域问题。');
+      lines.push('当前页面是 <b style="color:#ff8a9c">https</b> 协议。' +
+        '如果后端只开了 http，浏览器会按「混合内容」把接口请求直接拦掉，' +
+        '作品墙和留言就会空着 —— 这不是后端坏了，是协议不匹配。');
+      lines.push('请改用 <b style="color:#cfe3f5">https://' + location.hostname +
+        ':' + HTTPS_API_PORT + '</b> 访问本站（后端自带 HTTPS，页面和接口同源）。');
+      lines.push('若后端没开 HTTPS，就退回 <b style="color:#cfe3f5">http://' +
+        location.hostname + ':' + HTTP_API_PORT + '</b>。');
+      lines.push('注：自签名证书首次访问会提示「不安全」，点「继续前往」信任一次即可。');
     } else if (proto === "file:"){
       lines.push('当前是直接双击打开的本地文件，后端地址无法自动推断。');
-      lines.push('请改用 <b style="color:#cfe3f5">http://localhost:3000</b> 访问本站。');
+      lines.push('请改用 <b style="color:#cfe3f5">http://localhost:' + HTTP_API_PORT +
+        '</b> 访问本站。');
     } else if (isLocal){
       lines.push('请确认后端服务已启动。');
       lines.push('方式一：双击 <code style="color:#ff8a9c">D:\\ZFSN-server\\启动服务.bat</code>');
@@ -2813,8 +2977,9 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     } else {
       // 外部访客：本机服务大概率是好的，问题出在网络上
       lines.push('你的浏览器没能连上本站的后端服务。');
-      lines.push('如果你是站主：请检查路由器是否把 <b style="color:#ff8a9c">3000</b> ' +
-        '端口映射到了本机，以及 Windows 防火墙是否放行。');
+      lines.push('如果你是站主：请检查路由器是否把 <b style="color:#ff8a9c">' +
+        (location.protocol === "https:" ? HTTPS_API_PORT : HTTP_API_PORT) +
+        '</b> 端口映射到了本机，以及 Windows 防火墙是否放行。');
       lines.push('如果你是访客：可能是站点暂时离线，稍后再试即可。');
     }
     return lines.join("<br>");

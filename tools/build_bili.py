@@ -65,15 +65,13 @@ cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import common  # noqa: E402
+
+
 def site_root():
-    """定位站点根目录（存放 index.html 的地方）。"""
-    here = os.path.dirname(os.path.abspath(__file__))
-    if os.path.exists(os.path.join(here, "index.html")):
-        return here
-    parent = os.path.dirname(here)
-    if os.path.exists(os.path.join(parent, "index.html")):
-        return parent
-    return here
+    """定位站点根目录。实现已统一到 common.site_root()，这里只做转发。"""
+    return common.site_root()
 
 
 def relogin():
