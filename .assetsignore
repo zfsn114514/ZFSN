@@ -32,6 +32,18 @@ tools/
 *.bak
 *.bak_*
 
+# ── Worker 运行时源码与依赖 ──────────────────────────────────────
+# 站点现在不再只是静态资源：src/ 下是 Worker（提供 /api/* 和 /media/*），
+# 它跟页面一起部署，但**不能**被当成静态文件公开发行 —— 否则源码、
+# 依赖和部署说明全都变成可下载的资源了。
+src/
+schema/
+node_modules/
+wrangler.toml
+package.json
+package-lock.json
+DEPLOY.md
+
 # 编辑器 / 系统杂项
 .vscode/
 .idea/

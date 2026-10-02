@@ -3060,21 +3060,19 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     var isCFHost = /^www\.zfsnnb\.dpdns\.org$/i.test(host || "") &&
                    (location.port === "" || location.port === "443");
 
-    // ① 同源：只要页面本身就是后端提供的（本地 3000/3443、IIS 反代等），"" 就成立。
-    //    判断方法：探一下同源的 /api/health —— 探测函数自带失败兜底，
-    //    所以这里可以无条件优先试同源，不用预先猜端口号。
-    //    这样即使外部端口映射成了 38472 之类的任意值也能工作。
-    //    ⚠ 唯独 CF 静态托管时例外（同源必然 404），见下面 ③。
-    if (isWeb && !isCFHost) list.push("");
+    // ① 同源 —— **线上方案**。
+    //    站点现在由 Cloudflare Worker 提供：页面和 /api/* 出自同一个服务，
+    //    所以无条件排在最前，一次命中，不必再白探别的候选。
+    //    （迁移之前 CF 只托管静态资源，同源 /api 必然 404，才需要特判跳过；
+    //     现在 Worker 自带接口，那个例外可以去掉了。）
+    if (isWeb) list.push("");
 
-    // ② Cloudflare 隧道 —— **线上方案**。
-    //    两端都是 https、证书由 CF 签发（受信），既无混合内容问题，
-    //    访客也不会看到自签名证书的"不安全"警告。
+    // ② Cloudflare 隧道 —— 降级为**回退方案**。
+    //    Worker 还没部署好、或者出故障时，家里那台机器上的旧后端
+    //    （node server.js + cloudflared）还能顶上，前提是它开着。
     if (isHttps) list.push(TUNNEL_API);
 
-    // ③ CF 静态托管下的同源 —— 已知会 404，但成本极低（秒回）。
-    //    留着是为了：万一以后 CF 那边也代理了 /api/*，这里能自动生效。
-    if (isWeb && isCFHost) list.push("");
+    // ③（已并入 ①）CF 托管下的同源不再单独登记 —— Worker 自带 /api/*。
 
     // ④ 当前主机名的后端端口 —— 覆盖"页面在 443/IIS:88、后端在 3000/3443"的场景。
     //    协议必须跟页面一致（见上面第 3 条坑）。

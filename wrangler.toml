@@ -1,0 +1,51 @@
+#:schema node_modules/wrangler/config-schema.json
+
+# ══════════════════════════════════════════════════════════════
+#  ZFSN 站点 —— Cloudflare Worker（静态资源 + API 一体）
+#
+#  迁移前：页面托管在 Cloudflare Workers（纯静态），
+#          留言/作品/上传等动态功能由家里电脑上的 Node 后端提供，
+#          经 cloudflared 隧道回到 127.0.0.1:3000 —— 电脑一关，站就残了。
+#  迁移后：同一个 Worker 既发静态资源，又提供 /api/*，
+#          数据落 D1、媒体落 R2，家里电脑关机也不影响线上。
+#
+#  database_id 要换成你自己的：跑 `npx wrangler d1 create zfsn-db`
+#  之后把输出的 id 填到下面。这一步在 DEPLOY.md 里有详细说明。
+# ══════════════════════════════════════════════════════════════
+
+name = "zfsn-site"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# 静态资源：Worker 先执行，没匹配上的请求回落到这个目录。
+# 排除清单（.git / src / tools / node_modules …）见 .assetsignore。
+[assets]
+directory = "."
+
+[[d1_databases]]
+binding = "DB"              # 代码里用 env.DB
+database_name = "zfsn-db"
+database_id = "6e6ae2a5-0ac9-4be7-b2df-5d2cdb03720c"
+
+# 媒体存储。原本用 R2，但 R2 开通要绑支付方式，改用免费版 KV。
+# 免费额度：1 GB 存储 / 10 万次读 / 1 千次写，单值上限 25 MiB
+# （所以 src/media.js 里对大文件做了 8 MiB 分片）。
+[[kv_namespaces]]
+binding = "MEDIA"           # 代码里用 env.MEDIA
+id = "43b4e1c0827542dc88da95cce8f3796b"
+
+[vars]
+# PBKDF2 迭代次数。必须与现有密码哈希一致，否则老密码登录不上。
+# 现有 data/config.json 里的哈希是 120000 轮 SHA-512（Node 端生成的）。
+# ⚠ 免费版 Worker 单次请求 CPU 上限 10ms，120000 轮可能打满 ——
+#   登录接口若报 CPU 超时，见 DEPLOY.md「CPU 限额」一节。
+PBKDF2_ITERATIONS = 120000
+
+# 时间戳显示用的时区偏移（北京 = +8）。
+# Workers 运行时是 UTC，不偏移的话留言时间会早 8 小时。
+TZ_OFFSET = 8
+
+# 归属地数据源：
+#   cf     —— 用 request.cf（Cloudflare 边缘自带，零延迟、不依赖外部 API）
+#   ipapi  —— 回落到 ip-api.com（中文省/市更全，但有 45 次/分钟限流）
+GEO_SOURCE = "cf"

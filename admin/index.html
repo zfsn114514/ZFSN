@@ -796,16 +796,16 @@ function apiCandidates(){
   var isCFHost = /^www\.zfsnnb\.dpdns\.org$/i.test(host || "") &&
                  (location.port === "" || location.port === "443");
 
-  // ① 同源：只要页面本身就是后端提供的，"" 就成立。
-  //    直接无条件优先探测，不预设端口号 —— 这样外部端口被映射成
-  //    3000 以外的任意值（如 38472）时也能正常工作。
-  if (isWeb && !isCFHost) list.push("");
+  // ① 同源 —— **线上方案**。
+  //    站点现在由 Cloudflare Worker 提供，页面和 /api/* 出自同一个服务，
+  //    所以无条件排在最前。
+  //    （迁移前 CF 只托管静态资源，同源 /api 必然 404，才需要特判跳过。）
+  if (isWeb) list.push("");
 
-  // ② Cloudflare 隧道 —— 线上方案
+  // ② Cloudflare 隧道 —— 降级为回退方案（家里旧后端还开着时能用）
   if (isHttps) list.push(TUNNEL_API);
 
-  // ③ CF 静态托管下的同源（已知 404，成本极低，留着以防 CF 侧以后代理 /api/*）
-  if (isWeb && isCFHost) list.push("");
+  // ③（已并入 ①）CF 托管下的同源不再单独登记 —— Worker 自带 /api/*。
 
   // ④ 当前主机名的后端端口 —— 覆盖"页面在 IIS:88、后端在 3000/3443"的场景。
   //    若页面端口本来就等于后端端口，说明 ① 的同源候选已经覆盖它。
