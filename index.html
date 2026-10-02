@@ -867,6 +867,10 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 .gitem{
   position:relative;padding:14px 16px 14px 18px;border-radius:12px;
   background:var(--surface);border:1px solid var(--line);
+  /* ★ 强制 aspect-ratio:auto：作品墙的 .gitem（line 291）写了 aspect-ratio:4/5，
+     同名类同优先级下后写的只覆盖指定属性，aspect-ratio 会渗透进留言卡片，
+     把每条留言都拉成 4:5 的瘦柱。 */
+  aspect-ratio:auto;height:auto;
   transition:border-color .35s,box-shadow .35s,transform .35s var(--ease);
 }
 .gitem::before{
@@ -909,6 +913,24 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 }
 .gitem.clamped.open::after{content:"收起"}
 .gitem.clamped.open .body{-webkit-line-clamp:unset;display:block;overflow:visible}
+
+/* 留言附件：图片缩略图 + 录音播放器 */
+.gitem .msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.gitem .msg-imgs img{
+  width:68px;height:68px;object-fit:cover;border-radius:8px;
+  border:1px solid var(--line);cursor:zoom-in;display:block;
+  transition:transform .35s var(--ease),border-color .3s;
+}
+.gitem .msg-imgs img:hover{transform:scale(1.06);border-color:rgba(255,45,74,.5)}
+.gitem .msg-voice{
+  margin-top:9px;display:flex;align-items:center;gap:9px;
+  padding:7px 11px;border-radius:10px;
+  background:rgba(255,45,74,.07);border:1px solid rgba(255,45,74,.2);
+  font-size:10.5px;color:var(--muted);
+}
+.gitem .msg-voice svg{color:var(--red);width:13px;height:13px;flex:0 0 13px}
+.gitem .msg-voice audio{height:30px;flex:1;min-width:0}
+.gitem .msg-voice b{font-variant-numeric:tabular-nums;color:var(--red-soft);font-weight:600;flex:0 0 auto;font-size:10.5px}
 
 .gempty{
   grid-column:1/-1;
@@ -999,6 +1021,57 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 .btn.danger{background:rgba(255,45,74,.12);border-color:rgba(255,45,74,.4);color:#ff8a9c}
 .btn.danger:hover{background:rgba(255,45,74,.22);color:#fff}
 .btn.sm{padding:7px 13px;font-size:11px}
+
+/* ── 留言附件（图片 + 录音） ── */
+.modal-attach{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  margin-bottom:14px;
+}
+.attach-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:8px 13px;border-radius:10px;cursor:pointer;
+  font-size:11.5px;color:var(--muted);font-family:inherit;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);
+  transition:border-color .3s,color .3s,background .3s;
+}
+.attach-btn:hover{border-color:rgba(255,45,74,.5);color:var(--text)}
+.attach-btn.rec{
+  border-color:var(--red);color:#fff;background:rgba(255,45,74,.22);
+  animation:recpulse 1.2s ease-in-out infinite;
+}
+@keyframes recpulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,45,74,.42)}
+  50%{box-shadow:0 0 0 6px rgba(255,45,74,0)}
+}
+.attach-btn svg{width:13px;height:13px;flex:0 0 13px}
+.attach-cnt{color:var(--red-soft);font-weight:600;font-size:11px}
+
+.attach-preview{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+  margin-bottom:14px;min-height:0;
+}
+.attach-preview:empty{display:none}
+.attach-thumb{
+  position:relative;width:64px;height:64px;border-radius:9px;
+  background:#0a0a10;border:1px solid var(--line);overflow:hidden;
+}
+.attach-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.attach-thumb-x{
+  position:absolute;top:3px;right:3px;width:18px;height:18px;
+  background:rgba(0,0,0,.78);border-radius:50%;
+  color:#fff;font-size:11px;line-height:18px;text-align:center;cursor:pointer;
+  font-family:inherit;
+}
+.attach-voice{
+  display:inline-flex;align-items:center;gap:9px;
+  padding:8px 12px;border-radius:11px;
+  background:rgba(255,45,74,.1);border:1px solid rgba(255,45,74,.3);
+  font-size:11.5px;color:var(--text);
+}
+.attach-voice svg{color:var(--red);width:14px;height:14px;flex:0 0 14px}
+.attach-voice audio{height:30px;flex:1;min-width:0;max-width:200px}
+.attach-voice-x{cursor:pointer;color:var(--red-soft);font-size:15px;line-height:1;flex:0 0 18px}
+.attach-voice-dur{font-variant-numeric:tabular-nums;color:var(--red-soft);font-size:11px;flex:0 0 auto}
 
 /* ══════════ Xbox ══════════ */
 .xbox-hero{
@@ -1119,7 +1192,10 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   .links{flex-direction:column;align-items:stretch;margin-top:34px}
   .card{min-width:0;width:100%}
   .gallery{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
-  .vgrid,.sgrid{grid-template-columns:1fr}
+  /* 之前是 1fr（单列全宽），每个塞满整个手机宽度，作品卡大得离谱。
+     改成 auto-fill + 小 minmax，让手机端也是 2~3 列网格。 */
+  .vgrid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+  .sgrid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
   .xgrid{grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:12px}
   .xbox-hero{padding:16px 17px}
   .xbox-hero svg{width:28px;height:28px;flex:0 0 28px}
@@ -1515,6 +1591,20 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
       <textarea id="gmtext" maxlength="800" rows="5" placeholder="想说的话…"></textarea>
       <div class="tip"><span id="gmtext-cnt">0</span> / 800</div>
     </div>
+
+    <div class="modal-attach">
+      <label class="attach-btn" for="gmimg" title="最多 4 张，每张 ≤ 5MB">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+        图片 <span class="attach-cnt" id="gmimg-cnt"></span>
+        <input id="gmimg" type="file" accept="image/*" multiple hidden>
+      </label>
+      <button class="attach-btn" id="gmrec" type="button" title="浏览器直接录音，不上传文件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>
+        <span id="gmrec-label">录音</span>
+      </button>
+    </div>
+
+    <div class="attach-preview" id="gm-preview"></div>
 
     <div class="modal-foot">
       <div class="modal-err" id="gmerr"></div>
@@ -3118,11 +3208,39 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
   }
 
+  /** 后端相对路径 → 完整 URL。
+   * 留言/作品图都存相对路径（"/api/media/messages/abc/0.jpg"），
+   * 在同源（API_BASE=""）和隧道（API_BASE="https://api..."）下都需要拼前缀。
+   * 调用点（makeMsgItem）只在 detectAPI() 解决之后才跑，所以 API_BASE 已就绪。 */
+  function mediaUrl(rel){
+    return (API_BASE || "") + rel;
+  }
+
   function makeMsgItem(m){
     var d = document.createElement("div");
     d.className = "gitem";
     var initial = (m.name || "?").slice(0, 1).toUpperCase();
     var loc = (m.geo && m.geo.region) || "";
+    var imgs = Array.isArray(m.images) ? m.images : [];
+    var voices = Array.isArray(m.voices) ? m.voices : [];
+
+    var attachHtml = "";
+    if (imgs.length){
+      attachHtml += '<div class="msg-imgs">' + imgs.map(function(u){
+        return '<img src="' + mediaUrl(u) + '" alt="" loading="lazy" referrerpolicy="no-referrer">';
+      }).join("") + '</div>';
+    }
+    if (voices.length){
+      attachHtml += voices.map(function(v){
+        var dur = v && v.duration ? Math.round(v.duration) : 0;
+        return '<div class="msg-voice">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>' +
+          '<audio src="' + mediaUrl(v.url) + '" controls preload="none"></audio>' +
+          (dur ? '<b>' + dur + 's</b>' : '') +
+        '</div>';
+      }).join("");
+    }
+
     d.innerHTML =
       '<header>' +
         '<span class="av">' + esc(initial) + '</span>' +
@@ -3130,7 +3248,8 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
         (loc ? '<span class="loc">' + geoIcon() + esc(loc) + '</span>' : '') +
         '<span class="when">' + esc(m.time || "") + '</span>' +
       '</header>' +
-      '<div class="body">' + esc(m.text) + '</div>';
+      '<div class="body">' + esc(m.text) + '</div>' +
+      attachHtml;
 
     // 正文超过 6 行会被 CSS 折叠，点一下展开看全文。
     // 只给"真的被截断"的加交互，短留言点了没反应反而奇怪。
@@ -3257,12 +3376,141 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     gmerr.textContent = "";
     gmask.classList.add("on");
     document.body.classList.add("locked");
+    // 重置附件：之前留的图、录音；避免上次写一半的内容混进来
+    pendingImages = [];
+    pendingVoice = null;
+    if (typeof renderAttachPreview === "function") renderAttachPreview();
     setTimeout(function(){ gname.focus(); }, 180);
   }
   function closeModal(){
     gmask.classList.remove("on");
     document.body.classList.remove("locked");
+    // 关弹窗时如果还在录，必须停 —— 否则麦克风指示灯一直亮
+    if (mediaRecorder && mediaRecorder.state === "recording"){
+      mediaRecorder.stop();
+    }
   }
+
+  /* ── 附件状态：图片数组 + 单条录音 ── */
+  var pendingImages = [];          // [{ dataUrl, name, size }]
+  var pendingVoice  = null;        // { dataUrl, duration }
+  var mediaRecorder = null;
+  var recChunks = [];
+  var recStartTs = 0;
+  var recTimer = null;
+  var imgInput   = $("#gmimg");
+  var imgCnt    = $("#gmimg-cnt");
+  var recBtn    = $("#gmrec");
+  var recLabel  = $("#gmrec-label");
+  var preview   = $("#gm-preview");
+
+  function renderAttachPreview(){
+    var html = "";
+    pendingImages.forEach(function(img, idx){
+      html += '<div class="attach-thumb" title="' + esc(img.name || "") + '">' +
+        '<img src="' + img.dataUrl + '" alt="">' +
+        '<span class="attach-thumb-x" data-imgidx="' + idx + '" role="button">×</span>' +
+      '</div>';
+    });
+    if (pendingVoice){
+      html += '<div class="attach-voice">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>' +
+        '<audio src="' + pendingVoice.dataUrl + '" controls></audio>' +
+        '<span class="attach-voice-dur">' + pendingVoice.duration + 's</span>' +
+        '<span class="attach-voice-x" data-rmv="1" title="取消录音" role="button">×</span>' +
+      '</div>';
+    }
+    preview.innerHTML = html;
+    imgCnt.textContent = pendingImages.length ? "× " + pendingImages.length : "";
+    preview.querySelectorAll("[data-imgidx]").forEach(function(x){
+      x.addEventListener("click", function(){
+        pendingImages.splice(parseInt(x.getAttribute("data-imgidx"), 10), 1);
+        renderAttachPreview();
+      });
+    });
+    var rv = preview.querySelector("[data-rmv]");
+    if (rv) rv.addEventListener("click", function(){
+      pendingVoice = null;
+      renderAttachPreview();
+    });
+  }
+
+  /* 图片选择：限制 4 张、5MB/张；用 FileReader 转 dataURL。
+   * 不走 fetch/upload，是因为留言需要一次性 POST，把 base64 嵌进去最简单。 */
+  imgInput.addEventListener("change", function(){
+    var files = Array.from(imgInput.files || []);
+    for (var i = 0; i < files.length; i++){
+      if (pendingImages.length >= 4) break;
+      (function(f){
+        if (!/^image\//i.test(f.type)) { gmerr.textContent = "「" + f.name + "」不是图片"; return; }
+        if (f.size > 5*1024*1024){ gmerr.textContent = "「" + f.name + "」超过 5MB，已跳过"; return; }
+        var r = new FileReader();
+        r.onload = function(ev){
+          pendingImages.push({ dataUrl: ev.target.result, name: f.name, size: f.size });
+          renderAttachPreview();
+        };
+        r.readAsDataURL(f);
+      })(files[i]);
+    }
+    imgInput.value = "";   // 清空以便重复选同一张
+  });
+
+  /* 录音：MediaRecorder 直接拿麦克风流，结束时拼 Blob 再 dataURL。
+   * 注意浏览器要求：localhost 或 https 才放行 getUserMedia；
+   * 公网 https (api.zfsnnb.dpdns.org) 走 CF 隧道，但页面本身在
+   * www.zfsnnb.dpdns.org（CF Workers）—— 也是 https，没问题。 */
+  recBtn.addEventListener("click", function(){
+    if (mediaRecorder && mediaRecorder.state === "recording"){
+      mediaRecorder.stop();
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      gmerr.textContent = "当前浏览器不支持录音（需 HTTPS / localhost）";
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream){
+      recChunks = [];
+      var mime = (typeof MediaRecorder.isTypeSupported === "function" &&
+                  MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
+                  ? "audio/webm;codecs=opus" : "";
+      mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime })
+                            : new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = function(e){
+        if (e.data && e.data.size) recChunks.push(e.data);
+      };
+      mediaRecorder.onstop = function(){
+        clearInterval(recTimer);
+        recBtn.classList.remove("rec");
+        recLabel.textContent = "录音";
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        var blob = new Blob(recChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+        if (!blob.size){ return; }
+        if (blob.size > 4*1024*1024){
+          gmerr.textContent = "录音超过 4MB，已自动丢弃（再短一点）";
+          pendingVoice = null;
+          renderAttachPreview();
+          return;
+        }
+        var r = new FileReader();
+        r.onload = function(ev){
+          var dur = Math.max(1, Math.round((Date.now() - recStartTs) / 1000));
+          pendingVoice = { dataUrl: ev.target.result, duration: dur };
+          renderAttachPreview();
+        };
+        r.readAsDataURL(blob);
+      };
+      mediaRecorder.start();
+      recStartTs = Date.now();
+      recBtn.classList.add("rec");
+      recLabel.textContent = "停止 00:00";
+      recTimer = setInterval(function(){
+        var s = Math.floor((Date.now() - recStartTs) / 1000);
+        recLabel.textContent = "停止 " + Math.floor(s/60) + ":" + (s%60 < 10 ? "0" : "") + (s%60);
+      }, 250);
+    }).catch(function(err){
+      gmerr.textContent = "无法访问麦克风：" + (err.message || err.name || "未知错误");
+    });
+  });
 
   $("#g-write").addEventListener("click", openModal);
   $("#gclose").addEventListener("click", closeModal);
@@ -3282,14 +3530,22 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
     if (!name){ gmerr.textContent = "请填写名字"; gname.focus(); return; }
     if (!text){ gmerr.textContent = "请填写留言内容"; gtext.focus(); return; }
 
+    // 把附件塞进 body；空数组不发送（节省一点 JSON 体积）
+    var body = { name: name, text: text };
+    if (pendingImages.length) body.images = pendingImages.map(function(x){ return x.dataUrl; });
+    if (pendingVoice)         body.voices = [pendingVoice];
+
     gsubmit.disabled = true;
     gsubmit.textContent = "发布中…";
     api("/api/messages", {
       method: "POST",
-      body: JSON.stringify({ name: name, text: text })
+      body: JSON.stringify(body)
     }).then(function(d){
       gtext.value = "";
       $("#gmtext-cnt").textContent = "0";
+      pendingImages = [];
+      pendingVoice = null;
+      renderAttachPreview();
       closeModal();
       loadMessages();
       // 让「我的位置」也刷新一下
