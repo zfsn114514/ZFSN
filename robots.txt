@@ -1,0 +1,7 @@
+# 搜索引擎爬虫规则 —— 允许抓取全站，仅管理后台除外
+User-agent: *
+Allow: /
+Disallow: /admin/
+
+# 站点地图（已在 Google Search Console 提交）
+Sitemap: https://www.zfsnnb.dpdns.org/sitemap.xml
