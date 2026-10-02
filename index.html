@@ -1117,6 +1117,40 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
   html{scroll-behavior:auto}
 }
+
+/* ══ 弹幕留言 ══ */
+#danmaku-layer{
+  position:fixed;inset:0;pointer-events:none;z-index:80;
+  overflow:hidden;opacity:0;transition:opacity .6s ease;
+}
+#danmaku-layer.on{opacity:1}
+.danmaku-item{
+  position:absolute;white-space:nowrap;font-size:13.5px;
+  color:rgba(255,255,255,.82);text-shadow:0 1px 4px rgba(0,0,0,.55);
+  pointer-events:none;user-select:none;will-change:transform;
+  padding:3px 10px;border-radius:20px;
+  background:rgba(255,255,255,.06);backdrop-filter:blur(2px);
+  max-width:60vw;overflow:hidden;text-overflow:ellipsis;
+}
+@keyframes danmaku-move{
+  from{transform:translateX(100vw)}
+  to{transform:translateX(-120%)}
+}
+#danmaku-toggle{
+  position:fixed;bottom:22px;right:22px;z-index:90;
+  width:42px;height:42px;border-radius:50%;
+  background:rgba(13,13,20,.72);border:1px solid rgba(255,255,255,.1);
+  color:#fff;font-size:18px;cursor:pointer;backdrop-filter:blur(8px);
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .25s ease,background .25s ease,box-shadow .25s ease;
+  box-shadow:0 4px 14px rgba(0,0,0,.35);
+}
+#danmaku-toggle:hover{
+  transform:scale(1.1);
+  background:rgba(255,45,74,.18);
+  box-shadow:0 0 18px rgba(255,45,74,.25);
+}
+#danmaku-toggle.off{opacity:.45}
 </style>
 </head>
 <body>
@@ -1128,6 +1162,10 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
 <div class="grain"></div>
 
 <div id="wipe"><div class="sweep"></div></div>
+
+<!-- ══ 弹幕留言层 ══ -->
+<div id="danmaku-layer" aria-hidden="true"></div>
+<button id="danmaku-toggle" title="切换弹幕" aria-label="切换弹幕留言">💬</button>
 
 <div class="topbar">
   <div class="mark" data-go="home"><span class="dot"></span>ZFSN</div>
@@ -3073,8 +3111,7 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
         (loc ? '<span class="loc">' + geoIcon() + esc(loc) + '</span>' : '') +
         '<span class="when">' + esc(m.time || "") + '</span>' +
       '</header>' +
-      '<div class="body">' + esc(m.text) + '</div>' +
-      (m.ip && m.ip !== "127.0.0.1" ? '<div class="ip">' + esc(m.ip) + '</div>' : '');
+      '<div class="body">' + esc(m.text) + '</div>';
 
     // 正文超过 6 行会被 CSS 折叠，点一下展开看全文。
     // 只给"真的被截断"的加交互，短留言点了没反应反而奇怪。
@@ -3264,6 +3301,125 @@ footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
   detectAPI();
   loadMessages();
   loadMyGeo();
+
+  /* ═══ 弹幕留言特效 ═══ */
+  (function initDanmaku(){
+    var layer = $("#danmaku-layer");
+    var btn = $("#danmaku-toggle");
+    if (!layer || !btn) return;
+
+    var msgs = [];
+    var items = [];
+    var running = false;
+    var trackCount = 0;
+    var trackHeight = 0;
+    var usedTracks = [];
+
+    function calcTracks(){
+      trackHeight = 28;
+      var maxH = Math.max(300, window.innerHeight - 120);
+      trackCount = Math.floor(maxH / trackHeight);
+      usedTracks = new Array(trackCount).fill(0);
+    }
+    calcTracks();
+    window.addEventListener("resize", calcTracks);
+
+    function fetchMsgs(){
+      api("/api/messages?limit=80").then(function(d){
+        msgs = (d && d.items) || [];
+        if (msgs.length && !running && localStorage.getItem("zfsn_danmaku") !== "off") {
+          start();
+        }
+      }).catch(function(){});
+    }
+
+    function pickTrack(){
+      // 找最近空闲的轨道，避免重叠
+      var now = Date.now();
+      var best = -1, bestT = Infinity;
+      for (var i = 0; i < trackCount; i++){
+        if (usedTracks[i] < now) {
+          if (usedTracks[i] < bestT) { bestT = usedTracks[i]; best = i; }
+        }
+      }
+      if (best < 0) best = Math.floor(Math.random() * trackCount);
+      return best;
+    }
+
+    function createItem(m){
+      var el = document.createElement("div");
+      el.className = "danmaku-item";
+      el.textContent = (m.name ? m.name + ": " : "") + (m.text || "");
+      var track = pickTrack();
+      var dur = 12 + Math.random() * 16; // 12-28 秒
+      var delay = Math.random() * 3;
+      el.style.top = (track * trackHeight + 60) + "px";
+      el.style.animation = "danmaku-move " + dur + "s linear " + delay + "s forwards";
+      // 标记轨道占用时间（动画时长 + 预留）
+      usedTracks[track] = Date.now() + (dur + delay) * 1000 + 2000;
+      layer.appendChild(el);
+      items.push(el);
+
+      function onEnd(){
+        if (!running) return;
+        // 循环：重新随机一条留言
+        if (msgs.length) {
+          var next = msgs[Math.floor(Math.random() * msgs.length)];
+          el.textContent = (next.name ? next.name + ": " : "") + (next.text || "");
+          var newTrack = pickTrack();
+          var newDur = 12 + Math.random() * 16;
+          el.style.top = (newTrack * trackHeight + 60) + "px";
+          el.style.animation = "none";
+          el.offsetHeight; // force reflow
+          el.style.animation = "danmaku-move " + newDur + "s linear forwards";
+          usedTracks[newTrack] = Date.now() + newDur * 1000 + 2000;
+        }
+      }
+      el.addEventListener("animationend", onEnd);
+    }
+
+    function start(){
+      if (running) return;
+      running = true;
+      layer.classList.add("on");
+      btn.classList.remove("off");
+      // 初始投放 8-14 条
+      var batch = Math.min(msgs.length, 8 + Math.floor(Math.random() * 7));
+      for (var i = 0; i < batch; i++){
+        createItem(msgs[Math.floor(Math.random() * msgs.length)]);
+      }
+    }
+
+    function stop(){
+      running = false;
+      layer.classList.remove("on");
+      btn.classList.add("off");
+      items.forEach(function(el){ el.remove(); });
+      items = [];
+    }
+
+    btn.addEventListener("click", function(){
+      if (running) {
+        stop();
+        localStorage.setItem("zfsn_danmaku", "off");
+      } else {
+        if (msgs.length) {
+          start();
+          localStorage.setItem("zfsn_danmaku", "on");
+        } else {
+          fetchMsgs();
+        }
+      }
+    });
+
+    // 页面加载后 2 秒开始拉留言并启动弹幕
+    setTimeout(fetchMsgs, 2000);
+
+    // 若用户上次是开着的，自动启动
+    if (localStorage.getItem("zfsn_danmaku") !== "off") {
+      setTimeout(fetchMsgs, 2500);
+    }
+  })();
 })();
 </script>
 </body>
