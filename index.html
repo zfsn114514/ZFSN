@@ -864,72 +864,72 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
   grid-template-columns:repeat(auto-fill,minmax(272px,1fr));
   align-items:start;
 }
-.gitem{
+.glist > .gitem{
   position:relative;padding:14px 16px 14px 18px;border-radius:12px;
   background:var(--surface);border:1px solid var(--line);
-  /* ★ 强制 aspect-ratio:auto：作品墙的 .gitem（line 291）写了 aspect-ratio:4/5，
-     同名类同优先级下后写的只覆盖指定属性，aspect-ratio 会渗透进留言卡片，
-     把每条留言都拉成 4:5 的瘦柱。 */
+  /* ★ 作品墙的 .gitem（line 291）写了 aspect-ratio:4/5——同名类同优先级下，
+     后写的会覆盖所有指定属性，aspect-ratio 会渗进留言卡把每条留言拉成 4:5 瘦柱。
+     用 `.glist > .gitem` 提高特异性，让留言专用规则不污染作品墙。 */
   aspect-ratio:auto;height:auto;
   transition:border-color .35s,box-shadow .35s,transform .35s var(--ease);
 }
-.gitem::before{
+.glist > .gitem::before{
   content:"";position:absolute;left:0;top:12px;bottom:12px;width:2px;border-radius:2px;
   background:linear-gradient(180deg,var(--red),transparent);
   opacity:.55;transition:opacity .35s;
 }
-.gitem:hover{border-color:var(--line2);box-shadow:0 12px 34px rgba(0,0,0,.5);transform:translateY(-2px)}
-.gitem:hover::before{opacity:1}
-.gitem header{
+.glist > .gitem:hover{border-color:var(--line2);box-shadow:0 12px 34px rgba(0,0,0,.5);transform:translateY(-2px)}
+.glist > .gitem:hover::before{opacity:1}
+.glist > .gitem header{
   display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:8px;
 }
-.gitem .who{font-size:12.5px;font-weight:700;letter-spacing:.02em}
-.gitem .av{
+.glist > .gitem .who{font-size:12.5px;font-weight:700;letter-spacing:.02em}
+.glist > .gitem .av{
   width:22px;height:22px;border-radius:50%;flex:0 0 22px;
   display:grid;place-items:center;font-size:10px;font-weight:800;color:#fff;
   background:linear-gradient(140deg,var(--red),#7a0f22);
   border:1px solid rgba(255,255,255,.14);
 }
-.gitem .loc{
+.glist > .gitem .loc{
   display:inline-flex;align-items:center;gap:4px;
   font-size:10px;letter-spacing:.05em;color:#9db4c8;
   padding:2px 8px;border-radius:20px;
   background:rgba(102,163,217,.1);border:1px solid rgba(102,163,217,.22);
 }
-.gitem .loc svg{width:9px;height:9px}
-.gitem .when{margin-left:auto;font-size:10px;color:#4a4a5a;letter-spacing:.06em}
+.glist > .gitem .loc svg{width:9px;height:9px}
+.glist > .gitem .when{margin-left:auto;font-size:10px;color:#4a4a5a;letter-spacing:.06em}
 /* 正文最多显示 6 行 —— 长留言折叠，避免个别超长内容把整列撑爆 */
-.gitem .body{
+.glist > .gitem .body{
   font-size:13px;line-height:1.72;color:#c3c3cf;letter-spacing:.015em;
   white-space:pre-wrap;word-break:break-word;
   display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;
 }
-.gitem .ip{font-size:9.5px;color:#3a3a48;letter-spacing:.05em;margin-top:7px;font-family:ui-monospace,Consolas,monospace}
+.glist > .gitem .ip{font-size:9.5px;color:#3a3a48;letter-spacing:.05em;margin-top:7px;font-family:ui-monospace,Consolas,monospace}
 /* 被折叠的留言：显示"展开"提示，点开后完整展示 */
-.gitem.clamped{cursor:pointer}
-.gitem.clamped::after{
+.glist > .gitem.clamped{cursor:pointer}
+.glist > .gitem.clamped::after{
   content:"展开全文";display:block;margin-top:8px;
   font-size:10px;letter-spacing:.1em;color:var(--red-soft);opacity:.75;
 }
-.gitem.clamped.open::after{content:"收起"}
-.gitem.clamped.open .body{-webkit-line-clamp:unset;display:block;overflow:visible}
+.glist > .gitem.clamped.open::after{content:"收起"}
+.glist > .gitem.clamped.open .body{-webkit-line-clamp:unset;display:block;overflow:visible}
 
 /* 留言附件：图片缩略图 + 录音播放器 */
-.gitem .msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-.gitem .msg-imgs img{
+.glist > .gitem .msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.glist > .gitem .msg-imgs img{
   width:68px;height:68px;object-fit:cover;border-radius:8px;
   border:1px solid var(--line);cursor:zoom-in;display:block;
   transition:transform .35s var(--ease),border-color .3s;
 }
-.gitem .msg-imgs img:hover{transform:scale(1.06);border-color:rgba(255,45,74,.5)}
-.gitem .msg-voice{
+.glist > .gitem .msg-imgs img:hover{transform:scale(1.06);border-color:rgba(255,45,74,.5)}
+.glist > .gitem .msg-voice{
   margin-top:9px;display:flex;align-items:center;gap:9px;
   padding:7px 11px;border-radius:10px;
   background:rgba(255,45,74,.07);border:1px solid rgba(255,45,74,.2);
   font-size:10.5px;color:var(--muted);
 }
-.gitem .msg-voice svg{color:var(--red);width:13px;height:13px;flex:0 0 13px}
-.gitem .msg-voice audio{height:30px;flex:1;min-width:0}
+.glist > .gitem .msg-voice svg{color:var(--red);width:13px;height:13px;flex:0 0 13px}
+.glist > .gitem .msg-voice audio{height:30px;flex:1;min-width:0}
 .gitem .msg-voice b{font-variant-numeric:tabular-nums;color:var(--red-soft);font-weight:600;flex:0 0 auto;font-size:10.5px}
 
 .gempty{
