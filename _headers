@@ -30,3 +30,26 @@
 
 /assets/*.ico
   Cache-Control: public, max-age=2592000
+
+# ── 植物大战僵尸（/pvz/）──────────────────────────────────────
+#
+# wasm 的 Content-Type 必须是 application/wasm，否则
+# WebAssembly.instantiateStreaming 会直接抛 MIME type error。
+# Workers 静态资源按扩展名已经会自动给对，这里显式写一份保险。
+/pvz/pvz-portable.wasm
+  Content-Type: application/wasm
+  Cache-Control: public, max-age=2592000
+
+# 引擎 js 与 pak 分片：内容固定不变（改版会换文件名），缓存一年。
+/pvz/pvz-portable.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/pvz/mainpak/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/pvz/properties/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML 不缓存：改了启动逻辑必须能立刻生效。
+/pvz/pvz-portable.html
+  Cache-Control: public, max-age=0, must-revalidate

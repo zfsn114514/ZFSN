@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport">
+<title>植物大战僵尸 · ZFSN</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#12121f;color:#eee;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh}
+body.game-mode{overflow:hidden}
+
+/* ── 启动页 ── */
+#boot{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.3em;padding:2em 1.25em;background:radial-gradient(ellipse at 50% 30%,#1e2a1a 0%,#12121f 70%)}
+#boot .logo{font-size:2.5em;font-weight:800;color:#7ec850;text-shadow:0 3px 0 #2c4a1c,0 6px 18px rgba(0,0,0,.6);text-align:center;line-height:1.25}
+#boot .sub{font-size:.9em;color:#8a8a9a;text-align:center;max-width:34em;line-height:1.7}
+#bar{width:min(420px,86vw);height:10px;background:#2a2a3a;border-radius:99px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+#bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4a9e28,#7ec850);border-radius:99px;transition:width .25s ease}
+#pct{font-size:.82em;color:#7ec850;font-variant-numeric:tabular-nums;min-height:1.3em;text-align:center}
+#err{display:none;max-width:34em;background:#3a1f24;border:1px solid #7a2f3a;color:#ff9aa5;padding:.9em 1.1em;border-radius:10px;font-size:.85em;line-height:1.7}
+#err b{color:#ff6b7a}
+#stage{display:flex;gap:.6em;flex-wrap:wrap;justify-content:center}
+.btn{appearance:none;background:rgba(60,80,45,.55);color:#cfe8b8;border:1px solid rgba(126,200,80,.5);border-radius:9px;padding:.7em 1.3em;font-size:.92em;font-family:inherit;cursor:pointer;transition:background .18s,transform .12s;text-decoration:none;display:inline-block}
+.btn:hover{background:rgba(126,200,80,.18);transform:translateY(-1px)}
+.btn.ghost{background:transparent;color:#8a8a9a;border-color:#3a3a4a}
+.btn.ghost:hover{background:rgba(255,255,255,.05);color:#ccc}
+.tips{font-size:.78em;color:#6a6a7a;line-height:1.8;max-width:34em;text-align:center;margin-top:.4em}
+kbd{background:#2a2a3a;border:1px solid #3f3f52;border-bottom-width:2px;border-radius:4px;padding:.1em .45em;font-size:.9em;font-family:ui-monospace,monospace}
+.tips a{color:#7ec850}
+
+/* ── 游戏画面 ── */
+#canvas-container{display:none;width:100vw;height:100vh;position:fixed;inset:0;justify-content:center;align-items:center;background:#000;overflow:hidden}
+#canvas-container:fullscreen{width:100%;height:100%}
+canvas#canvas{display:block;background:#000;outline:0;image-rendering:pixelated}
+#pvz-soft-keyboard{position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;resize:none;pointer-events:none;font-size:16px}
+#hud{position:fixed;top:8px;right:8px;display:flex;gap:6px;z-index:10}
+#hud button{background:rgba(18,18,31,.78);color:#7ec850;border:1px solid rgba(126,200,80,.45);border-radius:6px;padding:.4em .85em;font-size:.85em;cursor:pointer;font-family:inherit;backdrop-filter:blur(4px);transition:background .2s}
+#hud button:hover{background:rgba(126,200,80,.2)}
+#hud button:disabled{opacity:.45;cursor:default}
+@media (max-width:640px){.btn{padding:.65em 1em;font-size:.88em}#boot .logo{font-size:1.9em}}
+</style>
+</head>
+<body>
+
+<!-- ═══ 启动页 ═══ -->
+<div id="boot">
+  <div class="logo">🌻 植物大战僵尸</div>
+  <div class="sub">正在从服务器载入游戏资源（约 44 MB），首次加载需要一点时间。<br>资源会被浏览器缓存，之后再进入就快得多了。</div>
+  <div id="bar"><i></i></div>
+  <div id="pct">准备中…</div>
+  <div id="err"></div>
+  <div id="stage">
+    <button class="btn" id="retry" style="display:none">重新加载</button>
+    <a class="btn ghost" href="/">← 返回主页</a>
+  </div>
+  <div class="tips">
+    <kbd>空格</kbd> 暂停 / 继续 · <kbd>鼠标左键</kbd> 种植物与射击<br>
+    存档保存在你当前浏览器的 IndexedDB 里；换浏览器或清缓存会丢失，可点「导出存档」备份<br>
+    游戏引擎由 <a href="https://github.com/wszqkzqk/PvZ-Portable" target="_blank" rel="noopener noreferrer">PvZ-Portable</a> 提供（LGPL 开源项目）
+  </div>
+</div>
+
+<!-- ═══ 游戏画面 ═══ -->
+<div id="canvas-container">
+  <div id="hud">
+    <button id="btn-full" title="全屏">⛶ 全屏</button>
+    <button id="btn-export" title="导出存档为 ZIP">💾 导出存档</button>
+    <button id="btn-home" title="返回主页">⌂ 主页</button>
+  </div>
+  <canvas id="canvas" width="800" height="600" tabindex="0"></canvas>
+</div>
+
+<textarea id="pvz-soft-keyboard" autocapitalize="off" autocomplete="off" autocorrect="off" enterkeyhint="done" spellcheck="false"></textarea>
+
+<script>
+window.moduleReadyPromise = new Promise((function (n, e) {
+  window._resolveModuleReady = n;
+  window._rejectModuleReady = e;
+}));
+
+var Module = {
+  canvas: document.getElementById("canvas"),
+  noInitialRun: true,
+  onRuntimeInitialized: function () { window._resolveModuleReady(); },
+  onAbort: function (n) { window._rejectModuleReady(new Error(n)); },
+  print: function (n) { console.log(n); },
+  printErr: function (n) { console.warn(n); }
+};
+Module.canvas.addEventListener("contextmenu", function (n) { n.preventDefault(); });
+</script>
+
+<script src="pvz-portable.js" async></script>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════
+   ZFSN 版启动逻辑
+   与上游 pvz-portable.html 的唯一区别：去掉了「上传资源」界面，
+   改为启动时自动从 /pvz/ 拉取 main.pak 分片 + properties/，
+   在浏览器里拼成完整 pak 写进 Emscripten 虚拟文件系统后开跑。
+   ══════════════════════════════════════════════════════════════ */
+
+var PAK_PARTS = 6;
+var PROPS = ["properties/LawnStrings.txt", "properties/default.xml", "properties/partner_logo.jpg"];
+
+var barEl = document.getElementById("bar").firstElementChild;
+var pctEl = document.getElementById("pct");
+var errEl = document.getElementById("err");
+var boot = document.getElementById("boot");
+var container = document.getElementById("canvas-container");
+var canvas = document.getElementById("canvas");
+
+var savesMounted = false, saveFsReadyPromise = null;
+var syncTimer = null, syncing = null, syncQueued = false, lastSyncAt = 0;
+var SYNC_INTERVAL = 5000, CLOSE_GRACE = 7000;
+
+/* 总进度：引擎 1 + 分片 6 + properties 3 + 写入/合并阶段权重 */
+var TOTAL_STEPS = PAK_PARTS + PROPS.length + 6;
+
+function setProgress(step, text) {
+  var p = Math.min(100, Math.round(step / TOTAL_STEPS * 100));
+  barEl.style.width = p + "%";
+  pctEl.textContent = (text ? text + " · " : "") + p + "%";
+}
+
+function fail(e) {
+  console.error(e);
+  errEl.style.display = "block";
+  errEl.innerHTML = "<b>启动失败：</b>" + String((e && e.message) || e) +
+    "<br><br>如果反复失败，通常是网络中断或浏览器内存不足（这个游戏需要约 200 MB 内存）。" +
+    "可以试着刷新页面，或换桌面版浏览器打开。";
+  pctEl.textContent = "已中断";
+  document.getElementById("retry").style.display = "inline-block";
+}
+
+function mkdirp(p) {
+  var parts = p.split("/").slice(0, -1), cur = "";
+  for (var i = 0; i < parts.length; i++) {
+    cur += (cur === "" ? "" : "/") + parts[i];
+    try { Module.FS.mkdir(cur); } catch (e) {}
+  }
+}
+
+function fetchPart(i) {
+  var name = "mainpak/part." + ("0" + i).slice(-2);
+  return fetch(name).then(function (r) {
+    if (!r.ok) throw new Error(name + " 拉取失败（HTTP " + r.status + "）");
+    return r.arrayBuffer();
+  });
+}
+
+function fetchProp(path) {
+  return fetch(path).then(function (r) {
+    if (!r.ok) throw new Error(path + " 拉取失败（HTTP " + r.status + "）");
+    return r.arrayBuffer();
+  });
+}
+
+/* ── 存档：IndexedBFFS ── */
+function canSync() { return savesMounted && Module.FS && typeof Module.FS.syncfs === "function"; }
+
+function ensureSaveFs() {
+  if (saveFsReadyPromise) return saveFsReadyPromise;
+  saveFsReadyPromise = (async function () {
+    await window.moduleReadyPromise;
+    try { Module.FS.mkdir("/saves"); } catch (e) {}
+    try { Module.FS.mount(Module.FS.filesystems.IDBFS, {}, "/saves"); } catch (e) {}
+    savesMounted = true;
+    await new Promise(function (res) {
+      Module.FS.syncfs(true, function (err) { if (err) console.warn("IDBFS 初始同步:", err); res(); });
+    });
+    lastSyncAt = Date.now();
+  })();
+  return saveFsReadyPromise;
+}
+
+function syncSaves() {
+  if (!canSync()) return;
+  if (syncing) { syncQueued = true; return; }
+  syncing = new Promise(function (res) {
+    Module.FS.syncfs(false, function (err) {
+      if (err) console.warn("IDBFS 写入:", err); else lastSyncAt = Date.now();
+      res();
+    });
+  }).then(function () {
+    syncing = null;
+    if (syncQueued) { syncQueued = false; syncSaves(); }
+  });
+}
+
+function startAutosync() {
+  if (syncTimer === null) syncTimer = window.setInterval(syncSaves, SYNC_INTERVAL);
+}
+
+function collectFiles(dir) {
+  var out = [], names;
+  try { names = Module.FS.readdir(dir); } catch (e) { return out; }
+  for (var i = 0; i < names.length; i++) {
+    var n = names[i];
+    if (n === "." || n === "..") continue;
+    var full = dir + "/" + n, st = Module.FS.stat(full);
+    if (Module.FS.isDir(st.mode)) out = out.concat(collectFiles(full));
+    else out.push(full);
+  }
+  return out;
+}
+
+/* 手写 ZIP（store 模式）—— 省掉上游用的 JSZip CDN 依赖 */
+var CRC_TABLE = (function () {
+  var t = new Uint32Array(256);
+  for (var n = 0; n < 256; n++) {
+    var c = n;
+    for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  var crc = 0xFFFFFFFF;
+  for (var i = 0; i < bytes.length; i++) {
+    crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ bytes[i]) & 255];
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function u16(v) { return [v & 255, (v >>> 8) & 255]; }
+function u32(v) { return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; }
+
+function exportSaves() {
+  var btn = document.getElementById("btn-export");
+  btn.disabled = true; btn.textContent = "⏳ 导出中…";
+  ensureSaveFs().then(syncSaves).then(function () {
+    var files = collectFiles("/saves/userdata");
+    if (!files.length) { alert("还没有存档数据。玩一局后再导出吧。"); return; }
+    var chunks = [], central = [], offset = 0;
+    var DOS_TIME = 0, DOS_DATE = 33; // 1980-01-01，固定值
+    files.forEach(function (p) {
+      var data = Module.FS.readFile(p);
+      var nameBytes = new Uint8Array(p.length);
+      for (var i = 0; i < p.length; i++) nameBytes[i] = p.charCodeAt(i) & 255;
+      var crc = crc32(data);
+      var local = new Uint8Array([].concat(
+        u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(DOS_TIME), u16(DOS_DATE),
+        u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0)
+      ));
+      chunks.push(local, nameBytes, data);
+      var cen = new Uint8Array([].concat(
+        u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(DOS_TIME), u16(DOS_DATE),
+        u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length),
+        u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset)
+      ));
+      central.push(cen, nameBytes);
+      offset += local.length + nameBytes.length + data.length;
+    });
+    var centralSize = central.reduce(function (a, b) { return a + b.length; }, 0);
+    var end = new Uint8Array([].concat(
+      u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
+      u32(centralSize), u32(offset), u16(0)
+    ));
+    chunks.push(end);
+    var url = URL.createObjectURL(new Blob(chunks, { type: "application/zip" }));
+    var a = document.createElement("a");
+    a.href = url; a.download = "pvz-savedata.zip"; a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }).catch(function (e) {
+    alert("导出失败：" + (e.message || e));
+  }).then(function () {
+    btn.disabled = false; btn.textContent = "💾 导出存档";
+  });
+}
+
+function resizeCanvas() {
+  var s = Math.min(container.clientWidth / canvas.width, container.clientHeight / canvas.height);
+  canvas.style.width = Math.floor(canvas.width * s) + "px";
+  canvas.style.height = Math.floor(canvas.height * s) + "px";
+}
+
+async function boot0() {
+  try {
+    setProgress(1, "加载引擎");
+    await window.moduleReadyPromise;
+    setProgress(2, "引擎就绪");
+
+    /* 并行拉取 6 个分片 + 3 个 properties */
+    var jobs = [];
+    for (var i = 0; i < PAK_PARTS; i++) jobs.push(fetchPart(i));
+    for (var j = 0; j < PROPS.length; j++) jobs.push(fetchProp(PROPS[j]));
+
+    var got = 2, step = 0;
+    var loaded = await Promise.all(jobs.map(function (p) {
+      return p.then(function (v) { got++; setProgress(got, "下载资源"); return v; });
+    }));
+
+    /* 分片逐个写进 FS（避免一次性 44MB Uint8Array 在移动端分配失败） */
+    mkdirp("/parts");
+    for (var k = 0; k < PAK_PARTS; k++) {
+      Module.FS.writeFile("/parts/" + k, new Uint8Array(loaded[k]));
+      setProgress(++step + PAK_PARTS + 3, "写入分片 " + (k + 1) + "/" + PAK_PARTS);
+    }
+
+    /* properties 原样写入 */
+    for (var m = 0; m < PROPS.length; m++) {
+      mkdirp("/" + PROPS[m]);
+      Module.FS.writeFile("/" + PROPS[m], new Uint8Array(loaded[PAK_PARTS + m]));
+    }
+    setProgress(PAK_PARTS + 4, "素材就绪");
+
+    /* 在引擎内拼成完整 main.pak */
+    var sizes = [], total = 0;
+    for (var q = 0; q < PAK_PARTS; q++) {
+      var s = Module.FS.stat("/parts/" + q).size;
+      sizes.push(s); total += s;
+    }
+    var CHUNK = 1 << 20, pieces = [], off = 0;
+    for (var r = 0; r < sizes.length; r++) {
+      var read = 0;
+      while (read < sizes[r]) {
+        var n2 = Math.min(CHUNK, sizes[r] - read);
+        pieces.push(Module.FS.readFile("/parts/" + r, { offset: off + read, length: n2 }));
+        read += n2;
+      }
+      off += sizes[r];
+      setProgress(PAK_PARTS + 4 + r, "合并 pak " + (r + 1) + "/" + PAK_PARTS);
+    }
+    var merged = new Uint8Array(total), pos = 0;
+    for (var t = 0; t < pieces.length; t++) { merged.set(pieces[t], pos); pos += pieces[t].length; }
+    Module.FS.writeFile("/main.pak", merged);
+
+    /* 校验大小 —— 拼错的话游戏会花屏而不是报错，这里显式拦一道 */
+    if (merged.length !== total || pos !== total) throw new Error("pak 合并长度异常");
+    console.log("[pvz] main.pak 合并完成:", total, "bytes");
+
+    /* 释放分片占用的内存 */
+    for (var z = 0; z < PAK_PARTS; z++) { try { Module.FS.unlink("/parts/" + z); } catch (e) {} }
+    try { Module.FS.rmdir("/parts"); } catch (e) {}
+
+    setProgress(TOTAL_STEPS, "恢复存档");
+    await ensureSaveFs();
+
+    boot.style.display = "none";
+    document.body.classList.add("game-mode");
+    container.style.display = "flex";
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+    window.addEventListener("fullscreenchange", resizeCanvas);
+    lastSyncAt = Date.now();
+    startAutosync();
+    Module.callMain([]);
+  } catch (e) {
+    fail(e);
+  }
+}
+
+document.getElementById("retry").addEventListener("click", function () { location.reload(); });
+document.getElementById("btn-home").addEventListener("click", function () { location.href = "/"; });
+document.getElementById("btn-export").addEventListener("click", exportSaves);
+document.getElementById("btn-full").addEventListener("click", function () {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (container.requestFullscreen) container.requestFullscreen();
+});
+document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") syncSaves(); });
+window.addEventListener("pagehide", function () { syncSaves(); });
+window.addEventListener("beforeunload", function (e) {
+  syncSaves();
+  if (Date.now() - lastSyncAt >= CLOSE_GRACE) {
+    e.preventDefault(); e.returnValue = "存档可能还没写完，等一下或先导出存档。";
+  }
+});
+
+boot0();
+</script>
+</body>
+</html>
