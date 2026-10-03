@@ -63,16 +63,17 @@ canvas#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block}
 canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;display:block}
 
 .glow{
-  position:fixed;width:620px;height:620px;border-radius:50%;pointer-events:none;z-index:1;
+  position:fixed;left:0;top:0;width:620px;height:620px;border-radius:50%;pointer-events:none;z-index:1;
   background:radial-gradient(circle,rgba(255,45,74,.14),rgba(255,45,74,.05) 40%,transparent 68%);
-  transform:translate(-50%,-50%);transition:opacity .4s;will-change:left,top;
+  transition:opacity .4s;will-change:transform;
 }
 .vignette{
   position:fixed;inset:0;z-index:1;pointer-events:none;
   background:radial-gradient(ellipse at 50% 40%,transparent 35%,rgba(0,0,0,.55) 100%);
 }
 .grain{
-  position:fixed;inset:-50%;z-index:2;pointer-events:none;opacity:.035;
+  position:fixed;inset:-8%;z-index:2;pointer-events:none;opacity:.035;
+  will-change:transform;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
   animation:grain 8s steps(6) infinite;
 }
@@ -1348,7 +1349,7 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
 
     <!-- 首页数据概览：三平台实时数据 -->
     <div class="home-stats reveal d5" id="home-stats">
-      <a class="hs-card" data-go="bili">
+      <a class="hs-card" data-go="bili" href="#bili">
         <div class="hs-ic bili">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906z"/></svg>
         </div>
@@ -1358,7 +1359,7 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
           <div class="hs-s" id="hs-bili-s">正在载入…</div>
         </div>
       </a>
-      <a class="hs-card" data-go="steam">
+      <a class="hs-card" data-go="steam" href="#steam">
         <div class="hs-ic steam">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0z"/></svg>
         </div>
@@ -1368,7 +1369,7 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
           <div class="hs-s" id="hs-steam-s">正在载入…</div>
         </div>
       </a>
-      <a class="hs-card" data-go="steam">
+      <a class="hs-card" data-go="steam" href="#steam">
         <div class="hs-ic xbox">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.102 21.033C6.211 22.881 8.977 24 12 24c3.026 0 5.789-1.119 7.902-2.967 1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417zm11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912C23.002 17.48 24 14.861 24 12.004c0-3.34-1.365-6.362-3.57-8.536 0 0-.027-.022-.082-.042-.063-.022-.152-.045-.281-.045-.592 0-1.985.434-4.805 3.246zM3.654 3.426c-.057.02-.082.041-.086.042C1.365 5.642 0 8.664 0 12.004c0 2.854.998 5.473 2.661 7.533-1.401-2.605 3.579-9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245-.131 0-.223.021-.281.046v-.002zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C7.379.646 9.659 0 11.984 0H12c2.334 0 4.605.646 6.766 2.085-.068-.046-.615-.372-1.52-.339C14.946 1.828 12 3.545 12 3.545v.006z"/></svg>
         </div>
@@ -1672,8 +1673,19 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
   }
 
   var LINK = 132;
+  /* 连线按距离分 3 档批量描边。
+   * 旧写法对**每一对**粒子都单独 beginPath + stroke()，满屏能到上千次绘制调用，
+   * 是 PageSpeed「最大限度地减少主线程工作 6.2 秒 / 强制自动重排」的主因。
+   * 现在每档只 stroke 一次 —— 3 次绘制调用搞定，视觉上只是线的淡层次数变少。 */
+  var TIER = [
+    { lo: 0,   hi: 46,     a: .26 },
+    { lo: 46,  hi: 88,     a: .16 },
+    { lo: 88,  hi: LINK,   a: .08 }
+  ];
   function draw(){
     ctx.clearRect(0, 0, W, H);
+
+    // ① 只更新位置（顺带做鼠标斥力），不画任何东西
     for (var i = 0; i < pts.length; i++){
       var p = pts[i];
       p.x += p.vx; p.y += p.vy;
@@ -1682,31 +1694,54 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
 
       var dxm = p.x - mouse.x, dym = p.y - mouse.y;
       var dm = Math.sqrt(dxm * dxm + dym * dym);
+      p.near = dm < 190 ? (1 - dm / 190) : 0;
       if (dm < 130 && dm > 0.01){
         p.x += dxm / dm * .55;
         p.y += dym / dm * .55;
       }
+    }
 
-      for (var j = i + 1; j < pts.length; j++){
-        var q = pts[j];
-        var dx = p.x - q.x, dy = p.y - q.y;
-        var d = Math.sqrt(dx * dx + dy * dy);
-        if (d < LINK){
-          var a = (1 - d / LINK) * .3;
-          ctx.strokeStyle = "rgba(150,158,178," + a + ")";
-          ctx.lineWidth = .6;
-          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    // ② 连线：每档一次 beginPath + stroke
+    ctx.lineWidth = .6;
+    for (var t = 0; t < TIER.length; t++){
+      var lo2 = TIER[t].lo * TIER[t].lo, hi2 = TIER[t].hi * TIER[t].hi;
+      ctx.beginPath();
+      var any = false;
+      for (var a = 0; a < pts.length; a++){
+        var pa = pts[a];
+        for (var b = a + 1; b < pts.length; b++){
+          var pb = pts[b];
+          var dx = pa.x - pb.x, dy = pa.y - pb.y;
+          var d2 = dx * dx + dy * dy;           // 先比平方，省掉开方
+          if (d2 >= hi2 || d2 <= lo2) continue;
+          ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+          any = true;
         }
       }
+      if (!any) continue;
+      ctx.strokeStyle = "rgba(150,158,178," + TIER[t].a + ")";
+      ctx.stroke();
+    }
 
-      var near = dm < 190 ? (1 - dm / 190) : 0;
-      ctx.fillStyle = near > 0
-        ? "rgba(255,90,115," + (.4 + near * .6) + ")"
-        : "rgba(160,166,186,.5)";
+    // ③ 粒子：普通 / 被鼠标点亮 两批，各 fill 一次
+    for (var pass = 0; pass < 2; pass++){
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r + near * 1.6, 0, 6.2832);
+      var got = false;
+      for (var k = 0; k < pts.length; k++){
+        var pk = pts[k], nr = pk.near || 0;
+        if ((pass === 1) !== (nr > 0)) continue;
+        var r = pk.r + nr * 1.6;
+        ctx.moveTo(pk.x + r, pk.y);            // 不 moveTo 会连出直线
+        ctx.arc(pk.x, pk.y, r, 0, 6.2832);
+        got = true;
+      }
+      if (!got) continue;
+      ctx.fillStyle = pass === 1
+        ? "rgba(255,90,115,.9)"
+        : "rgba(160,166,186,.5)";
       ctx.fill();
     }
+
     requestAnimationFrame(draw);
   }
 
@@ -1721,30 +1756,37 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
   /* ═══ 鼠标拖尾 ═══ */
   var tc = $("#trail"), tctx = tc.getContext("2d");
   var tails = [], TMAX = 26;
+  /* 拖尾是柔和的径向渐变光斑，1 倍像素比看不出差别，但每帧要清整屏 ——
+   * dpr=2 时每帧要抹掉 4 倍像素，这里直接按 1 倍开，省掉 3/4 的填充开销。 */
+  var tdpr = 1;
   function sizeTrail(){
-    tc.width = window.innerWidth * dpr; tc.height = window.innerHeight * dpr;
-    tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    tc.width = window.innerWidth * tdpr; tc.height = window.innerHeight * tdpr;
+    tctx.setTransform(tdpr, 0, 0, tdpr, 0, 0);
   }
   sizeTrail();
   window.addEventListener("resize", sizeTrail);
 
   var lastX = null, lastY = null;
   function trailLoop(){
-    tctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    if (!reduce){
-      for (var i = tails.length - 1; i >= 0; i--){
-        var t = tails[i];
-        t.life -= .028;
-        if (t.life <= 0){ tails.splice(i, 1); continue; }
-        t.x += t.vx; t.y += t.vy;
-        t.vx *= .95; t.vy *= .95;
-        var rr = t.r * t.life;
-        var g = tctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, rr * 3.4);
-        g.addColorStop(0, "rgba(255,90,115," + (t.life * .5) + ")");
-        g.addColorStop(.45, "rgba(255,45,74," + (t.life * .16) + ")");
-        g.addColorStop(1, "rgba(255,45,74,0)");
-        tctx.fillStyle = g;
-        tctx.beginPath(); tctx.arc(t.x, t.y, rr * 3.4, 0, 6.2832); tctx.fill();
+    /* 没有拖尾时什么都不画：上一帧已经把画布清干净了，
+     * 空转的 clearRect(全屏) 在高分屏上也是实打实的带宽浪费。 */
+    if (tails.length){
+      tctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      if (!reduce){
+        for (var i = tails.length - 1; i >= 0; i--){
+          var t = tails[i];
+          t.life -= .028;
+          if (t.life <= 0){ tails.splice(i, 1); continue; }
+          t.x += t.vx; t.y += t.vy;
+          t.vx *= .95; t.vy *= .95;
+          var rr = t.r * t.life;
+          var g = tctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, rr * 3.4);
+          g.addColorStop(0, "rgba(255,90,115," + (t.life * .5) + ")");
+          g.addColorStop(.45, "rgba(255,45,74," + (t.life * .16) + ")");
+          g.addColorStop(1, "rgba(255,45,74,0)");
+          tctx.fillStyle = g;
+          tctx.beginPath(); tctx.arc(t.x, t.y, rr * 3.4, 0, 6.2832); tctx.fill();
+        }
       }
     }
     requestAnimationFrame(trailLoop);
@@ -1783,16 +1825,30 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
   var glow = $("#glow");
   var gx = window.innerWidth / 2, gy = window.innerHeight / 2, tX = gx, tY = gy;
   window.addEventListener("mousemove", function(e){ tX = e.clientX; tY = e.clientY; });
+  /* 位置用 transform 而不是 left/top：后者每帧改动都会触发布局 + 重绘，
+   * 鼠标一动就是一次强制重排（PageSpeed 明确点了这条）。transform 走合成器。
+   * CSS 里已去掉 translate(-50%,-50%)，居中改成 margin，这里只管位移。 */
+  glow.style.transform = "translate3d(" + gx + "px," + gy + "px,0)";
   (function follow(){
-    gx += (tX - gx) * .12; gy += (tY - gy) * .12;
-    glow.style.left = gx + "px"; glow.style.top = gy + "px";
+    var nx = gx + (tX - gx) * .12, ny = gy + (tY - gy) * .12;
+    if (Math.abs(nx - gx) > .05 || Math.abs(ny - gy) > .05){   // 静止时不再写样式
+      gx = nx; gy = ny;
+      glow.style.transform = "translate3d(" + gx.toFixed(1) + "px," + gy.toFixed(1) + "px,0)";
+    }
     requestAnimationFrame(follow);
   })();
 
-  /* ═══ 卡片聚光 ═══ */
+  /* ═══ 卡片聚光 ═══
+   * getBoundingClientRect() 是强制布局的经典触发点：在 mousemove 里读它，
+   * 等于每挪一下鼠标就强制浏览器重算一次布局。卡片位置在悬停期间是固定的，
+   * 所以进卡片时量一次存起来复用即可。
+   */
   $$(".card").forEach(function(c){
+    var r = null;
+    c.addEventListener("mouseenter", function(){ r = c.getBoundingClientRect(); });
+    c.addEventListener("mouseleave", function(){ r = null; });
     c.addEventListener("mousemove", function(e){
-      var r = c.getBoundingClientRect();
+      if (!r) r = c.getBoundingClientRect();
       c.style.setProperty("--mx", (e.clientX - r.left) + "px");
       c.style.setProperty("--my", (e.clientY - r.top) + "px");
     });

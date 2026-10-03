@@ -1,0 +1,21 @@
+# ZFSN
+
+> ZFSN 的个人主页 —— 二次元 / 游戏 / 创作。收录 B 站投稿、Steam 游戏库、原创作品集，以及可以留言（支持录音）的访客板。
+
+站点是单页应用，下面每个链接都指向同一页面内的不同板块（hash 路由），
+正文由页面内的 JavaScript 渲染，但这些板块的标题与说明在 HTML 里可直接读到。
+
+## 页面板块
+
+- [首页](https://www.zfsnnb.dpdns.org/#home)：个人介绍、平台入口与最新动态概览。
+- [作品](https://www.zfsnnb.dpdns.org/#works)：原创作品与素材展示，可点赞、评论、查看附件。
+  每件作品有独立可分享的详情页，形式为 `https://www.zfsnnb.dpdns.org/#work/<作品 id>`。
+- [B站](https://www.zfsnnb.dpdns.org/#bili)：B 站视频投稿列表，数据来自公开接口实时拉取。
+- [游戏](https://www.zfsnnb.dpdns.org/#steam)：Steam 游戏库与最近游玩记录。
+- [留言](https://www.zfsnnb.dpdns.org/#guest)：访客留言板，支持文字与录音留言。
+
+## 站点说明
+
+- 技术栈：Cloudflare Workers（静态资源 + API 同源）、D1 数据库、KV 媒体存储，不依赖任何本地服务。
+- 站点地图：<https://www.zfsnnb.dpdns.org/sitemap.xml>（robots.txt 中已声明）。
+- 管理后台：`/admin/`，需登录，已在 robots.txt 中屏蔽，不希望被索引。

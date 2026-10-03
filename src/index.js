@@ -136,17 +136,63 @@ export default {
         return L.fail("接口不存在", 404);
       }
       if (p.indexOf("/media/") === 0) return await handleMedia(request, env, url);
-      return env.ASSETS.fetch(request);
+      return await serveAsset(request, env, p);
     } catch (e) {
       // 兜底：接口崩了也别把整站拖成 500，静态资源照常返回
       console.error("[worker] %s %s -> %s", request.method, p, e && e.stack ? e.stack : e);
       if (p.indexOf("/api/") === 0 || p.indexOf("/media/") === 0) {
         return L.fail("服务异常：" + ((e && e.message) || "unknown"), 500);
       }
-      return env.ASSETS.fetch(request);
+      return notFound();
     }
   }
 };
+
+/* ══════════════════════════════════════════════════════════════
+   静态资源
+   ══════════════════════════════════════════════════════════════ */
+
+/** 图片类资源（后缀判断，够用且不用解析路径） */
+const IMG_EXT = /\.(jpg|jpeg|png|webp|avif|gif|svg|ico)$/i;
+
+function notFound() {
+  return new Response("Not Found", {
+    status: 404,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
+}
+
+/**
+ * 发静态资源。
+ *
+ * 两件事：
+ * 1) **缺失资源必须回 404，不能冒泡成 500。**
+ *    ASSETS 绑定在找不到文件时会抛异常，旧代码在 catch 里又调了一次
+ *    env.ASSETS.fetch(request) —— 第二次照样抛，于是异常逃出 fetch()，
+ *    客户端收到 500。PageSpeed 抓 /llms.txt 报的就是这个（HTTP 500），
+ *    「智能体浏览器」这项直接被判不合格。对搜索引擎来说 500 还会被
+ *    当成站点有错误，比正常的 404 伤害大得多。
+ * 2) **图片给长缓存。** Workers 静态资源默认 Cache-Control 是
+ *    public, max-age=0, must-revalidate，每次访问都要回源验证一次，
+ *    PageSpeed「使用高效的缓存生命周期」说的就是它。作品图文件名带
+ *    时间戳、平台封面基本不会更名，缓存 30 天是安全的；
+ *    HTML / JS / CSS 不加长缓存 —— 改完得立刻生效。
+ */
+async function serveAsset(request, env, p) {
+  let res;
+  try {
+    res = await env.ASSETS.fetch(request);
+  } catch (e) {
+    console.warn("[assets] 未命中，按 404 处理: %s", p);
+    return notFound();
+  }
+  if (res && res.status === 200 && IMG_EXT.test(p)) {
+    const h = new Headers(res.headers);
+    h.set("Cache-Control", "public, max-age=2592000");
+    return new Response(res.body, { status: 200, headers: h });
+  }
+  return res;
+}
 
 /* ══════════════════════════════════════════════════════════════
    /media/* —— KV 媒体
