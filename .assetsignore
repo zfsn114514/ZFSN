@@ -28,9 +28,16 @@ tools/
 .commitmsg.txt
 .wrangler/
 
+# 分片备份（PvZ main.pak 切片的旧版本，每份约 45 MB）
+# 放在仓库根目录里但绝不能上线：assets.directory = "." 会把整个仓库
+# 当静态资源，不排除的话线上会出现 /pvz/../.asset-backups/ 这类无用文件，
+# 白占 Workers 静态资源配额。
+.asset-backups/
+
 # 数据备份
 *.bak
 *.bak_*
+*.bak-*
 
 # ── Worker 运行时源码与依赖 ──────────────────────────────────────
 # 站点现在不再只是静态资源：src/ 下是 Worker（提供 /api/* 和 /media/*），

@@ -64,12 +64,16 @@ canvas#canvas{display:block;background:#000;outline:0;image-rendering:pixelated}
   <div id="hud">
     <button id="btn-full" title="全屏">⛶ 全屏</button>
     <button id="btn-export" title="导出存档为 ZIP">💾 导出存档</button>
+    <button id="btn-unlock" title="解锁全部关卡与模式">🔓 通关存档</button>
     <button id="btn-home" title="返回主页">⌂ 主页</button>
   </div>
   <canvas id="canvas" width="800" height="600" tabindex="0"></canvas>
 </div>
 
 <textarea id="pvz-soft-keyboard" autocapitalize="off" autocomplete="off" autocorrect="off" enterkeyhint="done" spellcheck="false"></textarea>
+
+<!-- 存档构造器（把 PvZ-Portable 的 user{N}.dat 格式实现成 JS） -->
+<script src="save-builder.js"></script>
 
 <script>
 window.moduleReadyPromise = new Promise((function (n, e) {
@@ -314,6 +318,188 @@ function resizeCanvas() {
   canvas.style.height = Math.floor(canvas.height * s) + "px";
 }
 
+/* ── 软键盘输入（仅用于新建用户时打字） ──
+ * 这版 Emscripten 用的是「软键盘」方案，游戏**只读**隐藏 textarea
+ * #pvz-soft-keyboard 的内容，不看键盘事件：
+ *   · 监听 textarea 的 input 事件，把 value 的增量推进 pendingChars
+ *   · wasm 每帧调 WasmHasSoftKeyboardEvents / WasmPopSoftKeyboardChar 取字符
+ * 所以派发 KeyboardEvent 游戏收不到（我先试了 document.dispatchEvent，
+ * 又试了 CDP 的 Input.dispatchKeyEvent 走真实输入管线，都无效）。
+ *
+ * ⚠ 另一个坑：state.active 只在「有文本框」时为 true，新建用户输入姓名时
+ * 游戏才会自己打开。其它画面往里投字符会被丢弃 —— 这也是当初那个
+ * `future` 作弊码方案失败的原因之一（另一个原因是这版没有选关地图画面）。
+ */
+
+function gameRunning() {
+  return !!(Module && Module && Module.FS && container && container.style.display === "flex");
+}
+
+/* 往软键盘 textarea 追加字符 —— 游戏真正认的输入通道。
+ *
+ * 两个前提，缺一不可：
+ *   ① state 必须已创建（WasmStartSoftKeyboard 被游戏调过一次）
+ *   ② state.active 必须为 true —— 游戏每帧轮询 HasSoftKeyboardEvents，
+ *      active=false 时它根本不来取字符，投进去也是白投
+ * 而 active 只在「有文本框」时为 true（比如新建用户输入姓名）。
+ * 选关地图没有文本框，所以要自己把 state 打开。
+ */
+function typeViaSoftKeyboard(str) {
+  var input = document.getElementById("pvz-soft-keyboard");
+  if (!input) return false;
+  var state = Module.wasmSoftKeyboardState;
+  if (!state) {
+    // 游戏一次都没开过软键盘（连新建用户都没走到）。
+    // 按 WasmStartSoftKeyboard 的样子自建一份，字段名保持一致。
+    state = Module.wasmSoftKeyboardState = {
+      active: false, pendingChars: [], pendingKeys: [], lastValue: "",
+    };
+    input.addEventListener("input", function () {
+      if (!state.active) return;
+      var next = input.value || "";
+      var lastChars = Array.from(state.lastValue);
+      var nextChars = Array.from(next);
+      var prefixLen = 0;
+      while (prefixLen < lastChars.length && prefixLen < nextChars.length &&
+             lastChars[prefixLen] === nextChars[prefixLen]) prefixLen++;
+      for (var i = lastChars.length; i > prefixLen; --i) state.pendingKeys.push(8);
+      for (const ch of nextChars.slice(prefixLen)) {
+        var cc = ch.codePointAt(0);
+        if (cc > 0 && cc <= 127) state.pendingChars.push(cc);
+      }
+      state.lastValue = next;
+    });
+  }
+
+  var wasActive = state.active;
+  if (!wasActive) {
+    // 自己接管软键盘：清空缓冲、标记激活、聚焦。
+    // 这几步等价于 WasmStartSoftKeyboard 内部做的事。
+    state.active = true;
+    state.pendingChars.length = 0;
+    state.pendingKeys.length = 0;
+    state.lastValue = "";
+    input.value = "";
+    try { input.focus(); } catch (e) { /* 忽略 */ }
+  }
+
+  var i = 0;
+  (function step() {
+    if (i >= str.length) {
+      // 送完就还原，别打扰游戏后续的正常输入判定
+      if (!wasActive) {
+        setTimeout(function () {
+          state.active = false;
+          input.value = "";
+          state.lastValue = "";
+        }, 1200);
+      }
+      return;
+    }
+    // 每次只多写一个字符：syncInputValue 靠「与上次值的公共前缀」算增量，
+    // 逐字符送更接近真人输入，也更稳妥。
+    input.value = str.slice(0, i + 1);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    i++;
+    setTimeout(step, 260);
+  })();
+  return true;
+}
+
+/* ── 通关存档 ──
+ * 做法：直接按源码格式**构造** user{N}.dat 写进 IDBFS。
+ *
+ * 为什么不用作弊码（这是踩过的坑，留个记录）：
+ *   原方案是往软键盘 textarea 里打原版作弊码 `future`，指望游戏
+ *   自己解锁并落盘。实测行不通，原因不是输入通道不对，而是
+ *   **这版没有原版那个选关地图画面** —— 点 ADVENTURE 直接进关卡实战，
+ *   而 `future` 只在选关地图被消费，进去就必然被丢弃。
+ *
+ * 为什么现在能直接构造：
+ *   游戏引擎是开源的 PvZ-Portable（github.com/wszqkzqk/PvZ-Portable, LGPL），
+ *   存档格式在 src/Lawn/System/PlayerInfo.cpp 的 PlayerInfo::SyncDetails 里
+ *   写得很清楚，而且官方声明 user{N}.dat 与原版 GOTY **100% 二进制兼容**。
+ *   结构是紧凑小端、无文件头，见 save-builder.js 的逐字段注释。
+ *   实测：写入 886 字节后重载，游戏正常读入（无 "Failed to player data"），
+ *   主菜单显示 WELCOME BACK，剧情与解锁状态全部生效。
+ *
+ * 为什么必须「写完要求刷新」：
+ *   PlayerInfo 是游戏启动时一次性加载进内存的。运行中改 IDBFS 里的文件，
+ *   游戏内存里那份不会变。写盘 + 刷新页面，游戏才会重新读档。
+ */
+function applyFullUnlock() {
+  var btn = document.getElementById("btn-unlock");
+  if (!gameRunning()) {
+    alert("游戏还没加载完，等进度条走完再试。");
+    return;
+  }
+  if (typeof buildUnlockedUserDat !== "function") {
+    alert("存档构造器没加载成功（save-builder.js），请刷新页面重试。");
+    return;
+  }
+
+  // 沿用现有 profile 的名字和 id，这样不会覆盖成陌生账号
+  var name = "Player", useSeq = 1, profileId = 1;
+  try {
+    var cur = Module.FS.readFile("/saves/userdata/users.dat");
+    var dv = new DataView(cur.buffer, cur.byteOffset, cur.byteLength);
+    if (dv.getUint32(0, true) === SAVE_PROFILE_VERSION) {
+      var count = dv.getUint16(4, true);
+      if (count > 0) {
+        var nameLen = dv.getUint16(6, true);
+        name = "";
+        for (var i = 0; i < nameLen; i++) name += String.fromCharCode(dv.getUint8(7 + i));
+        useSeq = dv.getUint32(8 + nameLen, true);
+        profileId = dv.getUint32(12 + nameLen, true);
+      }
+    }
+  } catch (e) {
+    // 没有 users.dat 就用默认值，新建一个 profile
+  }
+
+  var userDat, usersDat, info;
+  try {
+    userDat = buildUnlockedUserDat();
+    usersDat = buildUsersDat(name, useSeq, profileId);
+    info = inspectUserDat(userDat);
+  } catch (e) {
+    alert("构造存档失败：" + (e && e.message ? e.message : e));
+    return;
+  }
+  if (info.version !== SAVE_USER_VERSION) {
+    alert("构造的存档版本不对，已中止。");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "⏳ 解锁中…";
+
+  var file = "user" + profileId + ".dat";
+  try {
+    Module.FS.mkdir("/saves/userdata");
+  } catch (e) { /* 已存在 */ }
+  Module.FS.writeFile("/saves/userdata/" + file, userDat);
+  Module.FS.writeFile("/saves/userdata/users.dat", usersDat);
+
+  syncSaves().then(function () {
+    btn.disabled = false;
+    btn.textContent = "🔓 通关存档";
+    alert(
+      "全解锁存档已写入并落盘 ✅\n\n" +
+      "· 存档文件：" + file + "（" + info.size + " 字节）\n" +
+      "· 账号：" + name + "（id " + profileId + "）\n" +
+      "· 冒险模式：第 1–" + SAVE_FINAL_LEVEL + " 关全部解锁\n" +
+      "· 金币：" + info.coins + "\n" +
+      "· 小游戏 / 益智 / 生存模式：已解锁\n" +
+      "· 商店：全部道具已购买\n" +
+      "· 成就：20/20\n\n" +
+      "现在需要**刷新页面**——游戏只在启动时读一次存档，\n" +
+      "运行中改文件不会影响内存里那份。\n\n" +
+      "刷新后主菜单应显示 WELCOME BACK，进入冒险模式即可看到全解锁。"
+    );
+  });
+}
+
 async function boot0() {
   var STAGE = "init";
   try {
@@ -426,6 +612,7 @@ async function boot0() {
 document.getElementById("retry").addEventListener("click", function () { location.reload(); });
 document.getElementById("btn-home").addEventListener("click", function () { location.href = "/"; });
 document.getElementById("btn-export").addEventListener("click", exportSaves);
+document.getElementById("btn-unlock").addEventListener("click", applyFullUnlock);
 document.getElementById("btn-full").addEventListener("click", function () {
   if (document.fullscreenElement) document.exitFullscreen();
   else if (container.requestFullscreen) container.requestFullscreen();

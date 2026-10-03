@@ -64,6 +64,10 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 
 .glow{
   position:fixed;left:0;top:0;width:620px;height:620px;border-radius:50%;pointer-events:none;z-index:1;
+  /* 居中靠负 margin 抵消自身尺寸的一半，让 JS 里的 transform 只负责位移。
+     如果漏了这行，transform 传的就是鼠标坐标，光圈左上角会贴在鼠标上、
+     圆心偏到右下角 310px 处。 */
+  margin:-310px 0 0 -310px;
   background:radial-gradient(circle,rgba(255,45,74,.14),rgba(255,45,74,.05) 40%,transparent 68%);
   transition:opacity .4s;will-change:transform;
 }
@@ -1837,7 +1841,8 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
   window.addEventListener("mousemove", function(e){ tX = e.clientX; tY = e.clientY; });
   /* 位置用 transform 而不是 left/top：后者每帧改动都会触发布局 + 重绘，
    * 鼠标一动就是一次强制重排（PageSpeed 明确点了这条）。transform 走合成器。
-   * CSS 里已去掉 translate(-50%,-50%)，居中改成 margin，这里只管位移。 */
+   * 居中由 CSS 的 margin:-310px 0 0 -310px 负责（620px 直径的一半），
+   * 这里只管鼠标坐标的位移，不要在这里再减半径，否则会偏移两次。 */
   glow.style.transform = "translate3d(" + gx + "px," + gy + "px,0)";
   (function follow(){
     var nx = gx + (tX - gx) * .12, ny = gy + (tY - gy) * .12;
