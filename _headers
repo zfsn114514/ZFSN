@@ -1,0 +1,32 @@
+# Cloudflare 静态资源的响应头覆写
+#
+# Workers 的静态资源层默认直接返回文件（**优先于** Worker 代码），
+# 所以在 src/index.js 里给图片加 Cache-Control 是不生效的 —— 那个请求
+# 根本不会进入 Worker。想在资源层改头就得用这个文件。
+#
+# 为什么要加：默认是 public, max-age=0, must-revalidate，
+# 每次访问都要回源验证一次，PageSpeed「使用高效的缓存生命周期」查的就是它。
+#
+# 只给图片加。作品图文件名带时间戳、平台封面和 favicon 基本不会更名，
+# 缓存 30 天安全。JS / CSS / HTML 不在名单里 —— 改完要能立刻生效。
+
+/assets/*.jpg
+  Cache-Control: public, max-age=2592000
+
+/assets/*.jpeg
+  Cache-Control: public, max-age=2592000
+
+/assets/*.png
+  Cache-Control: public, max-age=2592000
+
+/assets/*.webp
+  Cache-Control: public, max-age=2592000
+
+/assets/*.gif
+  Cache-Control: public, max-age=2592000
+
+/assets/*.svg
+  Cache-Control: public, max-age=2592000
+
+/assets/*.ico
+  Cache-Control: public, max-age=2592000
