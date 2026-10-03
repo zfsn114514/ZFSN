@@ -21,10 +21,19 @@ name = "zfsn"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
-# 静态资源：Worker 先执行，没匹配上的请求回落到这个目录。
+# 静态资源：默认先查静态资源、命中直接返回（不经过 Worker）。
 # 排除清单（.git / src / tools / node_modules …）见 .assetsignore。
 [assets]
 directory = "."
+
+# 图片长缓存写在仓库根目录的 `_headers` 里，不在这里、也不在 src/index.js
+# —— 静态资源层的请求优先于 Worker，代码里设 Cache-Control 对已存在的
+# 文件是无效的。
+#
+# 另：曾试过 run_worker_first = ["/assets/*"] 在 Worker 里做 webp 格式协商，
+# 但图片路径散落在 HTML / JSON / D1 里，换扩展名（.png → .webp）会让这些
+# 引用直接 404。现改为离线「原地压缩、保留扩展名」，
+# 见 tools/dev/optimize_images.py。
 
 [[d1_databases]]
 binding = "DB"              # 代码里用 env.DB

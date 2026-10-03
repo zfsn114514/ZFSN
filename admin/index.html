@@ -1536,7 +1536,7 @@ function renderThumbs(){
     box.classList.remove("hide");
     box.innerHTML = IMGS.map(function(p, i){
       return '<div class="thumb' + (i === 0 ? " iscover" : "") + '" data-i="' + i + '">' +
-        '<img src="' + esc(mUrl(p)) + '" alt="">' +
+        '<img src="' + esc(mUrl(p)) + '" alt="作品图片 ' + (i + 1) + '">' +
         '<span class="no">' + (i + 1) + '</span>' +
         '<div class="acts">' +
           '<button type="button" data-mv="-1" title="前移"' + (i === 0 ? " disabled" : "") + '>←</button>' +
@@ -2007,7 +2007,7 @@ function loadWorks(){
       el.className = "it";
       // 显示真实缩略图：路径填错时能一眼看出来，不用去前台才发现裂图
       var th = w.cover
-        ? '<img class="thumb" src="' + esc(mUrl(w.cover)) + '" alt="" loading="lazy" onerror="this.classList.add(\'broken\')">'
+        ? '<img class="thumb" src="' + esc(mUrl(w.cover)) + '" alt="' + esc(w.title || "作品") + ' 的封面" loading="lazy" onerror="this.classList.add(\'broken\')">'
         : '<span class="thumb ph">无图</span>';
       var nImg = (w.images || []).length || (w.cover ? 1 : 0);
       el.innerHTML =

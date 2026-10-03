@@ -165,18 +165,21 @@ function notFound() {
 /**
  * 发静态资源。
  *
- * 两件事：
- * 1) **缺失资源必须回 404，不能冒泡成 500。**
+ * 一件事：**缺失资源必须回 404，不能冒泡成 500。**
  *    ASSETS 绑定在找不到文件时会抛异常，旧代码在 catch 里又调了一次
  *    env.ASSETS.fetch(request) —— 第二次照样抛，于是异常逃出 fetch()，
  *    客户端收到 500。PageSpeed 抓 /llms.txt 报的就是这个（HTTP 500），
  *    「智能体浏览器」这项直接被判不合格。对搜索引擎来说 500 还会被
  *    当成站点有错误，比正常的 404 伤害大得多。
- * 2) **图片给长缓存。** Workers 静态资源默认 Cache-Control 是
- *    public, max-age=0, must-revalidate，每次访问都要回源验证一次，
- *    PageSpeed「使用高效的缓存生命周期」说的就是它。作品图文件名带
- *    时间戳、平台封面基本不会更名，缓存 30 天是安全的；
- *    HTML / JS / CSS 不加长缓存 —— 改完得立刻生效。
+ *
+ * 关于图片长缓存：那个**不在这里做**。Workers 静态资源层的请求
+ * （命中已存在的文件时）根本进不到 Worker，所以在这里设 Cache-Control
+ * 是无效的；真正的规则写在仓库根目录的 `_headers` 里。
+ *
+ * 关于图片格式协商：也**不在 Worker 做**。曾试过把 .jpg/.png 换成
+ * 同名 .webp，但图片路径散落在 index.html、bili_videos.json、
+ * xbox_games.json、steam_games.json 和 D1 的作品记录里（后台可编辑），
+ * 换扩展名会让这些引用直接 404。现在改为离线「原地压缩、保留扩展名」。
  */
 async function serveAsset(request, env, p) {
   let res;

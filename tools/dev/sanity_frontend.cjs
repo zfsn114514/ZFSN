@@ -1,8 +1,17 @@
 /**
  * 前端内联脚本冒烟测试（桩环境）
  * ---------------------------------------------------------------
- * 目的：在 Node 里把 index.html / admin/index.html 的内联脚本整体跑一遍，
+ * 目的：在 Node 里把 index.html / admin/index.html 的脚本整体跑一遍，
  * 捕获**顶层运行时错误**（未定义变量、拼错函数名等）。
+ *
+ * 覆盖范围：
+ *   · HTML 里的内联 <script> 块
+ *   · HTML 引用的**本站**脚本（如 assets/js/app.js、assets/js/danmaku.js）
+ *     —— index.html 的主逻辑已从内联拆到 app.js，不扫就测不到。
+ *   第三方外链（http(s):// 开头）跳过。
+ *
+ * 运行：node tools/dev/sanity_frontend.cjs
+ *   （package.json 是 type:module，本文件用 require，所以必须是 .cjs 后缀）
  *
  * ⚠ 两个曾经让本测试"假通过"的桩缺陷（已修，别再改回去）：
  *   1. getContext("2d") 返回 null —— index.html 顶层就会
@@ -90,12 +99,25 @@ function makeEl(tag) {
 function run(file) {
   const html = fs.readFileSync(path.join(ROOT, file), "utf8");
   const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+  const srcRe = /<script[^>]*\bsrc=["']([^"']+)["']/gi;
   let m, idx = 0, failures = 0;
 
+  // 收集待测脚本：HTML 内联块 + 引用的本站脚本（跳过第三方外链）
+  const chunks = [];
   while ((m = re.exec(html))) {
-    idx++;
-    const src = m[1];
-    if (!src.trim()) continue;
+    if (m[1].trim()) chunks.push({ label: "内联#" + (++idx), code: m[1] });
+  }
+  while ((m = srcRe.exec(html))) {
+    const u = m[1];
+    if (/^https?:\/\//i.test(u) || u.startsWith("//")) continue; // 第三方，不测
+    const p = path.join(ROOT, u.replace(/^\//, ""));
+    if (fs.existsSync(p)) {
+      chunks.push({ label: u, code: fs.readFileSync(p, "utf8") });
+    }
+  }
+
+  for (const c of chunks) {
+    const src = c.code;
 
     const document = {
       body: makeEl("body"),
@@ -135,6 +157,18 @@ function run(file) {
         this.upload = {};
       },
       FormData: function () { this.append = () => {}; },
+      // 浏览器专属观察器：桩环境没有，danmaku.js 启动时会用到。
+      // 补成 no-op 而不是把 "MutationObserver is not defined" 塞进
+      // 错误白名单 —— 后者会连带吞掉真正的变量名拼写错误。
+      MutationObserver: function () {
+        this.observe = () => {}; this.disconnect = () => {}; this.takeRecords = () => [];
+      },
+      IntersectionObserver: function () {
+        this.observe = () => {}; this.unobserve = () => {}; this.disconnect = () => {};
+      },
+      ResizeObserver: function () {
+        this.observe = () => {}; this.unobserve = () => {}; this.disconnect = () => {};
+      },
       console, JSON, Math, Date, Object, Array, String, Number, Boolean, RegExp, Error,
       Promise, Map, Set, parseInt, parseFloat, isNaN, encodeURIComponent, decodeURIComponent,
       URLSearchParams: function () {}, Intl, JSON2: JSON
@@ -149,21 +183,23 @@ function run(file) {
       new Function("window", "document", "navigator", "localStorage", "location",
         "setTimeout", "clearTimeout", "setInterval", "clearInterval",
         "fetch", "XMLHttpRequest", "FormData", "requestAnimationFrame", "cancelAnimationFrame",
-        "matchMedia", "getComputedStyle", src
+        "matchMedia", "getComputedStyle",
+        "MutationObserver", "IntersectionObserver", "ResizeObserver", src
       ).call(window, window, document, window.navigator, window.localStorage, window.location,
         setTimeout, clearTimeout, setInterval, clearInterval,
         window.fetch, window.XMLHttpRequest, window.FormData,
         window.requestAnimationFrame, window.cancelAnimationFrame,
-        window.matchMedia, window.getComputedStyle);
-      console.log("  ✓ " + file + " script#" + idx + " 顶层执行无异常");
+        window.matchMedia, window.getComputedStyle,
+        window.MutationObserver, window.IntersectionObserver, window.ResizeObserver);
+      console.log("  ✓ " + file + " " + c.label + " 顶层执行无异常");
     } catch (e) {
       const msg = e && e.message ? e.message : String(e);
       // 桩环境必然触发的降级分支报错，属桩限制而非真实 bug
       if (/appendChild|querySelector|null|undefined|not a function|Cannot read/i.test(msg)) {
-        console.log("  ~ " + file + " script#" + idx + " 桩限制（可忽略）: " + msg);
+        console.log("  ~ " + file + " " + c.label + " 桩限制（可忽略）: " + msg);
       } else {
         failures++;
-        console.log("  ✗ " + file + " script#" + idx + " 运行时错误: " + msg);
+        console.log("  ✗ " + file + " " + c.label + " 运行时错误: " + msg);
         if (e && e.stack) console.log("      " + e.stack.split("\n")[1]);
       }
     }

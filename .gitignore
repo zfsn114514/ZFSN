@@ -22,3 +22,11 @@ tools/migrate/.kv-plan.tsv
 # （部署本身不需要这两个目录 —— Worker 代码零第三方依赖。）
 node_modules/
 .wrangler/
+
+# ── 图片优化前的原图备份 ───────────────────────────────────────
+# tools/dev/optimize_images.py 会把优化前的原图备份到这里（约 32 MB）。
+# 它们只是「万一压坏了好还原」的兜底，**不进仓库**：
+#   ① 体积比站点本身还大，提交一次仓库就翻倍；
+#   ② 线上根本用不到（.assetsignore 也排除了 tools/）。
+# 需要长期保存就自己拷一份到网盘/移动硬盘。
+tools/orig-images/

@@ -1,4 +1,33 @@
-# Cloudflare 静态资源的响应头覆写
+# ── HTML 必须显式声明 charset ──────────────────────────────────
+#
+# ⚠ 这是个真实故障，不是防御性写法：
+#   Workers 静态资源层按扩展名给的 Content-Type 是 `text/html`，
+#   **不带 charset**（wrangler 用的 MIME 表里 .html 就映射成 text/html）。
+#   浏览器靠 <meta charset="UTF-8"> 兜底所以看不出问题，但
+#   按 HTTP 规范，text/html 缺失 charset 时接收方可以退回 ISO-8859-1 解码 ——
+#   于是中文全变乱码。Bing 站长工具「View Markup details」里
+#   og:description 显示成 `ç&#154;&#132;ªïà°º¤»éµ …` 就是这个原因
+#   （那串正是 "ZFSN 的个人主页 —— 二次元 / 游戏 / 创作。…" 的
+#    UTF-8 字节被当 Latin-1 读出来的样子），并因此被报
+#   「Title too short」等元数据质量问题。
+#
+#   只对 HTML 加。JS / CSS / wasm 的 MIME 本来就不带 charset，不要动。
+#   注意 `_headers` 匹配的是**请求 URL**，`/` 不等于 `/index.html`，
+#   所以根路径与目录路径要单独列。
+
+/*.html
+  Content-Type: text/html; charset=utf-8
+
+/
+  Content-Type: text/html; charset=utf-8
+
+/admin
+  Content-Type: text/html; charset=utf-8
+
+/admin/
+  Content-Type: text/html; charset=utf-8
+
+# ── 图片长缓存 ────────────────────────────────────────────────
 #
 # Workers 的静态资源层默认直接返回文件（**优先于** Worker 代码），
 # 所以在 src/index.js 里给图片加 Cache-Control 是不生效的 —— 那个请求
@@ -8,7 +37,7 @@
 # 每次访问都要回源验证一次，PageSpeed「使用高效的缓存生命周期」查的就是它。
 #
 # 只给图片加。作品图文件名带时间戳、平台封面和 favicon 基本不会更名，
-# 缓存 30 天安全。JS / CSS / HTML 不在名单里 —— 改完要能立刻生效。
+# 缓存 30 天安全。JS / CSS / HTML 不加 Cache-Control —— 改完要能立刻生效。
 
 /assets/*.jpg
   Cache-Control: public, max-age=2592000
@@ -31,6 +60,15 @@
 /assets/*.ico
   Cache-Control: public, max-age=2592000
 
+# ── JS / CSS 不加长缓存 ───────────────────────────────────────
+#
+# assets/js/app.js（站点主逻辑）和 danmaku.js 的文件名**不带内容哈希**，
+# 加长缓存会让「改完不生效」变成用户侧的玄学问题。
+# 这里刻意不写规则，走 Workers 默认的
+# `public, max-age=0, must-revalidate` + ETag 协商：
+#   浏览器每次都回源问一句，没变就收 304（只有几百字节），
+#   比原来的「175 KB HTML 每次全量下载」已经好太多。
+
 # ── 植物大战僵尸（/pvz/）──────────────────────────────────────
 #
 # wasm 的 Content-Type 必须是 application/wasm，否则
@@ -51,5 +89,23 @@
   Cache-Control: public, max-age=31536000, immutable
 
 # HTML 不缓存：改了启动逻辑必须能立刻生效。
-/pvz/pvz-portable.html
+#
+# ⚠ 这里必须写**无扩展名**形式。Cloudflare 静态资源层的 `html_handling`
+#   默认是 `auto-trailing-slash`，它会把 `/pvz/pvz-portable.html`
+#   **307 跳转**到 `/pvz/pvz-portable`，真正返回 HTML 的是后者。
+#   而 `_headers` 是按**请求 URL** 匹配的：给 `.html` 写的规则只作用于
+#   那个 307 响应本身，**跟随跳转后的最终页面完全不受影响** ——
+#   之前 charset 补了却没生效，就是踩了这个坑（只看跳转前的头会误判成功）。
+#   所以凡是会被剥掉扩展名的页面，这里都得按去掉扩展名的路径再列一遍。
+#
+#   注意**不要**再给 `/pvz/pvz-portable.html` 也写一份 Content-Type：
+#   存储层已经给 307 响应带上 `text/html; charset=utf-8`（`/*.html` 命中），
+#   再加一条会拼成 `text/html; charset=utf-8, text/html; charset=utf-8`
+#   ——Cloudflare 对同一头名是**追加**而不是覆盖，重复头不规范。
+#   只补 Cache-Control 就够（这条对 307 与最终页都合理）。
+/pvz/pvz-portable
+  Content-Type: text/html; charset=utf-8
   Cache-Control: public, max-age=0, must-revalidate
+
+/index
+  Content-Type: text/html; charset=utf-8
