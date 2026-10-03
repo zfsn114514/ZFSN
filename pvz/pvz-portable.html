@@ -122,21 +122,41 @@ function setProgress(step, text) {
   pctEl.textContent = (text ? text + " · " : "") + p + "%";
 }
 
-function fail(e) {
+function fail(e, stage) {
   console.error(e);
+  // 异常可能不是 Error（DOMException、字符串、Event），都还原成可读文本
+  var msg = "";
+  try {
+    if (e && typeof e === "object") {
+      msg = e.message || e.reason || (e.name ? e.name + ": " + e.message : "");
+      if (!msg) msg = Object.prototype.toString.call(e);
+    } else {
+      msg = String(e);
+    }
+  } catch (_) { msg = "未知错误"; }
   errEl.style.display = "block";
-  errEl.innerHTML = "<b>启动失败：</b>" + String((e && e.message) || e) +
+  errEl.innerHTML = "<b>启动失败</b>" + (stage ? "（阶段：<code>" + stage + "</code>）" : "") + "：<br>" + msg +
     "<br><br>如果反复失败，通常是网络中断或浏览器内存不足（这个游戏需要约 200 MB 内存）。" +
     "可以试着刷新页面，或换桌面版浏览器打开。";
-  pctEl.textContent = "已中断";
+  pctEl.textContent = "已中断 · " + (stage ? stage + " · " : "") + msg.slice(0, 80);
   document.getElementById("retry").style.display = "inline-block";
 }
 
+/* 建目录（含 p 自身）。Emscripten 的 mkdir 不会建父目录，也不能重复建。 */
 function mkdirp(p) {
-  var parts = p.split("/").slice(0, -1), cur = "";
+  var parts = String(p).split("/").filter(Boolean);
+  var cur = "";
   for (var i = 0; i < parts.length; i++) {
-    cur += (cur === "" ? "" : "/") + parts[i];
-    try { Module.FS.mkdir(cur); } catch (e) {}
+    cur += "/" + parts[i];
+    try {
+      Module.FS.mkdir(cur);
+    } catch (e) {
+      // EEXIST(20) 正常；其他错误必须看到，否则后面 writeFile 才报 ErrnoError
+      if (e && e.errno !== 20 && e.errno !== 17) {
+        console.warn("[pvz] mkdir " + cur + " 异常:", e && e.name, "errno=" + (e && e.errno));
+        throw e;
+      }
+    }
   }
 }
 
@@ -162,11 +182,23 @@ function ensureSaveFs() {
   if (saveFsReadyPromise) return saveFsReadyPromise;
   saveFsReadyPromise = (async function () {
     await window.moduleReadyPromise;
-    try { Module.FS.mkdir("/saves"); } catch (e) {}
-    try { Module.FS.mount(Module.FS.filesystems.IDBFS, {}, "/saves"); } catch (e) {}
-    savesMounted = true;
+    try {
+      Module.FS.mkdir("/saves");
+    } catch (e) { console.warn("[pvz] mkdir /saves:", e && e.name); }
+    try {
+      Module.FS.mount(Module.FS.filesystems.IDBFS, {}, "/saves");
+      savesMounted = true;
+    } catch (e) {
+      // 隐私模式 / 存储被禁用时 IDBFS 会挂不上。这不该阻断游戏 ——
+      // 只是存不了档而已，play 优先。
+      console.warn("[pvz] IDBFS 挂载失败，本次不启用存档:", e && e.name);
+      savesMounted = false;
+      return;
+    }
     await new Promise(function (res) {
-      Module.FS.syncfs(true, function (err) { if (err) console.warn("IDBFS 初始同步:", err); res(); });
+      try {
+        Module.FS.syncfs(true, function (err) { if (err) console.warn("IDBFS 初始同步:", err); res(); });
+      } catch (e) { console.warn("[pvz] syncfs 抛错:", e); res(); }
     });
     lastSyncAt = Date.now();
   })();
@@ -177,10 +209,17 @@ function syncSaves() {
   if (!canSync()) return;
   if (syncing) { syncQueued = true; return; }
   syncing = new Promise(function (res) {
-    Module.FS.syncfs(false, function (err) {
-      if (err) console.warn("IDBFS 写入:", err); else lastSyncAt = Date.now();
+    try {
+      Module.FS.syncfs(false, function (err) {
+        if (err) console.warn("IDBFS 写入:", err); else lastSyncAt = Date.now();
+        res();
+      });
+    } catch (e) {
+      // 存档写失败不能影响游戏运行，静默降级为「本次不存档」
+      console.warn("[pvz] syncfs 抛错，停止本次存档同步:", e && e.name);
+      savesMounted = false;
       res();
-    });
+    }
   }).then(function () {
     syncing = null;
     if (syncQueued) { syncQueued = false; syncSaves(); }
@@ -276,12 +315,14 @@ function resizeCanvas() {
 }
 
 async function boot0() {
+  var STAGE = "init";
   try {
     setProgress(1, "加载引擎");
     await window.moduleReadyPromise;
     setProgress(2, "引擎就绪");
 
     /* 并行拉取 6 个分片 + 3 个 properties */
+    STAGE = "下载素材";
     var jobs = [];
     for (var i = 0; i < PAK_PARTS; i++) jobs.push(fetchPart(i));
     for (var j = 0; j < PROPS.length; j++) jobs.push(fetchProp(PROPS[j]));
@@ -292,38 +333,59 @@ async function boot0() {
     }));
 
     /* 分片逐个写进 FS（避免一次性 44MB Uint8Array 在移动端分配失败） */
+    STAGE = "写入分片";
     mkdirp("/parts");
     for (var k = 0; k < PAK_PARTS; k++) {
       Module.FS.writeFile("/parts/" + k, new Uint8Array(loaded[k]));
       setProgress(++step + PAK_PARTS + 3, "写入分片 " + (k + 1) + "/" + PAK_PARTS);
     }
 
-    /* properties 原样写入 */
+    /* properties 原样写入。
+     * 注意：引擎的 wasm 里**已经打包了 properties/ 目录**（Emscripten FS 预置），
+     * 所以这里不能 mkdir（会 EEXIST），也绝不能对已存在的目录 writeFile
+     * （会 EISDIR，errno=31）。目录存在就直接写文件。 */
+    STAGE = "写入素材配置";
+    console.log("[pvz] 根目录内容:", Module.FS.readdir("/").join(","));
     for (var m = 0; m < PROPS.length; m++) {
-      mkdirp("/" + PROPS[m]);
-      Module.FS.writeFile("/" + PROPS[m], new Uint8Array(loaded[PAK_PARTS + m]));
+      var ppath = "/" + PROPS[m];
+      try {
+        // 只有父目录不存在时才建（已存在就跳过）
+        var pdir = ppath.slice(0, ppath.lastIndexOf("/"));
+        try { Module.FS.stat(pdir); } catch (e) { mkdirp(pdir); }
+        Module.FS.writeFile(ppath, new Uint8Array(loaded[PAK_PARTS + m]));
+      } catch (err) {
+        throw new Error("写入 " + ppath + " 失败: " + (err && err.name) +
+          "（errno=" + (err && err.errno) + "）");
+      }
     }
     setProgress(PAK_PARTS + 4, "素材就绪");
 
     /* 在引擎内拼成完整 main.pak */
+    STAGE = "合并 pak";
     var sizes = [], total = 0;
     for (var q = 0; q < PAK_PARTS; q++) {
       var s = Module.FS.stat("/parts/" + q).size;
       sizes.push(s); total += s;
     }
-    var CHUNK = 1 << 20, pieces = [], off = 0;
+    console.log("[pvz] 分片大小:", sizes, "合计:", total);
+
+    /* 在引擎内拼成完整 main.pak。
+     * 不用 readFile 的随机读（{position,length}）—— 这个 Emscripten 版本的
+     * readFile 似乎不认那个参数，会抛 "offset is out of bounds"。
+     * 每个分片只有 8MB，直接整块读出来更稳。 */
+    var pieces = [];
     for (var r = 0; r < sizes.length; r++) {
-      var read = 0;
-      while (read < sizes[r]) {
-        var n2 = Math.min(CHUNK, sizes[r] - read);
-        pieces.push(Module.FS.readFile("/parts/" + r, { offset: off + read, length: n2 }));
-        read += n2;
+      var chunk = Module.FS.readFile("/parts/" + r);
+      if (chunk.length !== sizes[r]) {
+        throw new Error("分片 " + r + " 读取长度不符: " + chunk.length + " != " + sizes[r]);
       }
-      off += sizes[r];
+      pieces.push(chunk);
       setProgress(PAK_PARTS + 4 + r, "合并 pak " + (r + 1) + "/" + PAK_PARTS);
     }
     var merged = new Uint8Array(total), pos = 0;
     for (var t = 0; t < pieces.length; t++) { merged.set(pieces[t], pos); pos += pieces[t].length; }
+
+    STAGE = "写入 main.pak";
     Module.FS.writeFile("/main.pak", merged);
 
     /* 校验大小 —— 拼错的话游戏会花屏而不是报错，这里显式拦一道 */
@@ -334,9 +396,11 @@ async function boot0() {
     for (var z = 0; z < PAK_PARTS; z++) { try { Module.FS.unlink("/parts/" + z); } catch (e) {} }
     try { Module.FS.rmdir("/parts"); } catch (e) {}
 
+    STAGE = "恢复存档";
     setProgress(TOTAL_STEPS, "恢复存档");
     await ensureSaveFs();
 
+    STAGE = "启动游戏";
     boot.style.display = "none";
     document.body.classList.add("game-mode");
     container.style.display = "flex";
@@ -345,9 +409,17 @@ async function boot0() {
     window.addEventListener("fullscreenchange", resizeCanvas);
     lastSyncAt = Date.now();
     startAutosync();
+    // callMain 之后引擎接管主循环；它内部抛错属于游戏自身问题，
+    // 不该再显示「启动失败」并把 boot 恢复出来 —— 那是启动阶段的事。
+    STAGE = null;
     Module.callMain([]);
   } catch (e) {
-    fail(e);
+    if (STAGE === null) {
+      // 游戏运行期出错：只记日志，不动界面
+      console.error("[pvz] 引擎运行时异常:", e);
+      return;
+    }
+    fail(e, STAGE);
   }
 }
 
