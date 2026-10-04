@@ -81,6 +81,8 @@ hdr "② charset（中文乱码的根因）"
 # 曾经的真实故障：静态层给的 text/html 不带 charset，
 # Bing 把中文按 Latin-1 读 → og:description 变乱码。
 CT=$(head_only "$SITE/" "$TMP/c")
+# 注：head_only 把正文写 "$out"、响应头写 "$out.h"；
+#     hdrval 内部会自己拼 ".h"，所以调用时**只传基础名**，别重复加 .h。
 CTYPE=$(hdrval "$TMP/c" "content-type")
 if echo "$CTYPE" | grep -qi "charset=utf-8"; then
   ok "首页 Content-Type 带 charset: $CTYPE"
@@ -95,7 +97,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════
-hdr "③ 内容哈希的 JS（本轮改动）"
+hdr "③ 内容哈希的静态资源（JS + CSS）"
 # ══════════════════════════════════════════════════════════════
 # 从 HTML 里抽出带哈希的脚本路径，逐个取，必须 200
 JSLIST=$(grep -oE 'src="assets/js/[^"]+"' "$TMP/index.html" 2>/dev/null | sed 's/src="//;s/"//')
@@ -134,6 +136,53 @@ for p in $JSLIST; do
       ;;
   esac
 done
+
+# ── CSS：拆成外链后同样要有内容哈希与长缓存 ──
+# 注意 CSS 的引用是 <link rel="stylesheet" href="...">，
+# 不是 <script src>，所以必须单独抽一次。
+CSSLIST=$(grep -oE 'href="assets/css/[^"]+\.css"' "$TMP/index.html" 2>/dev/null | sed 's/href="//;s/"//')
+if [ -z "$CSSLIST" ]; then
+  bad "HTML 里没找到任何 CSS 外链引用" "CSS 应已拆出为 assets/css/app.<hash>.css"
+else
+  for p in $CSSLIST; do
+    cs=$(fetch "$SITE/$p" "$TMP/css")
+    if [ "$cs" = "200" ]; then
+      if echo "$p" | grep -qE '\.[0-9a-f]{8}\.css$'; then
+        ok "哈希样式可访问：$p"
+      else
+        bad "样式**没有**内容哈希：$p" "跑 tools/hash_assets.py"
+      fi
+      # 内容必须是 CSS，不能是 404 页面或 HTML 错误页。
+      # fetch() 不带 -D，不保存响应头，所以这里单独发一次 HEAD。
+      head_only "$SITE/$p" "$TMP/hcss" >/dev/null
+      CT=$(hdrval "$TMP/hcss" "content-type")
+      if echo "$CT" | grep -qi "text/css"; then
+        ok "样式 Content-Type 正确：$CT"
+      else
+        bad "样式 Content-Type 异常：${CT:-空}" "应返回 text/css"
+      fi
+      CC=$(hdrval "$TMP/hcss" "cache-control")
+      if echo "$CC" | grep -qi "immutable"; then
+        ok "哈希样式有长缓存：$CC"
+      else
+        warn "哈希样式没拿到 immutable 缓存头" "$CC（检查 _headers 是否已提交）"
+      fi
+      # CSS 里的光标是相对路径（../../assets/cursor/），拆分后最容易漏
+      # 只做存在性提示，真正的 404 由 ⑧ 的光标检查兜底
+    else
+      bad "$p 返回 $cs" "检查文件是否已提交"
+    fi
+  done
+fi
+
+# HTML 本身**不应**带 immutable（内容会变，必须走协商缓存）
+head_only "$SITE/" "$TMP/hhtml" >/dev/null
+CC=$(hdrval "$TMP/hhtml" "cache-control")
+if echo "$CC" | grep -qi "immutable"; then
+  warn "首页拿到了 immutable 缓存头" "$CC（HTML 会变，不应长缓存）"
+else
+  ok "首页未长缓存（正确）：${CC:-无 Cache-Control}"
+fi
 
 # ══════════════════════════════════════════════════════════════
 hdr "④ 结构化数据（JSON-LD）"
