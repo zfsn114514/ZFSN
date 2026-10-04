@@ -1495,86 +1495,98 @@ img.pimg-on{filter:blur(0)}
  *   留言按时间倒序，顺序不承载语义（且每条都带时间戳），无影响。
  */
 .glist{
-  column-width:272px;      /* 目标列宽，实际列数由容器宽度自动取整 */
-  column-gap:12px;
-  display:block;           /* 覆盖原来的 grid —— columns 与 grid 不能共存 */
+  display:flex;align-items:flex-start;gap:12px;
 }
-.glist > .gitem{
+/* 列容器。列数由 JS 算（见 app.js 的 colCount），JS 按「列高最短优先」
+   把留言逐条分发进各列。纯 CSS columns 做不到这件事 ——
+   column-fill:balance 是按「均衡」分发的，跟时间顺序无关：
+   最新的一批会挤满第一列，第 N 条之后才跳到第二列，
+   视觉上就成了「时间顺序在列之间来回跳」（用户点名的问题）。
+
+   ⚠ 列宽由 JS（app.js 的 targetColW）算列数时用的同一个目标值，
+   CSS 这边只负责「等分 + 不被内容撑破」，两边不必严格一致。 */
+.glist > .gcol{
+  flex:1 1 0;min-width:0;
+  display:flex;flex-direction:column;gap:12px;
+}
+.glist .gitem{
   position:relative;padding:14px 16px 14px 18px;border-radius:12px;
   background:var(--surface);border:1px solid var(--line);
   /* ★ 留言卡的 .gitem 和作品墙的 .gitem 是同一个类名。
-     作品墙走多列瀑布流，留言列表这里也走，但两者规则不能互相污染，
-     所以统一用 `.glist > .gitem` 提高特异性隔离。
-     注意 break-inside:avoid 必须**显式写**（继承不到 .gitem 的），
-     否则一条长留言会被拦腰拆到两列之间。 */
-  aspect-ratio:auto;height:auto;margin:0 0 12px;
-  break-inside:avoid;
-  -webkit-column-break-inside:avoid;
-  page-break-inside:avoid;
+     作品墙走多列瀑布流，留言列表这里走 flex 分列，两者规则不能互相污染，
+     所以统一用 `.glist .gitem` 提高特异性隔离。
+     · 卡片间距由 .gcol 的 gap 控制，margin 必须归零 ——
+       否则窄屏媒体查询里的 `.gitem{margin:0 0 12px}` 会命中，
+       变成 gap + margin 的双倍间距。
+     · overflow 归 visible：作品墙的 .gitem 是 hidden（裁图片圆角），
+       留言卡没有图片，hidden 会把折叠态的 ::after（"展开全文"）裁掉。 */
+  margin:0;aspect-ratio:auto;height:auto;overflow:visible;
   transition:border-color .35s,box-shadow .35s,transform .35s var(--ease);
 }
-.glist > .gitem::before{
+.glist .gitem::before{
   content:"";position:absolute;left:0;top:12px;bottom:12px;width:2px;border-radius:2px;
   background:linear-gradient(180deg,var(--red),transparent);
   opacity:.55;transition:opacity .35s;
 }
-.glist > .gitem:hover{border-color:var(--line2);box-shadow:0 12px 34px rgba(0,0,0,.5);transform:translateY(-2px)}
-.glist > .gitem:hover::before{opacity:1}
-.glist > .gitem header{
+.glist .gitem:hover{border-color:var(--line2);box-shadow:0 12px 34px rgba(0,0,0,.5);transform:translateY(-2px)}
+.glist .gitem:hover::before{opacity:1}
+.glist .gitem header{
   display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:8px;
 }
-.glist > .gitem .who{font-size:12.5px;font-weight:700;letter-spacing:.02em}
-.glist > .gitem .av{
+.glist .gitem .who{font-size:12.5px;font-weight:700;letter-spacing:.02em}
+.glist .gitem .av{
   width:22px;height:22px;border-radius:50%;flex:0 0 22px;
   display:grid;place-items:center;font-size:10px;font-weight:800;color:#fff;
   background:linear-gradient(140deg,var(--red),#7a0f22);
   border:1px solid rgba(255,255,255,.14);
 }
-.glist > .gitem .loc{
+.glist .gitem .loc{
   display:inline-flex;align-items:center;gap:4px;
   font-size:10px;letter-spacing:.05em;color:#9db4c8;
   padding:2px 8px;border-radius:20px;
   background:rgba(102,163,217,.1);border:1px solid rgba(102,163,217,.22);
 }
-.glist > .gitem .loc svg,
+.glist .gitem .loc svg,
 .loc svg{width:9px;height:9px}
-.glist > .gitem .when{margin-left:auto;font-size:10px;color:#4a4a5a;letter-spacing:.06em}
+.glist .gitem .when{margin-left:auto;font-size:10px;color:#4a4a5a;letter-spacing:.06em}
 /* 正文最多显示 6 行 —— 长留言折叠，避免个别超长内容把整列撑爆 */
-.glist > .gitem .body{
+.glist .gitem .body{
   font-size:13px;line-height:1.72;color:#c3c3cf;letter-spacing:.015em;
   white-space:pre-wrap;word-break:break-word;
   display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;
 }
-.glist > .gitem .ip{font-size:9.5px;color:#3a3a48;letter-spacing:.05em;margin-top:7px;font-family:ui-monospace,Consolas,monospace}
+.glist .gitem .ip{font-size:9.5px;color:#3a3a48;letter-spacing:.05em;margin-top:7px;font-family:ui-monospace,Consolas,monospace}
 /* 被折叠的留言：显示"展开"提示，点开后完整展示 */
-.glist > .gitem.clamped{cursor:pointer}
-.glist > .gitem.clamped::after{
+.glist .gitem.clamped{cursor:pointer}
+.glist .gitem.clamped::after{
   content:"展开全文";display:block;margin-top:8px;
   font-size:10px;letter-spacing:.1em;color:var(--red-soft);opacity:.75;
 }
-.glist > .gitem.clamped.open::after{content:"收起"}
-.glist > .gitem.clamped.open .body{-webkit-line-clamp:unset;display:block;overflow:visible}
+.glist .gitem.clamped.open::after{content:"收起"}
+.glist .gitem.clamped.open .body{-webkit-line-clamp:unset;display:block;overflow:visible}
 
 /* 留言附件：图片缩略图 + 录音播放器 */
-.glist > .gitem .msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-.glist > .gitem .msg-imgs img{
+.glist .gitem .msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.glist .gitem .msg-imgs img{
   width:68px;height:68px;object-fit:cover;border-radius:8px;
   border:1px solid var(--line);cursor:zoom-in;display:block;
   transition:transform .35s var(--ease),border-color .3s;
 }
-.glist > .gitem .msg-imgs img:hover{transform:scale(1.06);border-color:rgba(255,45,74,.5)}
-.glist > .gitem .msg-voice{
+.glist .gitem .msg-imgs img:hover{transform:scale(1.06);border-color:rgba(255,45,74,.5)}
+.glist .gitem .msg-voice{
   margin-top:9px;display:flex;align-items:center;gap:9px;
   padding:7px 11px;border-radius:10px;
   background:rgba(255,45,74,.07);border:1px solid rgba(255,45,74,.2);
   font-size:10.5px;color:var(--muted);
 }
-.glist > .gitem .msg-voice svg{color:var(--red);width:13px;height:13px;flex:0 0 13px}
-.glist > .gitem .msg-voice audio{height:30px;flex:1;min-width:0}
+.glist .gitem .msg-voice svg{color:var(--red);width:13px;height:13px;flex:0 0 13px}
+.glist .gitem .msg-voice audio{height:30px;flex:1;min-width:0}
 .gitem .msg-voice b{font-variant-numeric:tabular-nums;color:var(--red-soft);font-weight:600;flex:0 0 auto;font-size:10.5px}
 
 .gempty{
-  grid-column:1/-1;
+  /* .glist 现在是 flex 容器，grid-column 不再生效 ——
+     不改成 flex 的话空态提示会被压成一列宽的窄条。 */
+  flex:1 1 100%;min-width:0;grid-column:1/-1;
   text-align:center;padding:70px 20px;border-radius:14px;
   background:var(--surface);border:1px dashed var(--line);
 }
@@ -1892,6 +1904,11 @@ footer .rss svg{width:11px;height:11px;flex:0 0 11px}
      手机上 140px 目标列宽 ≈ 2 列。 */
   .gallery{column-width:140px;column-gap:12px}
   .gitem{margin:0 0 12px}
+  /* 留言板是 flex 分列（列数由 JS 算），窄屏把目标列宽收到 150px ≈ 2 列。
+     ⚠ 要同步 app.js 的 targetColW()，否则 JS 以为有 3 列、
+     CSS 只摆得下 2 列，最后一列会挤成窄条。 */
+  .glist{gap:10px}
+  .glist > .gcol{gap:10px}
   /* 之前是 1fr（单列全宽），每个塞满整个手机宽度，作品卡大得离谱。
      改成 auto-fill + 小 minmax，让手机端也是 2~3 列网格。 */
   .vgrid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
@@ -2008,7 +2025,7 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
      （卡片、缩略图、头像翻转），只用标签选择器会漏掉一大半。
      后面几项是正文里那些**高特异性**规则的显式对位：
      `.nav button` / `.btools .bseg button` / `.sseg button` /
-     `#lb .close` / `#danmaku-toggle` / `.glist > .gitem.clamped`。 */
+     `#lb .close` / `#danmaku-toggle` / `.glist .gitem.clamped`。 */
   :is(a,button,label,summary,select,option,
      [role="button"],[onclick],[tabindex]:not([tabindex="-1"]),
      .card,.gitem,.vitem,.vcard,.rcard,.wd-media,.wd-thumbs button,
@@ -2026,6 +2043,6 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
      注意 `*` 兜底：`.wd-media.has-video *` 是为了让视频内部的
      控件区域也回到箭头，否则子元素会继承父级的圆环。 */
   :is(.gitem.clamped,.wd-media.has-video,.wd-media.has-video *,
-      .glist > .gitem.clamped){cursor:var(--cur) !important}
+      .glist .gitem.clamped){cursor:var(--cur) !important}
   :is(.wd-like:disabled,.btn.primary:disabled){cursor:not-allowed !important}
 }

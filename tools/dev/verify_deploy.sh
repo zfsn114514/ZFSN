@@ -470,7 +470,62 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════
-hdr "⑪ 关键子资源"
+hdr "⑪ 留言板瀑布流（阅读顺序 = 时间顺序）"
+# ══════════════════════════════════════════════════════════════
+#
+# 留言板从 CSS columns 改成「JS 按序填充 + flex 分列」。
+# 这套机制有三个绝不能少的部件，少一个就会静默退化：
+#   ① JS 里要有分列逻辑（colCount / distribute）
+#   ② CSS 里要有 .gcol 列容器规则
+#   ③ .glist 不能残留 columns 属性（会和 flex 打架）
+#
+# ⚠ 为什么必须线上验：这些改动都是「静默失效」型的 ——
+#   少一个 .gcol 规则，页面照样渲染，只是所有卡片堆成一列；
+#   columns 和 flex 同时存在时，浏览器不报错，直接按 flex 走。
+#   光看页面「没崩」判断不出问题，得确认关键规则真的在。
+JSCCUR=$(grep -oE 'assets/js/app\.[0-9a-f]{8}\.js' index.html | head -1)
+if [ -n "$JSCCUR" ]; then
+  fetch "$SITE/$JSCCUR" "$TMP/js" >/dev/null
+  # distribute 是分列主函数；__zfsnRelayoutCols 是 resize 重排钩子
+  if grep -q '__zfsnRelayoutCols' "$TMP/js" 2>/dev/null; then
+    ok "JS 含瀑布流分列逻辑（${JSCCUR}）"
+  else
+    bad "  JS 里找不到 __zfsnRelayoutCols" "分列/重排逻辑缺失，留言会堆成一列"
+  fi
+  # 按序填充是「时间顺序 = 阅读顺序」的关键；如果线上还是最矮列优先，
+  # 阅读序会在列间乱跳（用户明确否决过这种排列）
+  if grep -q 'data-idx' "$TMP/js" 2>/dev/null; then
+    ok "  卡片带 data-idx（重排时能按时间顺序取回）"
+  else
+    warn "  未发现 data-idx" "resize 重排可能按「按列」的 DOM 顺序取卡，导致顺序错乱"
+  fi
+else
+  warn "index.html 里找不到 app.<hash>.js 引用"
+fi
+
+if [ -n "$CSSCUR" ]; then
+  if grep -q '\.glist > \.gcol' "$TMP/css" 2>/dev/null || grep -q '\.glist \.gcol' "$TMP/css" 2>/dev/null; then
+    ok "CSS 含 .gcol 列容器规则"
+  else
+    bad "  CSS 里找不到 .gcol 规则" "列容器没有样式，flex 分列会退化成单列堆叠"
+  fi
+  # columns 与 flex 不能共存：.glist 若还留着 column-width，说明旧规则没删干净
+  GLBLOCK=$(awk '/^\.glist\{/,/\}/' "$TMP/css" 2>/dev/null)
+  if echo "$GLBLOCK" | grep -q 'column-width'; then
+    bad "  .glist 仍带 column-width" "columns 与 flex 打架，实际布局不可预期"
+  else
+    ok "  .glist 已移除 column-width（不再与 flex 冲突）"
+  fi
+  # 上一版的空态靠 grid-column 横跨；换成 flex 后必须改成 flex-basis
+  if awk '/^\.gempty\{/,/\}/' "$TMP/css" 2>/dev/null | grep -q 'flex:1 1 100%'; then
+    ok "  空态 .gempty 已适配 flex（flex:1 1 100%）"
+  else
+    warn "  .gempty 未见 flex 适配" "留言为空时提示条可能被压成一列宽的窄条"
+  fi
+fi
+
+# ══════════════════════════════════════════════════════════════
+hdr "⑫ 关键子资源"
 # ══════════════════════════════════════════════════════════════
 for f in "llms.txt" "assets/favicon.svg"; do
   C=$(fetch "$SITE/$f" /dev/null)

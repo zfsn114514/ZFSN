@@ -320,11 +320,15 @@
     // 切到作品页时刷新一次 —— 保证后台新加的作品马上可见，
     // 也顺带同步最新的点赞/评论数。
     if (key === "works" && window.__zfsnLoadGallery) window.__zfsnLoadGallery();
-    // 切到留言页时重判一次折叠 ——
-    // ⚠ 留言数据在页面启动时就加载好了，但那一刻 #guest 还是 display:none，
-    //   卡片里的测量值全是 0，markClamped 判定必然失败（短留言侥幸没错，
-    //   长留言则该折叠的没折叠）。页面一旦可见，测量才有意义。
-    if (key === "guest" && window.__zfsnRemarkClamped) window.__zfsnRemarkClamped();
+    // 切到留言页时先按真实列高重排再判折叠 ——
+    // ⚠ 留言数据在页面启动时就加载好了，但那一刻 #guest 还是 display:none：
+    //   · 分列退化成 round-robin（列高量不到）
+    //   · markClamped 里的测量值也全是 0，判定必然失败
+    //     （长留言该折叠的没折叠）。页面一旦可见，测量才有意义。
+    // 重排走 rAF（异步），所以折叠判定交给 relayoutCols 内部在重排之后做，
+    // 这里不重复调用 —— 否则会抢在重排前用旧布局判定并置位 __clampChecked，
+    // 导致真正的重排结果再也判不了。
+    if (key === "guest" && window.__zfsnRelayoutCols) window.__zfsnRelayoutCols();
     countView(key);
   }
 
@@ -2464,31 +2468,214 @@
     card.__clampChecked = true;
     if (body.scrollHeight > body.clientHeight + 4){
       card.classList.add("clamped");
-      card.addEventListener("click", function(){
-        card.classList.toggle("open");
-      });
+      // 已展开的卡片不重复绑定（重排会重新判一次）
+      if (!card.__clampBound){
+        card.__clampBound = true;
+        card.addEventListener("click", function(){
+          card.classList.toggle("open");
+        });
+      }
+    } else {
+      card.classList.remove("clamped", "open");
     }
   }
 
-  /** 切到留言页时重新判定全部卡片的折叠状态（见 markClamped 注释第 2 条）。 */
+  /** 重排前清掉折叠判定缓存 —— 列宽变了，卡片的可视行数也随之变化，
+   *  原来判定过的不一定还算数，得重判。
+   *  （click 监听器标记 __clampBound 不清理，避免重复绑定。） */
+  function resetClampCheck(){
+    if (!glist) return;
+    var cards = glist.querySelectorAll(".gitem");
+    for (var i = 0; i < cards.length; i++) cards[i].__clampChecked = false;
+  }
+
+  /** 切到留言页 / 重排后重新判定全部卡片的折叠状态。 */
   window.__zfsnRemarkClamped = function(){
     if (!glist) return;
-    var cards = glist.querySelectorAll(":scope > .gitem");
+    var cards = glist.querySelectorAll(".gitem");
     for (var i = 0; i < cards.length; i++) markClamped(cards[i]);
   };
+
+  /* ── 瀑布流分列 ────────────────────────────────────────────
+     为什么不直接用 CSS columns：
+       columns 的分发是 column-fill:balance —— 浏览器按「各列内容量均衡」
+       分配，跟 DOM 顺序无关。留言是时间倒序的，结果就是最新的一批
+       全堆在第一列、第 N 条之后才跳到第二列，看起来时间顺序在列之间乱跳。
+
+     目标阅读顺序：由左到右、由下到上，最旧的沉在最底部。
+     做法：自己算列数，逐条递给「当前最矮的那一列」，
+     这样第 1 条进第一列、第 2 条也进第一列（它还是最矮）……
+     第一列被填到平均高度后才自然溢出到第二列，
+     于是列表从上往下读就是完整的时间倒序，最旧的落在最后一列底部。
+
+     ★ 分发顺序恒等于 MSG_ALL 的时间顺序，不能依赖 DOM 遍历顺序
+     （那把顺序会变成「按列」而非「按时间」，见 relayoutCols）。 */
+
+  var COL_GAP = 12;
+
+  /** 目标列宽。桌面 272px、窄屏 150px —— 与 CSS 的媒体查询保持一致。
+   *  这个值只用来算列数，真正的列宽由 flex:1 1 0 平分（通常比它宽一点）。 */
+  function targetColW(){
+    return (window.innerWidth || 1024) <= 560 ? 150 : 272;
+  }
+
+  function colCount(){
+    var w = glist.clientWidth || 0;
+    if (!w) return 1;     /* 页面不可见时量不到宽度，退回单列 */
+    /* floor 而非 round：宁可列少一点、每列宽一点。
+       round 会把 1078px 判成 4 列（列宽 260），
+       floor 判成 3 列（列宽 351），后者更接近桌面阅读习惯。 */
+    return Math.max(1, Math.floor((w + COL_GAP) / (targetColW() + COL_GAP)));
+  }
+  window.__zfsnColCount = colCount;   /* 供测试断言 */
+
+  function ensureCols(n){
+    var cols = glist.querySelectorAll(":scope > .gcol");
+    for (var i = cols.length; i < n; i++){
+      var c = document.createElement("div");
+      c.className = "gcol";
+      glist.appendChild(c);
+    }
+    /* 列数变少（窗口变窄）时把多余的列删掉，里面的卡片回收再分发 */
+    if (cols.length > n){
+      var orphan = [];
+      for (var j = n; j < cols.length; j++){
+        var items = cols[j].querySelectorAll(".gitem");
+        for (var k = 0; k < items.length; k++) orphan.push(items[k]);
+        cols[j].remove();
+      }
+      return orphan;
+    }
+    return [];
+  }
+
+  function colEls(){
+    var out = [];
+    var cols = glist.querySelectorAll(":scope > .gcol");
+    for (var i = 0; i < cols.length; i++) out.push(cols[i]);
+    return out;
+  }
+
+  /** 把卡片分发进各列 —— **按时间顺序填充**（阅读顺序 = 时间顺序）。
+   *
+   *  策略（用户明确选了「时间顺序优先」）：
+   *    把卡片**从上到下、从左到右**依次摆放，即先填满第 1 列、
+   *    再接着填第 2 列，依此类推。这样「由左到右、由下到上」地读，
+   *    就是严格的时间倒序，最旧的沉在最后一列底部。
+   *
+   *  ⚠ 为什么不用常见的「最矮列优先」：
+   *    那个策略追求各列等高，但在卡片高度相近时会退化成
+   *    round-robin（第 0 列拿 0/3/6/9、第 1 列拿 1/4/7/10…），
+   *    时间顺序在列之间来回跳 —— 正是用户截图里抱怨的现象。
+   *    「列高均衡」和「时间顺序」本质冲突，这里按用户要求选后者，
+   *    代价是各列底部不齐（右列通常明显短一截）。
+   *
+   *  实现：
+   *    1. **先把这批卡片全部摘出 DOM**，让各列高度归零。否则重排时
+   *       卡片还压在旧列里，测量值是新旧混合的混乱状态。
+   *    2. 派一遍「探底」：逐张 append 并读 offsetHeight，累积到
+   *       总高后除以列数，得到每列的目标高度上限。
+   *    3. 再按该上限填充：当前列装满就换下一列。
+   *    第 2 步之所以必须真插入再测，是因为卡片高度取决于文字折行，
+   *    脱离文档流时宽度为 0，量出来的高度完全不可信。 */
+  function distribute(cards){
+    var n = colCount();
+    var orphans = ensureCols(n);
+    var cols = colEls();
+    if (!cols.length) return;
+    var all = orphans.concat(cards);      /* 回收的孤儿卡也要重新归位 */
+    if (!all.length) return;
+
+    /* ① 先摘出：所有待分配卡片脱离当前父节点，各列高度归零。 */
+    for (var d = 0; d < all.length; d++){
+      if (all[d].parentNode) all[d].parentNode.removeChild(all[d]);
+    }
+
+    /* ② 页面不可见（#guest display:none）时分不出真实高度，
+       此时按「序号递增」平铺即可 —— 顺序语义已经有了，
+       切回留言页时 __zfsnRelayoutCols 会用真实高度重排一次。 */
+    if (!glist.clientWidth){
+      for (var r = 0; r < all.length; r++) cols[0].appendChild(all[r]);
+      return;
+    }
+
+    /* ③ 量高：逐张临时插入第 0 列读高度，量完先摘出来。
+       总高 / 列数 = 每列的目标高度上限。 */
+    var heights = [], total = 0;
+    for (var m = 0; m < all.length; m++){
+      cols[0].appendChild(all[m]);
+      var hh = all[m].offsetHeight + 12;   /* +12 = 卡片间距（.gcol 的 gap） */
+      heights.push(hh);
+      total += hh;
+    }
+    for (var m2 = 0; m2 < all.length; m2++){
+      if (all[m2].parentNode) all[m2].parentNode.removeChild(all[m2]);
+    }
+    var limit = total / cols.length;
+
+    /* ④ 按上限顺序填充：当前列累加超过 limit 就换下一列。
+       最后一张卡片不换列 —— 否则会多出一个空列。 */
+    var ci = 0, acc = 0;
+    for (var k = 0; k < all.length; k++){
+      if (ci < cols.length - 1 && acc > 0 && acc + heights[k] > limit) { ci++; acc = 0; }
+      cols[ci].appendChild(all[k]);
+      acc += heights[k];
+    }
+  }
 
   function gAppendBatch(){
     if (MSG_SHOWN >= MSG_ALL.length) return;
     var end = Math.min(MSG_SHOWN + G_BATCH, MSG_ALL.length);
     var batch = [];
-    for (var i = MSG_SHOWN; i < end; i++) batch.push(makeMsgItem(MSG_ALL[i]));
-    for (var j = 0; j < batch.length; j++) glist.appendChild(batch[j]);
-    // 插入后再统一判定折叠状态 —— 此时宽度已确定，量出来的高度才可信。
-    // 若此刻所在页面还不可见，markClamped 内部会跳过，等切页时补判。
+    for (var i = MSG_SHOWN; i < end; i++){
+      var el = makeMsgItem(MSG_ALL[i]);
+      /* 记住它在 MSG_ALL 里的位置：
+         · __idx 给 JS 读（测试也用它挂桩数据）
+         · data-idx 给选择器用（重排时按时间顺序取回卡片） */
+      el.__idx = i;
+      el.setAttribute("data-idx", i);
+      batch.push(el);
+    }
+    /* 先归位，再判折叠 —— distribute 内部会 appendChild，
+       此时卡片已在可见 DOM 里（或页面不可见，markClamped 自会跳过）。 */
+    distribute(batch);
     for (var k = 0; k < batch.length; k++) markClamped(batch[k]);
     MSG_SHOWN = end;
     gUpdateMore();
   }
+
+  /** 列数变化（窗口 resize / 首次可见）时按真实高度重排全部卡片。
+   *
+   *  ★ 重排必须按 **MSG_ALL 的原始顺序** 取出卡片，不能直接
+   *  `glist.querySelectorAll(".gitem")` —— 那是「按列遍历」的顺序
+   *  （第 0 列第 1 张、第 0 列第 2 张…… 再第 1 列），
+   *  拿它去重新分发会把时间顺序彻底打乱。
+   *  卡片上打了 `data-idx`（对应 MSG_ALL 的下标），按序查询即可还原。 */
+  var __colRaf = 0;
+  function relayoutCols(){
+    if (__colRaf) cancelAnimationFrame(__colRaf);
+    __colRaf = requestAnimationFrame(function(){
+      __colRaf = 0;
+      if (!glist || !MSG_SHOWN) return;
+      /* ★ 不用 querySelectorAll 的遍历顺序 —— 那是「按列」的 DOM 顺序。
+         按 __idx（对应 MSG_ALL 的下标）还原成时间顺序。
+         ⚠ 缺 __idx 时不能 `|| 0` 兜底：那样会被排到最前面，
+         顺序反而更乱。这里直接舍弃（理论上不会发生）。 */
+      var arr = [];
+      for (var i = 0; i < MSG_SHOWN; i++){
+        var el = glist.querySelector('.gitem[data-idx="' + i + '"]');
+        if (el) arr.push(el);
+      }
+      if (!arr.length) return;
+      distribute(arr);
+      /* 列宽变了 → 卡片的可视行数变了 → 折叠判定要重来一遍，
+         所以先清缓存再判（见 resetClampCheck）。 */
+      resetClampCheck();
+      for (var j = 0; j < arr.length; j++) markClamped(arr[j]);
+    });
+  }
+  window.addEventListener("resize", relayoutCols);
+  window.__zfsnRelayoutCols = relayoutCols;   /* 供测试手动触发 */
 
   function gUpdateMore(){
     var left = MSG_ALL.length - MSG_SHOWN;
@@ -2506,7 +2693,7 @@
   function renderMessages(list){
     MSG_ALL = (list || []).slice();
     MSG_SHOWN = 0;
-    glist.innerHTML = "";
+    glist.innerHTML = "";     /* 列容器由 distribute 按需重建 */
     if (!MSG_ALL.length){
       glist.innerHTML = '<div class="gempty"><span class="ic">◇</span><div class="t">还没有人留言 — 写下第一条吧</div></div>';
       gUpdateMore();
