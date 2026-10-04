@@ -18,6 +18,70 @@
 <meta name="twitter:description" content="二次元 / 游戏 / 创作 —— B站投稿、Steam 游戏库、作品集与留言弹幕。">
 <meta name="twitter:image" content="https://www.zfsnnb.dpdns.org/assets/avatar.jpg">
 <link rel="canonical" href="https://www.zfsnnb.dpdns.org/">
+<!-- RSS 自动发现：浏览器/阅读器插件看到这行就能自动找到订阅地址，
+     用户不用手动复制 feed.xml 链接 -->
+<link rel="alternate" type="application/rss+xml" title="ZFSN 的作品" href="/feed.xml">
+
+<!-- ══ 结构化数据（JSON-LD）══════════════════════════════════════
+     给搜索引擎读的机器可读档案。写在 HTML 里而不是靠 JS 注入，
+     是因为爬虫不保证执行 JS，写在源码里才稳。
+
+     三个 @graph 节点，用 @id 互相引用（而不是各自重复一遍字段）：
+
+       Person    —— 这是谁。name / url / sameAs（三个平台的实名主页）。
+                    sameAs 的作用是把散落在 B站、Steam、Xbox 上的
+                    同一个「ZFSN」串成同一个实体，有助于生成知识面板。
+       WebSite   —— 这个站。带 alternateName，方便中文名/英文名互相映射。
+       ProfilePage —— 首页这个页面的类型。它的 mainEntity 指向上面那个
+                    Person，等于告诉搜索引擎「这页就是在讲这个人」。
+
+     ⚠ 刻意**不写** SearchAction：本站是 hash 路由单页应用，
+       没有 `?q=` 这种服务端可解析的搜索入口（作品搜索是纯前端过滤）。
+       声明一个不存在的搜索接口属于无效结构化数据，会被 GSC 报错。
+
+     ⚠ 作品详情页（`/#work/<id>`）的动态 CreativeWork 标记由
+       assets/js/app.js 的 injectWorkJsonLd() 在打开详情时注入 ——
+       hash 路由拿不到独立的服务端响应，只能前端注入，且不被保证收录。 -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Person",
+      "@id": "https://www.zfsnnb.dpdns.org/#person",
+      "name": "ZFSN",
+      "url": "https://www.zfsnnb.dpdns.org/",
+      "image": "https://www.zfsnnb.dpdns.org/assets/avatar.jpg",
+      "description": "二次元 / 游戏 / 创作的爱好者，B站 up 主。",
+      "knowsAbout": ["二次元", "电子游戏", "视频创作", "绘画"],
+      "sameAs": [
+        "https://space.bilibili.com/1220210222",
+        "https://steamcommunity.com/id/ZFSN114514/",
+        "https://www.xbox.com/zh-CN/play/user/ZFSN114514"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://www.zfsnnb.dpdns.org/#website",
+      "url": "https://www.zfsnnb.dpdns.org/",
+      "name": "ZFSN 的个人主页",
+      "alternateName": ["ZFSN", "ZFSN Personal Space"],
+      "description": "ZFSN 的个人主页 —— 二次元 / 游戏 / 创作。B站投稿、Steam 游戏库、作品集与留言弹幕。",
+      "inLanguage": "zh-CN",
+      "publisher": { "@id": "https://www.zfsnnb.dpdns.org/#person" }
+    },
+    {
+      "@type": "ProfilePage",
+      "@id": "https://www.zfsnnb.dpdns.org/#profilepage",
+      "url": "https://www.zfsnnb.dpdns.org/",
+      "name": "ZFSN 的个人主页 · 二次元 / 游戏 / 创作",
+      "inLanguage": "zh-CN",
+      "isPartOf": { "@id": "https://www.zfsnnb.dpdns.org/#website" },
+      "mainEntity": { "@id": "https://www.zfsnnb.dpdns.org/#person" }
+    }
+  ]
+}
+</script>
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="apple-touch-icon" href="assets/avatar.jpg">
 <style>
@@ -46,6 +110,11 @@ svg:not([width]){width:1em;height:1em;flex:0 0 auto}
   --fam:#a78bfa;
   --r:18px;
   --ease:cubic-bezier(.2,.8,.3,1);
+
+  /* ── 自定义光标 ────────────────────────────────────────────
+     见样式表末尾的 @media (pointer:fine) 块。 */
+  --cur:url("assets/cursor/arrow.svg") 4 2.5,auto;
+  --cur-point:url("assets/cursor/point.svg") 12 12,pointer;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -90,6 +159,58 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
   80%{transform:translate(3%,1%)}
 }
 
+/* ═══ 键盘焦点可见性 ═══
+ * 用 :focus-visible 而不是 :focus —— 鼠标点按钮时不该出现焦点圈
+ * （那会让鼠标用户觉得"点了之后有个框赖着不走"），只有**键盘 Tab** 才显示。
+ * 浏览器自己判断"这次聚焦是不是键盘引起的"，比手动跟踪 lastInput 可靠。
+ *
+ * 为什么必须补这个：站点的输入框各自写了 `outline:none`（为了换自定义描边），
+ * 但按钮/链接从来没有焦点样式 —— 纯键盘用户 Tab 一圈**完全看不出焦点在哪**，
+ * 属于 WCAG 2.4.7 硬性失败项。
+ *
+ * 描边用红色双环（内深色 + 外亮红）：单色描边在深色底 + 亮色玻璃卡片上
+ * 容易被背景吃掉，双层环保证在任何背景上都能看清。
+ */
+:focus{outline:none}   /* 先清掉浏览器默认（只在 :focus-visible 里画我们自己的） */
+:focus-visible{
+  outline:2px solid var(--red-soft);
+  outline-offset:2px;
+  border-radius:inherit;
+  /* 外圈光晕：即使焦点元素紧贴同色背景也还有一圈对比 */
+  box-shadow:0 0 0 4px rgba(255,45,74,.22);
+}
+/* 卡片类元素自己有 box-shadow（hover 发光），焦点环要并集而不是覆盖，
+   否则聚焦时 hover 的高光会消失 */
+.card:focus-visible,
+.hs-card:focus-visible,
+.gitem:focus-visible,
+.vcard:focus-visible,
+.sgame:focus-visible{
+  outline:2px solid var(--red-soft);
+  outline-offset:3px;
+}
+/* 卡片内层的 3D 容器不能盖住焦点环 */
+.card:focus-visible{ position:relative; z-index:3 }
+
+/* 输入框已有自己的 focus 描边（红色边框 + 背景变化），
+   键盘聚焦时再加一圈环会让它看起来"双描边"，所以只补光晕 */
+input:focus-visible,textarea:focus-visible,select:focus-visible,[contenteditable]:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px rgba(255,45,74,.25);
+}
+
+/* 页内跳转锚点（可访问性常用手法：让键盘用户能跳过导航直达内容） */
+.skip-link{
+  position:absolute;left:-9999px;top:0;z-index:100;
+  padding:10px 18px;border-radius:0 0 10px 0;
+  background:var(--red);color:#fff;font-size:13px;font-weight:600;
+  text-decoration:none;
+}
+.skip-link:focus{
+  left:0;outline:none;
+  box-shadow:0 6px 20px rgba(0,0,0,.5);
+}
+
 /* ═══ 顶部导航 ═══ */
 .topbar{
   position:fixed;top:0;left:0;right:0;z-index:20;
@@ -97,12 +218,42 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
   padding:22px 40px;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);
   background:linear-gradient(180deg,rgba(7,7,11,.9) 0%,rgba(7,7,11,.6) 60%,transparent 100%);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  /* 收缩动画：只动 padding / 背景 / 阴影这三个属性。
+     刻意**不**改 height —— 顶栏是 position:fixed，改高度会触发
+     整页重排（reflow）；padding 只影响自身盒模型，代价小得多。 */
+  transition:padding .35s var(--ease),background .35s ease,box-shadow .35s ease,border-color .35s ease;
+  border-bottom:1px solid transparent;
 }
+/* 滚动后的状态：由 JS 的 IntersectionObserver 加/去这个类。
+   之所以选中「滚动到一定程度」而不是一滚就变 —— 页面顶部本来就没有
+   内容需要压暗，过早变实会让开场观感变闷。 */
+.topbar.scrolled{
+  padding:13px 40px;
+  background:linear-gradient(180deg,rgba(7,7,11,.82) 0%,rgba(7,7,11,.66) 100%);
+  backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);
+  border-bottom-color:var(--line);
+  box-shadow:0 10px 34px -12px rgba(0,0,0,.7);
+}
+/* 顶栏变实之后，下面那条红色进度条才看得清 */
+
+/* ── 导航：桌面端贴在顶栏右侧 ──────────────────────────────────
+ * .nav 是 .topbar 的**同级**元素（不是子元素），原因见 HTML 里的注释：
+ * .topbar 的 backdrop-filter 会创建 containing block，把 fixed 子元素
+ * 的定位基准从视口改成它自己，移动端改 fixed 后导航会跑到屏幕外。
+ *
+ * 既然不是子元素，桌面端就得自己定位到顶栏右侧 ——
+ * 用 fixed + top 与顶栏同高，right 对齐；宽度自适应内容。
+ * top 跟着顶栏收缩一起变（见 .topbar.scrolled + 这里的过渡）。 */
+.nav{
+  position:fixed;top:15px;right:40px;z-index:21;
+  display:flex;gap:4px;align-items:center;
+  transition:top .35s var(--ease);
+}
+.topbar.scrolled ~ .nav{top:9px}
 .topbar .mark{display:flex;align-items:center;gap:10px;color:var(--silver);font-weight:600;cursor:pointer;user-select:none}
 .topbar .mark .dot{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 12px var(--red);animation:pulse 2.2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.75)}}
 
-.nav{display:flex;gap:4px;align-items:center}
 .nav button{
   background:none;color:var(--muted);font:inherit;font-size:11.5px;letter-spacing:.16em;
   text-transform:uppercase;padding:9px 15px;border-radius:9px;cursor:pointer;position:relative;
@@ -248,7 +399,23 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   transition:transform .35s var(--ease),border-color .35s,box-shadow .35s;
   min-width:206px;
+  /* 3D 倾斜。perspective 写在卡片自己身上（不是父容器）——
+     这样每张卡片有独立的透视原点，四张卡并排时不会互相"争夺"同一个消失点。
+     父容器加 perspective 时，靠边的卡片会歪得比中间厉害，看起来不整齐。 */
+  perspective:900px;
 }
+/* 内层包裹：真正的 3D 变换施加在这里。
+   为什么不直接转 .card：.card 是 <a>，且 :hover 已经在改它的 transform，
+   两者会互相覆盖。分层后外层管"抬起"，内层管"倾斜"，互不打架。
+   它同时是 --mx/--my 的坐标系（inset:0 铺满卡片），
+   聚光渐变和倾斜用同一套鼠标坐标，光斑始终跟着指针走。 */
+.card .c3d{
+  position:absolute;inset:0;
+  transform-style:preserve-3d;
+  transition:transform .5s var(--ease);
+  pointer-events:none;
+}
+.card.tilting .c3d{transition:none}    /* 跟手期间关过渡，否则会"追不上"鼠标 */
 .card::before{
   content:"";position:absolute;inset:0;opacity:0;transition:opacity .35s;
   background:radial-gradient(400px circle at var(--mx,50%) var(--my,50%),var(--c,rgba(255,45,74,.2)),transparent 65%);
@@ -271,6 +438,38 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 /* 站内游戏入口：PvZ 用草坪绿 + 向日葵黄，跟 Xbox 的绿区分开（靠黄色图标） */
 .card.pvz{--c:rgba(126,200,80,.22);--c2:rgba(126,200,80,.3)}
 .card.pvz svg{color:#c8e85c}
+
+/* ── 卡片 3D 倾斜（鼠标跟随）──
+   仅指针精确的设备启用：触摸屏没有 hover，倾斜只会让人困惑，
+   而且移动端每帧算 transform 是纯浪费电。 */
+@media (hover:hover) and (pointer:fine){
+  .card .c3d{
+    /* 由 JS 写入 --rx/--ry（角度制），这里只负责应用。
+       默认 0deg → 未倾斜时和以前完全一样。 */
+    transform:rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));
+  }
+  /* 高光层：随倾斜一起转，在卡片表面扫出一道反光，强化"这是个立体面"的观感 */
+  .card .c3d::after{
+    content:"";position:absolute;inset:0;border-radius:inherit;
+    background:linear-gradient(105deg,
+      transparent 35%,
+      rgba(255,255,255,.07) 47%,
+      rgba(255,255,255,.13) 50%,
+      rgba(255,255,255,.07) 53%,
+      transparent 65%);
+    background-position:calc(50% + var(--hx,0px)) 0;
+    background-size:260% 100%;
+    opacity:0;transition:opacity .4s;
+    pointer-events:none;
+  }
+  .card.tilting .c3d::after{opacity:1}
+}
+/* 减弱动效偏好：直接关掉倾斜，不做"幅度调小"——这类效果对前庭敏感人群
+   来说，哪怕幅度小也一样难受。 */
+@media (prefers-reduced-motion:reduce){
+  .card .c3d{transform:none !important}
+  .card .c3d::after{display:none}
+}
 
 /* ═══ 首页数据概览（三平台） ═══ */
 .home-stats{
@@ -305,14 +504,283 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 }
 
 /* ═══ 作品展示墙 ═══ */
-.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:18px}
+
+/* ── 搜索框 + 视图切换 + 标签筛选条 ────────────────────────────
+ * 用 sticky 吸在顶栏下面 —— 作品多起来之后，滚到一半想换筛选条件
+ * 不用先滚回顶部。top 值跟着顶栏收缩一起变（60px / 42px）。
+ *
+ * 布局用 CSS Grid 而非 flex：搜索框要"吃掉剩余宽度"，
+ * flex 下得写 flex:1 + min-width:0 才不被压缩，
+ * grid 的 minmax(0,1fr) 语义更直白。
+ * 标签条横跨整行（grid-area:tags 占满 tags 那一行）。
+ */
+.gfilter{
+  position:sticky;top:76px;z-index:12;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:
+    "search view"
+    "tags   tags";
+  gap:12px;
+  margin-bottom:20px;padding:14px 16px;border-radius:16px;
+  background:rgba(13,13,20,.72);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid var(--line);
+  transition:top .35s var(--ease);
+}
+/* 顶栏收缩后，吸顶位置也跟着上移，避免中间空出一条缝 */
+body:has(.topbar.scrolled) .gfilter{top:58px}
+@media (max-width:560px){
+  .gfilter{ grid-template-columns:minmax(0,1fr); grid-template-areas:"search" "view" "tags" }
+}
+
+/* 视图切换（作品墙 / 时间线）——分段控件样式 */
+.gview{
+  grid-area:view;
+  display:inline-flex;gap:2px;padding:3px;border-radius:10px;
+  background:rgba(255,255,255,.05);border:1px solid var(--line);
+  align-self:stretch;
+}
+.gviewbtn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:0 13px;border:0;border-radius:7px;font-family:inherit;
+  font-size:12px;font-weight:600;letter-spacing:.03em;
+  color:var(--muted);background:none;cursor:pointer;white-space:nowrap;
+  transition:color .25s,background .25s;
+}
+.gviewbtn svg{width:14px;height:14px;flex:0 0 14px}
+.gviewbtn:hover{color:var(--text)}
+.gviewbtn.on{
+  color:var(--text);background:rgba(255,45,74,.16);
+  box-shadow:inset 0 0 0 1px rgba(255,45,74,.32);
+}
+/* 窄屏只留图标，省出纵向空间给搜索框 */
+@media (max-width:560px){
+  .gviewbtn span{display:none}
+  .gviewbtn{padding:0 16px;justify-content:center}
+  .gview{justify-content:center}
+}
+
+.gsearch{grid-area:search;position:relative;display:flex;align-items:center}
+.gsearch svg{
+  position:absolute;left:13px;width:15px;height:15px;color:var(--muted);
+  pointer-events:none;transition:color .25s;
+}
+.gsearch input{
+  width:100%;padding:10px 38px 10px 37px;
+  font:inherit;font-size:13px;color:var(--text);
+  background:rgba(255,255,255,.04);border:1px solid var(--line);
+  border-radius:10px;outline:none;
+  transition:border-color .25s,background .25s,box-shadow .25s;
+}
+.gsearch input::placeholder{color:var(--muted)}
+.gsearch input:focus{
+  border-color:rgba(255,45,74,.5);background:rgba(255,255,255,.06);
+  box-shadow:0 0 0 3px rgba(255,45,74,.12);
+}
+.gsearch input:focus ~ svg{color:var(--red-soft)}
+/* 去掉 type=search 自带的清除按钮（Safari/Chrome 各有一套），用我们自己的 */
+.gsearch input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.gclear{
+  position:absolute;right:9px;width:22px;height:22px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;line-height:1;color:var(--muted);
+  background:rgba(255,255,255,.07);border:0;
+  transition:color .2s,background .2s;
+}
+.gclear:hover{color:var(--text);background:rgba(255,255,255,.14)}
+
+.gtags{grid-area:tags;display:flex;gap:7px;flex-wrap:wrap}
+.gtag{
+  padding:5px 12px;border-radius:20px;font-size:11.5px;letter-spacing:.04em;
+  color:var(--muted);background:rgba(255,255,255,.04);
+  border:1px solid var(--line);cursor:pointer;
+  transition:color .25s,border-color .25s,background .25s,transform .2s;
+}
+.gtag:hover{color:var(--text);border-color:var(--line2);transform:translateY(-1px)}
+.gtag.on{
+  color:#fff;background:rgba(255,45,74,.18);
+  border-color:rgba(255,45,74,.5);
+  box-shadow:0 0 16px -4px rgba(255,45,74,.5);
+}
+/* 每个标签后面的数量，弱化处理避免抢视线 */
+.gtag .n{opacity:.5;margin-left:5px;font-variant-numeric:tabular-nums}
+
+.gcount{
+  margin:-6px 0 16px;font-size:12px;color:var(--muted);letter-spacing:.04em;
+}
+.gcount b{color:var(--red-soft);font-weight:600}
+
+/* 空结果状态。
+   ⚠ 原来是 grid 布局，靠 grid-column:1/-1 横跨整行；
+   改成多列布局后 grid-column 失效 → 空状态会缩成和卡片一样窄的一条。
+   多列布局下要让元素占满全部列，用 column-span:all。 */
+.gempty{
+  column-span:all;-webkit-column-span:all;
+  text-align:center;padding:60px 20px;
+  color:var(--muted);font-size:13.5px;line-height:1.9;
+}
+.gempty .big{font-size:32px;margin-bottom:14px;opacity:.5}
+/* 列表为空时的提示同样需要横跨（原来也靠 grid-column 撑开） */
+.gallery > .wcmt-empty{ column-span:all;-webkit-column-span:all }
+
+/* ═══ 时间线视图 ═══
+ * 与作品墙是同一份数据（GALLERY_CACHE）的另一种读法：
+ * 作品墙看"画面"，时间线看"什么时候发了什么"。
+ * 两者互斥显示，切换时不发请求、不重新拉数据。
+ *
+ * 实现要点：左侧一条竖轴（.gtl::before 的绝对定位细线），
+ * 每个年份一个分组，组内每条作品一个圆点 + 内容行。
+ */
+.gtimeline{position:relative;padding-left:26px}
+/* 竖轴主线 */
+.gtimeline::before{
+  content:"";position:absolute;left:7px;top:6px;bottom:6px;width:1px;
+  background:linear-gradient(180deg,transparent,var(--line2) 8%,var(--line2) 92%,transparent);
+}
+.gtl-year{
+  position:relative;margin:0 0 6px;
+  font-size:12px;font-weight:800;letter-spacing:.2em;
+  color:var(--red-soft);padding:18px 0 10px;
+}
+.gtl-year:first-child{padding-top:0}
+/* 年份节点上的实心圆，盖住竖轴 */
+.gtl-year::before{
+  content:"";position:absolute;left:-23px;top:22px;
+  width:9px;height:9px;border-radius:50%;
+  background:var(--red);box-shadow:0 0 0 4px rgba(255,45,74,.16);
+}
+.gtl-year:first-child::before{top:4px}
+.gtl-mon{
+  position:relative;margin:14px 0 8px;
+  font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--muted);
+}
+.gtl-mon::before{
+  content:"";position:absolute;left:-21px;top:6px;
+  width:5px;height:5px;border-radius:50%;background:var(--line2);
+}
+.gtl-item{
+  position:relative;display:flex;align-items:center;gap:13px;
+  padding:10px 14px;border-radius:11px;margin-bottom:8px;cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);
+  transition:border-color .28s,background .28s,transform .28s var(--ease);
+}
+.gtl-item:hover{border-color:rgba(255,45,74,.4);background:var(--surface2);transform:translateX(4px)}
+/* 每条作品在竖轴上的小节点 */
+.gtl-item::before{
+  content:"";position:absolute;left:-22px;top:50%;transform:translateY(-50%);
+  width:5px;height:5px;border-radius:50%;
+  background:var(--line2);transition:background .28s,box-shadow .28s;
+}
+.gtl-item:hover::before{background:var(--red);box-shadow:0 0 0 3px rgba(255,45,74,.2)}
+.gtl-thumb{
+  width:52px;height:52px;flex:0 0 52px;border-radius:9px;overflow:hidden;
+  background:#0d0d14;border:1px solid var(--line);
+}
+.gtl-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.gtl-body{flex:1;min-width:0}
+.gtl-t{
+  font-size:13.5px;font-weight:600;letter-spacing:.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.gtl-d{
+  font-size:10.5px;color:var(--muted);margin-top:4px;letter-spacing:.06em;
+  display:flex;gap:9px;align-items:center;flex-wrap:wrap;
+}
+.gtl-d .tag{
+  padding:1px 7px;border-radius:20px;font-size:9.5px;letter-spacing:.1em;
+  color:var(--silver);background:rgba(255,255,255,.05);border:1px solid var(--line2);
+}
+.gtl-date{
+  font-size:10.5px;color:var(--muted);letter-spacing:.08em;
+  font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto;
+}
+@media (max-width:560px){
+  .gtimeline{padding-left:20px}
+  .gtl-year::before{left:-19px}
+  .gtl-mon::before{left:-17px}
+  .gtl-item::before{left:-18px}
+  .gtl-thumb{width:42px;height:42px;flex-basis:42px}
+  .gtl-date{display:none}   /* 窄屏日期已在左轴上有年份/月份，重复了 */
+}
+
+
+ * 改成 CSS 多列布局（columns），每张卡片按**图片原始宽高比**显示，
+ * 不再统一裁成 4/5。这样竖构图的作品不会被拦腰砍掉，
+ * 横构图也不会被拉成一柱擎天。
+ *
+ * 为什么用 CSS columns 而不是 JS 计算绝对定位：
+ *   1. 零 JS —— 不需要在图片 load 后再量高度、重排，没有"先竖排再突然抖一下"
+ *   2. 响应式免费 —— 列宽由 column-width 自动决定，不用监听 resize
+ *   3. 天然支持筛选后重排 —— 换 DOM 内容，浏览器自己重新流式分布
+ * 代价：阅读顺序是**先填满一列再填下一列**（不是从左到右逐行），
+ * 但作品墙是浏览型内容，顺序不承载语义，用 aria 顺序无影响。
+ */
+.gallery{
+  column-width:232px;      /* 目标列宽，实际列数由容器宽度自动取整 */
+  column-gap:18px;
+  display:block;           /* 覆盖原来的 grid —— columns 与 grid 不能共存 */
+}
 .gitem{
   position:relative;border-radius:14px;overflow:hidden;cursor:pointer;
   background:var(--surface);border:1px solid var(--line);
-  aspect-ratio:4/5;
+  /* ★ 不再写 aspect-ratio：高度交给图片撑开。
+     未加载时 img 的 width/height 属性（fillNaturalSize 回填）会先占好位，
+     不会出现加载完成后整体往下跳。 */
+  break-inside:avoid;              /* 关键：禁止卡片被拆到两列之间 */
+  -webkit-column-break-inside:avoid;
+  page-break-inside:avoid;
+  margin:0 0 18px;                 /* 纵向间距靠 margin（column-gap 只管横向） */
   transition:transform .5s var(--ease),border-color .4s,box-shadow .4s;
 }
-.gitem img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .7s var(--ease)}
+.gitem img{width:100%;height:auto;display:block;transition:transform .7s var(--ease)}
+/* 无图占位（用 SVG 渐变兜底时）需要一个最小高度，否则会塌成一条线 */
+.gitem img[src^="data:image/svg+xml"]{min-height:180px;object-fit:cover}
+
+/* ── 图片渐进加载（blur-up）────────────────────────────────────
+ *
+ * 配合 assets/js/app.js 的 blurUp()：src 先指向一张几 KB 的 SVG 渐变，
+ * 真图在后台预载完成后换上去，同时加 .pimg-on 触发这段过渡。
+ *
+ * 三个细节值得说明：
+ *
+ * ① 模糊用 filter:blur，**不用** CSS 的 background-image 方案。
+ *    因为 <img> 的 src 是真实资源，换成 blur 滤镜后过渡是渐变的；
+ *    而背景图方案需要两个图层叠加，代码复杂且不好处理 object-fit。
+ *
+ * ② scale(1.06) 是为了**盖住模糊边缘**。filter:blur 会让图像四周
+ *    变透明并渗出容器边界，放大一点正好把虚边推出可视区。
+ *    这也是为什么 .gitem 需要 overflow:hidden（下面有）。
+ *
+ * ③ 过渡时长 0.55s 是权衡：太快像闪烁，太慢显得卡。
+ *    配合 cubic-bezier 的缓出，观感接近「显影」。
+ *
+ * ⚠ 尊重 prefers-reduced-motion：该关掉动效的用户直接看到清晰图，
+ *    不做模糊→清晰的过渡。
+ */
+/* ⚠ 选择器写成 img.pimg 而不是单个 .pimg：
+ *   下面有 `.gitem img{...transition:transform .7s}`，与 `.pimg` 特异性相同
+ *   （都是 0,1,1）且**源顺序在后**，会把 .pimg 的 transition 一起盖掉。
+ *   `img.pimg`（0,1,2）稳定胜出，且不依赖源顺序。
+ *
+ * ⚠⚠ 这里**只用 filter 做模糊，不用 transform 放大**。
+ *   本来想加 scale(1.06) 来盖住 blur 的透明虚边，但实测不生效 ——
+ *   卡片带 .reveal 类，而 `.reveal{animation:rise ... forwards}`
+ *   的 `@keyframes rise{to{transform:none}}` 会**压制**普通声明里的 transform
+ *   （CSS 动画在层叠中优先于普通属性声明），所以 scale 永远被还原成 none。
+ *   好在 filter:blur 在 overflow:hidden 的容器里不会明显渗出边界，
+ *   省掉 scale 反而让代码更简单。若将来真需要放大，
+ *   得改用 `translateZ(0) scale(...)` 以外的办法（比如给 img 套个 wrapper 单独做 transform）。
+ */
+img.pimg{filter:blur(14px);transition:filter .55s var(--ease)}
+img.pimg-on{filter:blur(0)}
+/* 详情页主图同理（.wd-media img 与 .pimg 也同特异性） */
+.wd-media img.pimg{filter:blur(14px)}
+.wd-media img.pimg-on{filter:blur(0)}
+@media (prefers-reduced-motion:reduce){
+  img.pimg{filter:none;transition:none}
+  img.pimg-on{filter:none}
+}
 .gitem::after{
   content:"";position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(180deg,transparent 42%,rgba(4,4,8,.9) 100%);
@@ -482,6 +950,26 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 .wd-like.on svg{fill:currentColor}
 .wd-like.bump{animation:likeBump .42s var(--ease)}
 .wd-like:disabled{opacity:.6;cursor:default;transform:none}
+
+/* 分享按钮 —— 与点赞同尺寸同形状，但用中性色：
+   分享不是"表态"动作，用红色会和点赞抢视觉重心，让人以为两个按钮是一组 */
+.wd-share{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:10px 17px;border-radius:11px;font-family:inherit;font-size:13px;font-weight:600;
+  letter-spacing:.03em;color:var(--silver);cursor:pointer;
+  background:var(--surface);border:1px solid var(--line);
+  transition:color .3s,border-color .3s,transform .3s var(--ease),background .3s;
+}
+.wd-share:hover{color:var(--text);border-color:var(--line2);background:var(--surface2);transform:translateY(-2px)}
+.wd-share svg{width:15px;height:15px;flex:0 0 auto;transition:transform .35s var(--ease)}
+.wd-share:hover svg{transform:scale(1.12)}
+/* 复制成功后的短暂反馈：按钮自身变绿一下，比只弹 toast 更直观
+   （toast 在屏幕底部，视线在按钮上时容易漏看） */
+.wd-share.shared{
+  color:#5fd97a;border-color:rgba(95,217,122,.5);
+  background:rgba(95,217,122,.1);
+}
+.wd-share.shared svg{transform:scale(1.18) rotate(8deg)}
 
 /* 互动统计小条 */
 .wd-stats{display:flex;gap:22px;flex-wrap:wrap;margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
@@ -891,10 +1379,11 @@ canvas#trail{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-eve
 .glist > .gitem{
   position:relative;padding:14px 16px 14px 18px;border-radius:12px;
   background:var(--surface);border:1px solid var(--line);
-  /* ★ 作品墙的 .gitem（line 291）写了 aspect-ratio:4/5——同名类同优先级下，
-     后写的会覆盖所有指定属性，aspect-ratio 会渗进留言卡把每条留言拉成 4:5 瘦柱。
-     用 `.glist > .gitem` 提高特异性，让留言专用规则不污染作品墙。 */
-  aspect-ratio:auto;height:auto;
+  /* ★ 留言卡的 .gitem 和作品墙的 .gitem 是同一个类名。
+     作品墙现在走多列瀑布流（break-inside / margin 等），留言列表是普通
+     纵向列表，两者不能互相污染，所以这里用 `.glist > .gitem` 提高特异性隔离。
+     aspect-ratio / break-inside 都显式重置成普通块级行为。 */
+  aspect-ratio:auto;height:auto;break-inside:auto;margin:0;
   transition:border-color .35s,box-shadow .35s,transform .35s var(--ease);
 }
 .glist > .gitem::before{
@@ -1199,18 +1688,72 @@ footer{
   font-size:11.5px;color:#4a4a5a;letter-spacing:.14em;
 }
 footer .sep{display:inline-block;margin:0 10px;color:#2e2e3a}
+/* RSS 订阅链接：比页脚正文稍亮一点，让它是可点的但不抢视线 */
+footer .rss{
+  display:inline-flex;align-items:center;gap:5px;
+  color:#6b6b7d;text-decoration:none;vertical-align:-2px;
+  transition:color .25s;
+}
+footer .rss:hover{color:var(--red-soft)}
+footer .rss svg{width:11px;height:11px;flex:0 0 11px}
 
 .reveal{opacity:0;transform:translateY(22px);animation:rise .9s var(--ease) forwards}
 @keyframes rise{to{opacity:1;transform:none}}
 .d1{animation-delay:.05s}.d2{animation-delay:.18s}.d3{animation-delay:.31s}.d4{animation-delay:.44s}.d5{animation-delay:.57s}
 
 @media (max-width:760px){
-  .topbar{padding:16px 18px;flex-direction:column;gap:12px;align-items:stretch}
-  .topbar .mark{justify-content:center}
-  .nav{justify-content:center;flex-wrap:wrap}
-  .nav button{padding:7px 10px;font-size:10.5px;letter-spacing:.1em}
-  .page{padding:150px 16px 70px}
-  #page-home{padding-top:150px;padding-bottom:50px}
+  /* ── 顶栏在移动端只剩品牌标识 ──────────────────────────────
+     导航整体移到屏幕底部（见下方 .nav 规则），顶栏因此只需要
+     容纳 logo，回到单行。 */
+  .topbar{padding:14px 18px;flex-direction:row;gap:0;align-items:center}
+  .topbar .mark{justify-content:flex-start}
+  /* 顶栏滚动后不要再收缩 padding —— 移动端本来就窄，
+     收缩会让 logo 贴上状态栏 */
+  .topbar.scrolled{padding:14px 18px}
+
+  /* ── 底部 Tab Bar ──────────────────────────────────────────
+     为什么移到底部：顶栏在屏幕最上方，单手握着手机时拇指够不着；
+     底栏是拇指的自然活动区，切换分区的效率差别很大。
+
+     .nav 已经是 .topbar 的同级元素（见 HTML 注释），
+     所以这里直接 fixed 到底部就行，没有 containing block 的坑。 */
+  .nav{
+    position:fixed;top:auto;left:0;right:0;bottom:0;z-index:30;
+    display:flex;justify-content:space-around;align-items:stretch;
+    gap:0;flex-wrap:nowrap;
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));
+    background:rgba(9,9,14,.92);
+    backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);
+    border-top:1px solid var(--line);
+    box-shadow:0 -8px 28px -14px rgba(0,0,0,.9);
+  }
+  /* 移动端由 .nav 自己贴底，不再需要跟着顶栏收缩 */
+  .topbar.scrolled ~ .nav{top:auto}
+  .nav button{
+    flex:1 1 0;min-width:0;
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:7px 2px;border:0;border-radius:10px;
+    font-size:9.5px;letter-spacing:.06em;
+    /* 关掉顶部那条红色下划线 —— 底栏的位置不适合它 */
+    background:none;
+  }
+  .nav button.active{background:none;border-color:transparent}
+  .nav button.active::after{
+    /* 改成图标上方的小圆点，作为「当前页」的指示 */
+    left:50%;bottom:auto;top:1px;width:4px;height:4px;border-radius:50%;
+  }
+  .nav button .ni{width:21px;height:21px;flex:0 0 21px;opacity:.72;transition:opacity .25s,transform .25s}
+  .nav button.active .ni{opacity:1;transform:translateY(-1px)}
+  .nav button.active{color:var(--text)}
+
+  /* 底栏会盖住页面底部内容 —— 用 padding 让出来，
+     高度 = 图标区 + 安全区，再留一点余量 */
+  .page{padding:150px 16px calc(78px + env(safe-area-inset-bottom,0px))}
+  #page-home{padding-top:150px;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
+}
+/* 桌面端：隐藏导航图标，保持原来的纯文字样式 */
+@media (min-width:761px){
+  .nav button .ni{display:none}
 }
 @media (max-width:560px){
   .avatar-stage{width:148px;height:148px}
@@ -1289,11 +1832,57 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
   box-shadow:0 0 18px rgba(255,45,74,.25);
 }
 #danmaku-toggle.off{opacity:.45}
+
+/* ── 弹幕开关在移动端的避让 ────────────────────────────────────
+ * ⚠ 必须写在这条规则的**主定义之后**。
+ * `#danmaku-toggle{...bottom:22px}` 在上面（ID 选择器，特异性 1-0-0），
+ * 写在前面的媒体查询里的同名规则会被它按源顺序覆盖 ——
+ * 之前放在 760px 断点里没生效，就是这个原因。
+ */
+@media (max-width:760px){
+  #danmaku-toggle{bottom:calc(84px + env(safe-area-inset-bottom,0px));right:16px}
+}
+
+/* ═══ 自定义光标（必须放在样式表最末尾）═══════════════════════
+ *
+ * 为什么在最后：站点各处散落着 `cursor:pointer`（`.card`、`.vitem`、
+ * `#lb .close` …），它们写在前面。CSS 特异性相同时**后写的赢**，
+ * 所以这一块必须排在后面才能真正覆盖掉它们。
+ *
+ * 为什么包 pointer:fine：触屏设备根本没有光标，规则写了也没用；
+ * 而 pointer:coarse 下部分安卓浏览器仍会去请求光标图片，白费流量。
+ *
+ * 热点坐标写在 :root 的 --cur / --cur-point 里（url 后面那两个数字）。
+ * 不写的话浏览器按 (0,0) 算，三角的顶点就偏到左上角外面去了。
+ */
+@media (pointer:fine){
+  html,body{cursor:var(--cur)}
+
+  /* 可交互元素换成发光圆环。
+     逐个类名列出，而不是只写 `a,button` ——
+     站点里不少 div 挂 click（卡片、缩略图、头像翻转），
+     只用标签选择器会漏掉一大半。 */
+  a,button,label,summary,select,option,
+  [role="button"],[onclick],[tabindex]:not([tabindex="-1"]),
+  .card,.gitem,.vitem,.vcard,.rcard,.wd-media,.wd-thumbs button,
+  .avatar-stage,.nav a,.topbar .mark,.tabs button,.close,
+  .zoombadge,.play,.dm-close{cursor:var(--cur-point)}
+
+  /* 文本输入区保留系统文本光标 ——
+     自定义光标会抹掉「这里能打字」的视觉暗示，属于可用性倒退 */
+  input,textarea,[contenteditable="true"]{cursor:text}
+
+  /* 明确不可点的区域回到三角箭头 */
+  .gitem.clamped,.wd-media.has-video,.wd-media.has-video *{cursor:var(--cur)}
+}
 </style>
 </head>
 <!-- data-page 标记当前页，供弹幕层判断"是否只在首页显示"。
      首屏默认 home；切页时由 setActive() 改写。 -->
 <body data-page="home">
+
+<!-- 键盘用户按第一个 Tab 就能跳过顶部导航直达内容（WCAG 2.4.1） -->
+<a class="skip-link" href="#page-home">跳到主要内容</a>
 
 <canvas id="bg"></canvas>
 <canvas id="trail"></canvas>
@@ -1309,14 +1898,22 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
 
 <div class="topbar">
   <div class="mark" data-go="home"><span class="dot"></span>ZFSN</div>
-  <nav class="nav">
-    <button data-go="home" class="active">首页</button>
-    <button data-go="works">作品</button>
-    <button data-go="bili">B站</button>
-    <button data-go="steam">游戏</button>
-    <button data-go="guest">留言</button>
-  </nav>
 </div>
+<!-- ── 导航 ──────────────────────────────────────────────────────
+     ⚠ 刻意与 .topbar **平级**，不放在它里面。
+     .topbar 有 backdrop-filter，而 backdrop-filter 会创建 containing
+     block —— 后代元素写 position:fixed 时是相对**它**定位而非视口，
+     移动端把 .nav 改成底部固定后会跑到屏幕外（实测 top:-20px）。
+     放同级就没这个问题；桌面端靠 CSS 让 .nav 自己 fixed 到右上角。 -->
+<nav class="nav">
+    <!-- 图标只在移动端底部导航栏显示（桌面端由 CSS 隐藏），
+         所以用 aria-hidden 让读屏器跳过，避免重复朗读 -->
+    <button data-go="home" class="active"><svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></svg><span>首页</span></button>
+    <button data-go="works"><svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="3" y="3" width="7.5" height="9"/><rect x="13.5" y="3" width="7.5" height="5.5"/><rect x="3" y="15" width="7.5" height="6"/><rect x="13.5" y="11.5" width="7.5" height="9.5"/></svg><span>作品</span></button>
+    <button data-go="bili"><svg class="ni" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.786 1.894v7.52c.017.764.28 1.395.786 1.893.507.498 1.134.756 1.88.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.498.769-1.129.786-1.893v-7.52c-.017-.765-.28-1.396-.786-1.894-.507-.497-1.134-.755-1.88-.773zM8 11.107c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c0-.373.129-.689.386-.947.258-.257.574-.386.947-.386zm8 0c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373Z"/></svg><span>B站</span></button>
+    <button data-go="steam"><svg class="ni" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.253 0-2.265-1.014-2.265-2.265z"/></svg><span>游戏</span></button>
+    <button data-go="guest"><svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H8l-4 3.5V5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5z"/></svg><span>留言</span></button>
+</nav>
 
 <!-- ══ 首页 ══ -->
 <section class="page active" id="page-home">
@@ -1342,18 +1939,21 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
 
     <div class="links reveal d4">
       <a class="card bili" href="https://space.bilibili.com/1220210222" target="_blank" rel="noopener">
+        <span class="c3d" aria-hidden="true"></span>
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.786 1.894v7.52c.017.764.28 1.395.786 1.893.507.498 1.134.756 1.88.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.498.769-1.129.786-1.893v-7.52c-.017-.765-.28-1.396-.786-1.894-.507-.497-1.134-.755-1.88-.773zM8 11.107c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c0-.373.129-.689.386-.947.258-.257.574-.386.947-.386zm8 0c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373Z"/></svg>
         <span class="txt"><span class="t">哔哩哔哩</span><span class="s">BILIBILI</span></span>
         <span class="arrow">↗</span>
       </a>
 
       <a class="card steam" href="https://steamcommunity.com/id/ZFSN114514/" target="_blank" rel="noopener">
+        <span class="c3d" aria-hidden="true"></span>
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.253 0-2.265-1.014-2.265-2.265z"/></svg>
         <span class="txt"><span class="t">Steam</span><span class="s">ZFSN114514</span></span>
         <span class="arrow">↗</span>
       </a>
 
       <a class="card xbox" href="https://www.xbox.com/zh-CN/play/user/ZFSN114514" target="_blank" rel="noopener">
+        <span class="c3d" aria-hidden="true"></span>
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.102 21.033C6.211 22.881 8.977 24 12 24c3.026 0 5.789-1.119 7.902-2.967 1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417zm11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912C23.002 17.48 24 14.861 24 12.004c0-3.34-1.365-6.362-3.57-8.536 0 0-.027-.022-.082-.042-.063-.022-.152-.045-.281-.045-.592 0-1.985.434-4.805 3.246zM3.654 3.426c-.057.02-.082.041-.086.042C1.365 5.642 0 8.664 0 12.004c0 2.854.998 5.473 2.661 7.533-1.401-2.605 3.579-9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245-.131 0-.223.021-.281.046v-.002zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C7.379.646 9.659 0 11.984 0H12c2.334 0 4.605.646 6.766 2.085-.068-.046-.615-.372-1.52-.339C14.946 1.828 12 3.545 12 3.545v.006z"/></svg>
         <span class="txt"><span class="t">Xbox</span><span class="s" id="home-xbox-sub">ZFSN114514</span></span>
         <span class="arrow">↗</span>
@@ -1363,6 +1963,7 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
            链接用**无扩展名**形式：静态资源层会把 .html 307 跳转到无扩展名版本，
            直接写最终地址可以省掉一次跳转，也和 canonical 保持一致。 -->
       <a class="card pvz" href="/pvz/pvz-portable">
+        <span class="c3d" aria-hidden="true"></span>
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c-4.4 0-8 3.1-8 7 0 2.2 1 4.1 2.6 5.4l-1.3 3.9c-.1.4.3.8.7.6l3.7-2.2c.8.2 1.6.3 2.3.3s1.5-.1 2.3-.3l3.7 2.2c.4.2.8-.2.7-.6l-1.3-3.9C19 13.1 20 11.2 20 9c0-3.9-3.6-7-8-7zm-2.6 3.4c.7 0 1.3.6 1.3 1.3S10.1 8 9.4 8 8.1 7.4 8.1 6.7s.6-1.3 1.3-1.3zm5.2 0c.7 0 1.3.6 1.3 1.3S15.3 8 14.6 8s-1.3-.6-1.3-1.3.6-1.3 1.3-1.3zM12 11c-2 0-3.7.8-3.7 1.9 0 .5.4.9 1 .9.5 0 .9-.2 1.4-.2.6 0 1 .2 1.5.2.8 0 1.4-.5 1.4-1.2 0-.9-1.3-1.6-1.6-1.6z"/></svg>
         <span class="txt"><span class="t">植物大战僵尸</span><span class="s">浏览器直接玩</span></span>
         <span class="arrow">▶</span>
@@ -1413,7 +2014,36 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
       <h2>作品展示墙</h2>
       <p>二次元插画 / 视觉创作 — 点击任意作品进入详情页</p>
     </div>
+
+    <!-- ── 搜索 + 标签筛选 ────────────────────────────────────
+         纯前端过滤：作品列表本来就一次性全部拉下来了
+         （/api/works 返回完整数组），所以筛选不需要再请求后端。
+         作品多到几百条之后再考虑服务端分页。 -->
+    <div class="gfilter" id="gfilters">
+      <div class="gsearch">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
+        <input type="search" id="gsearch" placeholder="搜索作品标题 / 标签 / 描述…" aria-label="搜索作品" autocomplete="off">
+        <button type="button" id="gclear" class="gclear" aria-label="清空搜索" hidden>×</button>
+      </div>
+      <!-- 视图切换：作品墙（看画面）/ 时间线（看发布顺序） -->
+      <div class="gview" role="group" aria-label="切换视图">
+        <button type="button" class="gviewbtn on" data-view="wall" aria-pressed="true" title="缩略图墙">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span>作品墙</span>
+        </button>
+        <button type="button" class="gviewbtn" data-view="timeline" aria-pressed="false" title="按时间归档">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v20"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="12" cy="20" r="2"/></svg>
+          <span>时间线</span>
+        </button>
+      </div>
+      <div class="gtags" id="gtags" role="group" aria-label="按标签筛选"></div>
+    </div>
+    <!-- 结果计数：有筛选条件时才显示，让用户知道「筛掉了多少」 -->
+    <div class="gcount" id="gcount" hidden></div>
+
     <div class="gallery" id="gallery"></div>
+    <!-- 时间线视图（与作品墙二选一显示，由 JS 切 .on） -->
+    <div class="gtimeline" id="gtimeline" hidden></div>
   </div>
 </section>
 
@@ -1612,6 +2242,10 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
 
 <footer class="reveal d5">
   ZFSN<span class="sep">/</span>PERSONAL SPACE<span class="sep">/</span>2026
+  <span class="sep">/</span><a class="rss" href="/feed.xml" type="application/rss+xml">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="6.2" cy="17.8" r="2.2"/><path d="M4 4c8.8 0 16 7.2 16 16h-3.2C16.8 12.7 11.3 7.2 4 7.2V4zm0 5.4c5.9 0 10.6 4.7 10.6 10.6h-3.2c0-4.1-3.3-7.4-7.4-7.4v-3.2z"/></svg>
+    RSS 订阅
+  </a>
 </footer>
 
 <div id="lb"><span class="close">×</span><img src="" alt="作品大图预览"><div class="cap"></div></div>
@@ -1668,7 +2302,7 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
 </div>
 
   <!-- 站点主逻辑：内联脚本已拆到 assets/js/app.js（原约 79 KB 内联） -->
-  <script defer src="assets/js/app.js"></script>
-  <script defer src="assets/js/danmaku.js"></script>
+  <script defer src="assets/js/app.46c43db9.js"></script>
+  <script defer src="assets/js/danmaku.49303c11.js"></script>
 </body>
 </html>

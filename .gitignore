@@ -24,9 +24,25 @@ node_modules/
 .wrangler/
 
 # ── 图片优化前的原图备份 ───────────────────────────────────────
-# tools/dev/optimize_images.py 会把优化前的原图备份到这里（约 32 MB）。
+# tools/optimize_images.py 会把优化前的原图备份到这里（约 42 MB）。
 # 它们只是「万一压坏了好还原」的兜底，**不进仓库**：
 #   ① 体积比站点本身还大，提交一次仓库就翻倍；
 #   ② 线上根本用不到（.assetsignore 也排除了 tools/）。
 # 需要长期保存就自己拷一份到网盘/移动硬盘。
 tools/orig-images/
+
+# ── 临时验证脚本与 headless Chrome 数据 ────────────────────────
+# .tmp-cursor/ 里放的是排查问题时写的 CDP 验证脚本（.cjs / .mjs，约 130 KB），
+# 以及每个脚本各自启动的 headless Chrome user-data-dir（**每个 16 MB 起**，
+# 十几个加起来近 400 MB）。这些是「查明问题就完成使命」的东西，不进仓库：
+#   ① profile 目录是纯垃圾，体积比整个站点还大十倍；
+#   ② 验证脚本依赖本机环境（写死的 Chrome 路径、端口、mock 数据），
+#      换台机器跑不起来，留着价值有限。
+# 真正值得长期保留、改造成生产工具的脚本已经移进 tools/ 了：
+#   tools/hash_assets.py / tools/optimize_images.py /
+#   tools/build_sitemap.py / tools/dev/verify_deploy.sh
+.tmp-cursor/
+
+# 同类：其它 .tmp-* 工作目录
+.tmp-*/
+

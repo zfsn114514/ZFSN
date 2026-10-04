@@ -14,8 +14,19 @@
 - [游戏](https://www.zfsnnb.dpdns.org/#steam)：Steam 游戏库与最近游玩记录。
 - [留言](https://www.zfsnnb.dpdns.org/#guest)：访客留言板，支持文字与录音留言。
 
+## 订阅与结构化数据
+
+- RSS：<https://www.zfsnnb.dpdns.org/feed.xml>（RSS 2.0，最新 40 件作品，含封面与简介）。
+  页面 HTML 里也有 `<link rel="alternate" type="application/rss+xml">` 可供自动发现。
+- 结构化数据：首页内嵌 schema.org JSON-LD，含 `Person`（身份与 B站/Steam/Xbox 主页）、
+  `WebSite`、`ProfilePage` 三类节点。作品详情页会额外注入 `CreativeWork` 标记。
+
 ## 站点说明
 
 - 技术栈：Cloudflare Workers（静态资源 + API 同源）、D1 数据库、KV 媒体存储，不依赖任何本地服务。
 - 站点地图：<https://www.zfsnnb.dpdns.org/sitemap.xml>（robots.txt 中已声明）。
+  其中只列**独立 URL**。本站板块与作品详情用 hash 路由（`#works`、`#work/<id>`），
+  这类地址不被搜索引擎作为独立页面收录，因此不写进站点地图 —— 但它们的内容
+  全部包含在 `/` 这一个文档里，收录 `/` 即可覆盖。
+- 独立的非首页 URL：`/pvz/pvz-portable`（植物大战僵尸网页版，独立页面）。
 - 管理后台：`/admin/`，需登录，已在 robots.txt 中屏蔽，不希望被索引。

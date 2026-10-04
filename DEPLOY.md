@@ -211,3 +211,114 @@ npm run deploy
 ## 安全提醒
 
 迁移完第一件事：**进 /admin 把管理员密码改掉**。现在还是初始密码（已在校验时确认过），而且这次站是真正 24 小时暴露在公网了。改完密码记得把 `tools/migrate/password.sql` 删掉，里面有哈希。
+
+---
+
+# 日常改动流程（本轮新增的工具链）
+
+改了代码之后，按下面走。**别跳过第 1、2 步** —— 跳过会出现
+「HTML 引用了新哈希文件但文件没生成」或「文件生成了但 HTML 还指旧的」，
+前者 404、后者改动不生效，都是线上才会发现的坑。
+
+## 一、改了 JS 之后：重新算哈希
+
+```bash
+python tools/hash_assets.py
+```
+
+它会做四件事：算 `assets/js/app.js` 的 SHA-256 前 8 位 → 生成
+`app.<hash>.js` → **回写 index.html 的引用** → 更新 `_headers` 的长缓存规则
+→ 删掉上一轮的旧哈希文件（避免仓库里堆历史版本）。
+
+脚本**幂等**：内容没变就是什么都不做。验证当前是否一致：
+
+```bash
+python tools/hash_assets.py --check
+```
+
+> ⚠ 不要手改 index.html 里的哈希文件名，下次跑脚本会被改回去。
+> 要改内容就改 `app.js`，再跑一次脚本。
+>
+> ⚠ 新加 JS 文件要把它填进 `hash_assets.py` 顶部的 `ASSETS` 列表再跑，
+> 否则那份文件不会被哈希化，只能走「每次回源协商」。
+
+## 二、加了新图片之后：压缩
+
+```bash
+python tools/optimize_images.py --dry-run            # 先看收益
+python tools/optimize_images.py --backup tools/orig-images/$(date +%Y%m%d)
+```
+
+原地转 WebP（**保留原文件名和路径**，所以散落在 HTML/JSON/D1 里的引用
+全都不用改）。脚本有两个安全阀：压完反而变大就保留原文件；PSNR < 30
+（压过头）也放弃这笔收益。
+
+> 本轮实测：133 张图 9.35 MB → 5.64 MB（省 40%）。
+> 收益几乎全部来自 3 张 1280×720 的 PNG 截图（2.9 MB → 0.3 MB）——
+> 截图存成无损 PNG 是最典型的浪费，有损 WebP 能省 90% 以上。
+>
+> 关于 AVIF：实测再省约 40%，但要改 HTML/JS 成 `<picture>` 才能用上，
+> 且会多占 3.5 MB 仓库体积。目前已决定**不生成** AVIF 副本。
+
+## 三、作品有增删之后：重建 sitemap
+
+```bash
+python tools/build_sitemap.py
+```
+
+> 作品详情页是 hash 路由（`/#work/<id>`），**无法被搜索引擎单独收录**，
+> 所以不写进 sitemap（写了是无效条目）。作品的可发现性靠 `/feed.xml`。
+> 这是路由方案的固有代价，不是配置问题。
+
+## 四、提交前：本地回归
+
+```bash
+node tools/dev/sanity_frontend.cjs      # 前端基础体检
+```
+
+## 五、部署后：线上验证
+
+```bash
+bash tools/dev/verify_deploy.sh
+```
+
+约 20 个请求、1~3 分钟（走代理较慢）。检查项：
+基础可达性、charset、**哈希 JS 是否可访问且带 immutable 缓存头**、
+JSON-LD 节点齐全、RSS 格式（pubDate 必须是 RFC822）、sitemap 内 URL 无死链、
+统计接口权限（`/api/stats` 未登录必须 401）、光标、图片可解码、
+缺失资源返回 404 而非 500。
+
+> 本机出网走代理，偶发 `000`。脚本所有请求都重试 3 次再判定，
+> 避免把代理抖动误报成站点故障。
+
+## 一次性操作：访问统计的建表
+
+**本轮新增的 `/api/pv`、`/api/stats` 需要先建表**，否则上报会 500：
+
+```bash
+npx wrangler d1 execute zfsn-db --remote --file=./schema/0002_analytics.sql
+```
+
+建三张表：`pageviews`（按天+页面聚合 PV/UV）、`pv_visitors`
+（当天 UV 去重，只存 `SHA-256(ip+ua+day+salt)` 前 32 位，**不存原始 IP**）、
+`work_views`（每件作品的浏览量）。
+
+另外 Cloudflare Web Analytics 需要在面板 **手动 Add a site** 才会开始收集
+（CF 代理站点默认注入 RUM 脚本，但不 Add 就没数据）。详见
+`docs/analytics-setup.md`。
+
+## 缓存头速查
+
+| 资源 | 策略 | 在哪配 |
+|---|---|---|
+| 哈希化的 JS | `max-age=31536000, immutable` | `_headers`（脚本自动写） |
+| 未哈希的 JS | `max-age=0, must-revalidate` | 默认（刻意不加） |
+| 图片 | `max-age=2592000`（30 天） | `_headers` |
+| HTML | `max-age=0, must-revalidate` | `_headers` |
+| `/pvz/*.js`、`mainpak` | `max-age=31536000, immutable` | `_headers` |
+
+> `_headers` 匹配的是**请求 URL**，不是文件路径。`/` ≠ `/index.html`；
+> 被 `html_handling` 剥掉扩展名的页面（如 `/pvz/pvz-portable.html`
+> → 307 → `/pvz/pvz-portable`）要按**去扩展名的路径**再写一份规则，
+> 否则只作用于 307 响应本身、最终页面完全不生效。
+

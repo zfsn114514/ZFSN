@@ -23,10 +23,16 @@ tools/
 ├── build_xbox_covers.py      ← Xbox 游戏封面（微软官方商店）
 ├── fetch_covers.py           ← B站 封面补抓（修复工具，平时不用跑）
 │
+├── ── 站点交付工具链（改前端 / 发版时用，见「站点交付工具链」一节）──
+├── hash_assets.py            ← JS 内容哈希 + 回写 HTML 与 _headers
+├── optimize_images.py        ← 图片原地转 WebP（带 PSNR 安全阀）
+├── build_sitemap.py          ← 生成 sitemap.xml
+│
 ├── build_bili.py             ← ⚠ 历史脚本（Python 直连抓列表，现必失败，仅作参考）
 ├── build_bili_profile.py     ← ⚠ 历史脚本（职责已被 build_bili_full.py 覆盖）
 │
 └── dev/
+    ├── verify_deploy.sh        ← 部署后自动线上验证（9 个检查段）
     ├── sanity_frontend.js      ← 前端脚本冒烟测试（顶层运行时错误）
     ├── check_bili_render.js    ← B站 页渲染回归（条数 / 懒加载 / 排序 / 搜索 / 破图）
     ├── check_steam_merge.js    ← Steam 自有 + 家庭共享 的合并契约检查
@@ -201,6 +207,93 @@ Xbox 的**游玩时长和成就无法通过接口获取**，只能从 Xbox 应�
 **修复工具**，日常流程里用不到（`build_bili_full.py` 会顺带下封面）。
 当封面缺失 / 被风控挡掉 / 手工改坏了路径时，单独跑它补齐。
 已存在的会跳过，可反复执行。
+
+---
+
+## 站点交付工具链
+
+上面那些脚本管的是**数据**（游戏列表、B站投稿）；下面这几个管的是**交付** ——
+改完前端、压完图、准备发布时跑。它们不碰数据文件，改动都在站点资源与元数据上。
+
+> **一句话记法**：改了 `assets/js/*.js` → 跑 `hash_assets.py`；
+> 加了图片 → 跑 `optimize_images.py`；作品增删 → 跑 `build_sitemap.py`；
+> 部署完 → 跑 `dev/verify_deploy.sh`。
+
+### `hash_assets.py` —— JS 内容哈希（★ 改完 JS 必须跑）
+
+把 `assets/js/app.js` / `danmaku.js` 复制成 `app.<sha256前8位>.js`，
+再把 `index.html` 里的引用改过去，同时重写 `_headers` 里那段
+`immutable` 长缓存规则。
+
+**为什么必须跑**：`index.html` 引用的是**带哈希的文件名**，不是 `app.js`。
+改了 `app.js` 但没重跑本脚本 → 页面还在加载**旧的哈希文件** →
+**改动完全不生效，而且不报任何错**（踩过，排查了半天才发现）。
+
+```bash
+python tools/hash_assets.py            # 生成 / 更新
+python tools/hash_assets.py --check    # 只校验，装 CI 或提交前用
+```
+
+幂等：源文件内容没变就不改名，连 304 都省了。旧哈希文件会自动清理。
+
+**新增脚本后**：把它加进脚本顶部的 `ASSETS` 列表再跑一次。
+
+### `optimize_images.py` —— 图片原地转 WebP
+
+扫描 `assets/`，把 PNG / JPG **原地**转成 WebP（**保留原文件名与扩展名**），
+原图备份到 `tools/orig-images/<日期>/`（已 gitignore）。
+
+**为什么保留扩展名**：图片路径散落在 `index.html`、各 `*.json`、
+以及 D1 的作品记录（后台可编辑）里。一旦把 `a.png` 改成 `a.webp`，
+D1 里存的 `a.png` 立刻 404。所以统一「原地压缩、同名覆盖」——
+只是文件内容变成了 WebP，客户端靠魔数识别，不看扩展名。
+
+两个**安全阀**（避免为了省体积牺牲质量）：
+
+| 情况 | 处理 |
+|---|---|
+| 压完反而更大 | 保留原文件 |
+| PSNR < 30（肉眼能看出糊） | 放弃这笔收益 |
+
+```bash
+python tools/optimize_images.py --dry-run                 # 先看收益
+python tools/optimize_images.py --backup tools/orig-images/$(date +%Y%m%d)
+python tools/optimize_images.py --only png                # 只压 PNG
+```
+
+实测 133 张 9.35 MB → 5.64 MB（省 40%）。收益全在**截图类 PNG** 上；
+摄影 JPG 本来就压过，再压只省 10~20%。
+
+### `build_sitemap.py` —— 生成 sitemap.xml
+
+按 `STATIC_PAGES` 列表 + 线上作品生成 `sitemap.xml`。
+
+**★ 刻意不收录作品详情页**：作品详情是 `/#work/<id>` 这种 hash 路由，
+`#` 后的 fragment **不被搜索引擎单独收录**，而 sitemap 规范要求
+`<loc>` 不含 `#` —— 列进去是负收益。作品的可发现性靠 `/feed.xml`（RSS）。
+
+```bash
+python tools/build_sitemap.py            # 生成
+python tools/build_sitemap.py --dry-run  # 只看会写出什么
+```
+
+线上作品拉取失败时会**打警告但仍生成**（宁可少几条，也不要什么都生成不出来）。
+新增静态页就加到脚本顶部的 `STATIC_PAGES`。
+
+### `dev/verify_deploy.sh` —— 部署后自动线上验证
+
+部署完跑一遍，9 个检查段覆盖整条交付链：可达性、charset、
+哈希 JS（含 `immutable` 缓存头）、JSON-LD、RSS、sitemap/robots（含死链检测）、
+统计接口、光标与图片、关键子资源（**缺失资源须 404 而非 500**）。
+
+```bash
+bash tools/dev/verify_deploy.sh
+```
+
+输出分 通过 / 失败 / 警告 三类，末尾给汇总。
+**警告**是「功能未部署」这类可接受项，**失败**是「部署了但坏了」——
+两者分开避免把未上线误判成故障。约 4 分钟（20+ 请求，每个带 3 次重试，
+本机走代理时裸 curl 偶发 000）。
 
 ---
 

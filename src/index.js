@@ -136,6 +136,10 @@ export default {
         return L.fail("接口不存在", 404);
       }
       if (p.indexOf("/media/") === 0) return await handleMedia(request, env, url);
+      // RSS 订阅源。放在 Worker 而不是静态文件：
+      // 作品是存在 D1 里、可以随时在后台增删的，静态 feed 一发布就过期了。
+      // 由 Worker 每次现读 D1 生成，新作品立刻能被订阅者看到。
+      if (p === "/feed.xml" || p === "/rss.xml") return await serveFeed(request, env, url);
       return await serveAsset(request, env, p);
     } catch (e) {
       // 兜底：接口崩了也别把整站拖成 500，静态资源照常返回
@@ -198,6 +202,128 @@ async function serveAsset(request, env, p) {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   /feed.xml —— RSS 2.0 订阅源
+   ══════════════════════════════════════════════════════════════ */
+
+/** RSS 里所有文本都要转义（含引号，属性里要用） */
+function xmlEsc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * 生成作品 RSS。
+ *
+ * 为什么值得做：站点是单页应用（hash 路由 `#work/<id>`），
+ * 搜索引擎抓不到、也没有「新作品」的通知渠道。
+ * RSS 给订阅者（人 + 部分聚合器）一个「有新作品了」的推送口。
+ *
+ * ⚠ 关于 hash 路由的取舍：
+ *   RSS 的 <link> 必须是可被聚合器打开的完整 URL。这里给的是
+ *   `https://<host>/#work/<id>` —— 浏览器打开能正确落到详情页。
+ *   严格说 hash 后面的部分不会发给服务器，但对「人点开看」这个唯一用途
+ *   来说没问题；真要 SEO 友好得改成 history 路由 + Worker 重写，
+ *   那是更大的改动，不在本次范围。
+ *
+ * ⚠ <pubDate> 必须是 **RFC 822** 格式（`Wed, 02 Oct 2026 03:33:00 GMT`），
+ *   不是 ISO 8601。用 toUTCString() 得到的就是 RFC 1123/822 兼容格式，
+ *   别自己拼日期字符串。
+ */
+async function serveFeed(request, env, url) {
+  const host = url.host;
+  const origin = url.protocol + "//" + host;
+
+  let items = [];
+  try {
+    const rs = await env.DB.prepare(
+      "SELECT id, title, descr, cover, tag, ts, time FROM works " +
+      "ORDER BY ts DESC LIMIT 40"
+    ).all();
+    items = rs.results || [];
+  } catch (e) {
+    // D1 挂了也让 feed 可用（返回空列表），不要给订阅器一个 5xx
+    console.error("[feed] 读库失败: %s", (e && e.message) || e);
+  }
+
+  const selfLink = origin + "/feed.xml";
+  const now = new Date();
+
+  // 频道级 pubDate 取最新一条作品的时间，没有就用当前时间
+  const newest = items.length && Number(items[0].ts)
+    ? new Date(Number(items[0].ts))
+    : now;
+
+  const lastBuild = (d) => {
+    const t = Number(d.ts);
+    if (t) return new Date(t).toUTCString();
+    // ts 缺失时退回解析 time 字符串（"2026-10-02 03:33"）
+    if (d.time) {
+      const p = new Date(String(d.time).replace(" ", "T"));
+      if (!isNaN(p.getTime())) return p.toUTCString();
+    }
+    return now.toUTCString();
+  };
+
+  const body = items.map(function (w) {
+    const link = origin + "/#work/" + w.id;
+    // 描述里带上封面图，聚合器（如 Feedly）能直接显示缩略图。
+    // 宽度用 CSS 限制在 480，避免撑破阅读器版面。
+    const descParts = [];
+    if (w.cover) {
+      descParts.push(
+        '<p><img src="' + xmlEsc(origin + "/" + String(w.cover).replace(/^\/+/, "")) +
+        '" alt="' + xmlEsc(w.title) + '" style="max-width:480px;height:auto"></p>'
+      );
+    }
+    if (w.descr) descParts.push("<p>" + xmlEsc(w.descr) + "</p>");
+    if (w.tag) descParts.push("<p>标签：" + xmlEsc(w.tag) + "</p>");
+    descParts.push('<p><a href="' + xmlEsc(link) + '">查看作品详情 →</a></p>');
+
+    return "    <item>\n" +
+      "      <title>" + xmlEsc(w.title) + "</title>\n" +
+      "      <link>" + xmlEsc(link) + "</link>\n" +
+      // guid 用链接并标 isPermaLink=false：hash 路由下它不是"永久链接"的
+      // 严格意义，但作为唯一标识是稳定的
+      '      <guid isPermaLink="false">zfsn-work-' + xmlEsc(w.id) + "</guid>\n" +
+      "      <pubDate>" + lastBuild(w) + "</pubDate>\n" +
+      "      <description>" + xmlEsc(descParts.join("")) + "</description>\n" +
+      "    </item>";
+  }).join("\n");
+
+  const xml =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">\n' +
+    "  <channel>\n" +
+    "    <title>ZFSN 的作品</title>\n" +
+    "    <link>" + xmlEsc(origin + "/") + "</link>\n" +
+    "    <description>ZFSN 的作品更新 — 二次元插画 / 视觉创作</description>\n" +
+    "    <language>zh-cn</language>\n" +
+    "    <pubDate>" + newest.toUTCString() + "</pubDate>\n" +
+    "    <lastBuildDate>" + now.toUTCString() + "</lastBuildDate>\n" +
+    // atom:self 让聚合器知道 feed 的规范地址（很重要：站点有 www 和裸域两个入口）
+    '    <atom:link href="' + xmlEsc(selfLink) + '" rel="self" type="application/rss+xml"/>\n' +
+    "    <ttl>60</ttl>\n" +
+    body + "\n" +
+    "  </channel>\n" +
+    "</rss>\n";
+
+  return new Response(xml, {
+    status: 200,
+    headers: {
+      "content-type": "application/rss+xml; charset=utf-8",
+      // 缓存 10 分钟：够新，又不会每次请求都打 D1。
+      // 再加上 stale-while-revalidate，聚合器高频轮询时几乎零延迟。
+      "cache-control": "public, max-age=600, stale-while-revalidate=1800",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
    /media/* —— KV 媒体
    ══════════════════════════════════════════════════════════════ */
 
@@ -228,6 +354,122 @@ async function handleAPI(request, env, ctx, url) {
   // 用户看到"密码错误"却不知道是轮数问题。宁可让 L.verifyPassword
   // 抛出明确的错误信息，由登录接口转达。
   const ITER = Number(env.PBKDF2_ITERATIONS) || L.PBKDF2_DEFAULT_ITERATIONS;
+
+  /* ══ 访问统计（第一方，无 cookie、无第三方脚本）═══════════════
+   *
+   * 隐私取舍（写清楚，免得以后自己都怀疑）：
+   *   · 不存原始 IP。存的是 SHA-256(ip + ua + 日期 + salt) 的前 32 位。
+   *     它当天内能用来去重（算 UV），跨天无法把两条记录关联到同一个人，
+   *     也无法逆推出原始 IP。
+   *   · 不存 cookie、不存完整 UA。
+   *   · 因此不需要 cookie 同意弹窗。
+   *
+   * path 由前端上报，但**必须白名单校验** —— 否则任何人可以往库里
+   * 塞任意字符串，表会被撑爆，统计也会被污染。
+   */
+  if (p === "/api/pv" && method === "POST") {
+    // 上报频率限制放很宽：正常用户一次会话只报几次，
+    // 但被脚本刷时这层能挡住绝大多数无脑循环。
+    if (!(await L.rateAllow(env, "pv:" + ip, 60, 60 * 1000))) {
+      return L.ok({ counted: false });   // 静默丢弃，不报错打扰用户
+    }
+
+    let body;
+    try { body = await L.readJSON(request); } catch (_) { return L.ok({ counted: false }); }
+
+    const ALLOWED = ["home", "works", "work", "bili", "steam", "guest"];
+    const view = ALLOWED.indexOf(String(body.view || "")) >= 0 ? String(body.view) : "home";
+
+    // 作品页额外记 work_id（只接受合法 ID 格式，防止注入奇怪字符串）
+    let workId = "";
+    if (view === "work") {
+      const wid = String(body.workId || "");
+      if (/^[a-f0-9]{8,32}$/i.test(wid)) workId = wid;
+    }
+
+    const ts = L.now();
+    const d = new Date(ts + (Number(tz) || 0) * 3600 * 1000);
+    const day = d.toISOString().slice(0, 10);   // 按站点时区的 'YYYY-MM-DD'
+
+    // 访客指纹。salt 复用 PBKDF2 的配置值没意义（那是密码用的），
+    // 这里用固定串 + 站点标识即可 —— 目的只是"当天去重"，不是安全用途。
+    const raw = ip + "|" + ua + "|" + day + "|zfsn-pv-v1";
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+    const vhash = L.bytesToHex(new Uint8Array(buf)).slice(0, 32);
+
+    // 注意：这几步放在 waitUntil 里，让上报请求尽快返回，
+    // 不占用用户可感知的等待时间。统计迟到几百毫秒完全无所谓。
+    const work = (async () => {
+      try {
+        // PV：upsert 递增
+        await env.DB.prepare(
+          "INSERT INTO pageviews (day, path, views, visitors) VALUES (?, ?, 1, 0) " +
+          "ON CONFLICT(day, path) DO UPDATE SET views = views + 1"
+        ).bind(day, view).run();
+
+        // UV：当天该指纹第一次出现才 +1。
+        // INSERT OR IGNORE 的 changes 为 0 就说明已存在 → 不是新访客。
+        const ins = await env.DB.prepare(
+          "INSERT OR IGNORE INTO pv_visitors (day, hash) VALUES (?, ?)"
+        ).bind(day, vhash).run();
+        const isNew = ins.meta && ins.meta.changes > 0;
+        if (isNew) {
+          await env.DB.prepare(
+            "UPDATE pageviews SET visitors = visitors + 1 WHERE day = ? AND path = ?"
+          ).bind(day, view).run();
+        }
+
+        // 作品累计浏览
+        if (workId) {
+          await env.DB.prepare(
+            "INSERT INTO work_views (work_id, views) VALUES (?, 1) " +
+            "ON CONFLICT(work_id) DO UPDATE SET views = views + 1"
+          ).bind(workId).run();
+        }
+      } catch (e) {
+        console.error("[pv] 写入失败: %s", (e && e.message) || e);
+      }
+    })();
+
+    if (ctx && ctx.waitUntil) ctx.waitUntil(work);
+    return L.ok({ counted: true });
+  }
+
+  /* 统计概览（仅管理员可见）—— 后台「访问统计」标签页用 */
+  if (p === "/api/stats" && method === "GET") {
+    if (!(await L.checkToken(env, L.adminTokenOf(request)))) {
+      return L.fail("未登录或会话已过期", 401);
+    }
+
+    const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 30, 1), 365);
+
+    const total = await env.DB.prepare(
+      "SELECT COALESCE(SUM(views),0) AS views, COALESCE(SUM(visitors),0) AS visitors FROM pageviews"
+    ).first();
+
+    const daily = await env.DB.prepare(
+      "SELECT day, SUM(views) AS views, SUM(visitors) AS visitors " +
+      "FROM pageviews GROUP BY day ORDER BY day DESC LIMIT ?"
+    ).bind(days).all();
+
+    const byPath = await env.DB.prepare(
+      "SELECT path, SUM(views) AS views FROM pageviews GROUP BY path ORDER BY views DESC"
+    ).all();
+
+    // 作品排行：联表取标题，没有浏览记录的也要显示（LEFT JOIN，views 为 0）
+    const topWorks = await env.DB.prepare(
+      "SELECT w.id, w.title, COALESCE(v.views,0) AS views " +
+      "FROM works w LEFT JOIN work_views v ON v.work_id = w.id " +
+      "ORDER BY views DESC, w.ts DESC LIMIT 20"
+    ).all();
+
+    return L.ok({
+      total: { views: Number(total && total.views) || 0, visitors: Number(total && total.visitors) || 0 },
+      daily: (daily.results || []).reverse(),   // 按时间正序给前端画图
+      byPath: byPath.results || [],
+      topWorks: topWorks.results || [],
+    });
+  }
 
   /* ── 健康检查（前端靠它探测后端在不在）───────────────────── */
   if (p === "/api/health" && method === "GET") {
