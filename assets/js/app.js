@@ -884,9 +884,12 @@
         : "时间未知";
 
       html +=
-        '<div class="gtl-item" data-id="' + esc(w.id) + '" role="link" tabindex="0">' +
-          '<div class="gtl-thumb"><img src="' + esc(workImg(w, 0)) +
-            '" alt="' + esc(w.title) + '" loading="lazy"></div>' +
+        '<div class="gtl-item' + (w.cover ? '' : ' gtl-notxt') + '" data-id="' + esc(w.id) + '" role="link" tabindex="0">' +
+          // 无图作品：不放占位缩略图（同作品墙的处理，见上面 .gitem-txt 的注释）
+          (w.cover
+            ? '<div class="gtl-thumb"><img src="' + esc(workImg(w, 0)) +
+              '" alt="' + esc(w.title) + '" loading="lazy"></div>'
+            : '') +
           '<div class="gtl-body">' +
             '<div class="gtl-t">' + esc(w.title) + '</div>' +
             '<div class="gtl-d">' +
@@ -1028,7 +1031,8 @@
     gallery.innerHTML = "";
     list.forEach(function(w, i){
       var el = document.createElement("div");
-      el.className = "gitem reveal";
+      // 无图作品：加 .gitem-txt 变体，卡片按文字自然撑高，不塞占位图
+      el.className = "gitem reveal" + (w.cover ? "" : " gitem-txt");
       el.style.animationDelay = (i * .06) + "s";
       var img = workImg(w, i);
       el.innerHTML =
@@ -1039,7 +1043,12 @@
           '<button class="gact" data-cmt="' + w.id + '" title="评论">' +
             ICON_CHAT + '<span class="n">' + (w.comments || 0) + '</span></button>' +
         '</div>' +
-        pictureHtml(img, 'alt="' + esc(w.title) + '" loading="lazy" decoding="async"') +
+        // ★ 无图时不渲染 <img>：以前 imgPath() 会兜底成一张 480×600 的
+        //   SVG 渐变（红色那块），既难看又白占一大块版面。
+        //   现在改成纯文字卡片，高度完全由标题 + 简介的行数决定。
+        (w.cover
+          ? pictureHtml(img, 'alt="' + esc(w.title) + '" loading="lazy" decoding="async"')
+          : '') +
         '<div class="gmeta">' +
           badgeHtml(w) +
           '<div class="gt">' + esc(w.title) + '</div>' +
@@ -1047,7 +1056,9 @@
         '</div>';
 
       // 渐进加载：先上 SVG 渐变占位，真图在后台预载完再淡入
-      blurUp(el.querySelector("img"), img, i);
+      // （无图作品没有 <img>，跳过）
+      var _imgEl = el.querySelector("img");
+      if (_imgEl) blurUp(_imgEl, img, i);
 
       // 点卡片主体 → 进入作品详情页
       // （详情页里能看到完整大图、简介、点赞数，以及**所有人的评论**；
@@ -1320,13 +1331,22 @@
           '<source src="' + vsrc + '">' +
           '你的浏览器不支持内嵌播放，<a href="' + vsrc + '" target="_blank" rel="noopener">点这里打开视频</a>' +
         '</video>';
-    } else {
+    } else if (imgs.length){
       // 渐进加载：详情页主图通常最大，最值得先给占位再淡入。
       // 注意**不加** loading="lazy" —— 这是首屏主角图，越早开始下载越好。
       // 包 <picture> 让它优先下 AVIF（详情页大图是 LCP 主角，最受益）。
       mediaInner =
-        pictureHtml(imgs[0] || "", 'alt="' + esc(w.title) + '" id="wd-img" decoding="async"') +
+        pictureHtml(imgs[0], 'alt="' + esc(w.title) + '" id="wd-img" decoding="async"') +
         '<span class="zoombadge">' + zoomSvg + '原图</span>';
+    } else {
+      // 纯文字作品（无视频、无图）：不塞渐变占位图 —— 那块图既难看又占地。
+      // 改成把正文提到媒体区，让版面由文字撑开，视觉上也更像「文章」。
+      mediaInner =
+        '<div class="wd-textonly">' +
+          '<div class="wt-k">' + (w.tag ? esc(w.tag) : '文字作品') + '</div>' +
+          '<h2 class="wt-t">' + esc(w.title) + '</h2>' +
+          (w.desc ? '<div class="wt-b">' + esc(w.desc) + '</div>' : '') +
+        '</div>';
     }
 
     /* ── 相册缩略图条（多于一张才显示）── */
@@ -1350,16 +1370,21 @@
         }).join("") + '</div>'
       : '';
 
+    // 纯文字作品：标题与正文已经提到左侧媒体区展示了，
+    // 右侧不再重复一遍（否则同一段文字页面上出现两次，很怪）。
+    var textOnly = !hasVideo && !imgs.length;
+
     wdRoot.innerHTML =
       '<div class="wd-layout">' +
         '<div class="wd-media' + (hasVideo ? ' has-video' : '') + '" id="wd-media">' + mediaInner + '</div>' +
         '<div class="wd-side">' +
-          '<div class="wd-kicker">' + (w.tag ? esc(w.tag) : "Work") + '</div>' +
-          '<h2 class="wd-title">' + esc(w.title) + '</h2>' +
+          (textOnly ? '' :
+            '<div class="wd-kicker">' + (w.tag ? esc(w.tag) : "Work") + '</div>' +
+            '<h2 class="wd-title">' + esc(w.title) + '</h2>') +
           '<div class="wd-meta">' +
             (w.time ? '<span class="gitem-x"><span class="loc">' + geoIcon() + esc(w.time) + '</span></span>' : '') +
           '</div>' +
-          (w.desc ? '<div class="wd-desc">' + esc(w.desc) + '</div>' : '') +
+          (textOnly ? '' : (w.desc ? '<div class="wd-desc">' + esc(w.desc) + '</div>' : '')) +
           '<div class="wd-act">' +
             '<button class="wd-like" id="wd-like" data-like="' + w.id + '">' +
               ICON_HEART + '<span id="wd-like-n">' + (w.likes || 0) + '</span> 点赞</button>' +
@@ -2721,6 +2746,30 @@
   });
 
   gmorebtn.addEventListener("click", gAppendBatch);
+
+  /* ═══ 首页「关于我」 ═══
+   * 内容由后台「关于我」标签页维护，存 D1 的 config 表。
+   * 只在首页存在容器时拉取 —— 其它页面（作品/详情）不需要这段请求。
+   *
+   * 渲染要点：
+   *   · 纯文本，用 textContent 赋值（不用 innerHTML）—— 从根上杜绝 XSS，
+   *     站长自己也省得操心转义。
+   *   · 换行靠 CSS 的 white-space:pre-wrap 保留，不做任何 \n → <br> 转换。
+   *   · 后端返回 has_content=false（没填 / 全是空白）时整块保持 hidden，
+   *     不留一个空壳占位把版式撑开。
+   */
+  (function initHomeAbout(){
+    var box = document.getElementById("home-about");
+    if (!box) return;
+    var body = document.getElementById("home-about-body");
+    if (!body) return;
+
+    api("/api/about").then(function(d){
+      if (!d || !d.has_content) return;
+      body.textContent = d.text;
+      box.hidden = false;
+    }).catch(function(){ /* 静默：自我介绍拉不到不影响网站主功能 */ });
+  })();
 
   /* ═══ 启动时应用地址栏路由 ═══
    * 别人分享的 #work/<id> 链接，打开就直接落在作品详情页 ——

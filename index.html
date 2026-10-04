@@ -84,7 +84,7 @@
 </script>
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="apple-touch-icon" href="assets/avatar.jpg">
-<link rel="stylesheet" href="assets/css/app.09d0b321.css">
+<link rel="stylesheet" href="assets/css/app.e83d44c9.css">
 </head>
 <!-- data-page 标记当前页，供弹幕层判断"是否只在首页显示"。
      首屏默认 home；切页时由 setActive() 改写。 -->
@@ -211,6 +211,14 @@
           <div class="hs-s" id="hs-xbox-s">正在载入…</div>
         </div>
       </a>
+    </div>
+
+    <!-- 自我介绍（后台「关于我」编辑，留空则整块不渲染） -->
+    <div class="home-about reveal d6" id="home-about" hidden>
+      <div class="ha-in">
+        <div class="ha-k">About Me</div>
+        <div class="ha-b" id="home-about-body"></div>
+      </div>
     </div>
   </div>
 </section>
@@ -511,7 +519,7 @@
 </div>
 
   <!-- 站点主逻辑：内联脚本已拆到 assets/js/app.js（原约 79 KB 内联） -->
-  <script defer src="assets/js/app.9c6cf9b2.js"></script>
+  <script defer src="assets/js/app.27802ea1.js"></script>
   <script defer src="assets/js/danmaku.49303c11.js"></script>
 
   <!--

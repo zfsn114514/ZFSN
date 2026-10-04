@@ -21,6 +21,12 @@ svg:not([width]){width:1em;height:1em;flex:0 0 auto}
   --muted:#78788c;
   --red:#ff2d4a;
   --red-soft:#ff6b7f;
+  /* 装饰性渐变的起点色（纯文字卡片 / 关于我 左侧竖线、区块 kicker 文字）。
+     单独起个语义名，方便以后整体换主题基调时一处改全站。
+     ⚠ 必须在这里定义：CSS 变量没定义时 var() 整条声明会被判为无效
+     （无 fallback 的 var() 不是"取空值"而是"抛错"），
+     表现为竖线/文字颜色消失，且控制台不会有任何提示。 */
+  --c1:var(--red);
   --silver:#c9cdd9;
   --bili:#00aeec;
   --steam:#66a3d9;
@@ -421,6 +427,53 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,[contenteditable
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 
+/* ═══ 首页「关于我」（后台可编辑，留空则整块不出现） ═══
+ * 紧跟平台数据卡片之后，宽度与它对齐（同样 max-width:760px 居中），
+ * 视觉上像同一组内容的延续，而不是另一块割裂的板块。
+ *
+ * ⚠ 必须显式 text-align:left —— 父级 .hero 是 text-align:center
+ *   （整个首屏为了标题居中），继承下来会把自我介绍也弄成居中，
+ *   一段话居中排版很难读。卡片本身仍然居中（margin:auto）。
+ *
+ * 正文白名单只有纯文本 + 换行 —— 渲染走 textContent，
+ * 这里靠 white-space:pre-wrap 把 \n 变成真正的换行。
+ * 长英文/URL 用 overflow-wrap 断行，避免撑破卡片。
+ */
+.home-about{
+  width:100%;max-width:760px;margin:13px auto 0;
+  position:relative;overflow:hidden;
+  border-radius:14px;border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--surface),rgba(0,0,0,0));
+  text-align:left;            /* ← 覆盖 .hero 的居中 */
+}
+.home-about[hidden]{display:none}
+/* 左侧渐变小竖线，跟纯文字作品卡的标记语言保持一致。
+   ⚠ 用 z-index 压在内容之上：卡片有 border-radius，竖线贴 left:0
+   足够显眼，不需要再加内边距躲它。 */
+.home-about::before{
+  content:"";position:absolute;left:0;top:15px;bottom:15px;width:3px;
+  border-radius:0 3px 3px 0;
+  background:linear-gradient(180deg,var(--c1),rgba(255,45,74,0));
+  opacity:.95;
+}
+.ha-in{padding:17px 20px 18px 22px}
+.ha-k{
+  font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:10px;
+}
+.ha-b{
+  font-size:13.5px;line-height:1.85;color:var(--text);opacity:.86;
+  white-space:pre-wrap;       /* ← 换行原样保留 */
+  overflow-wrap:break-word;
+  word-break:break-word;
+  max-width:66ch;
+}
+@media (max-width:760px){
+  .home-about{margin-top:11px}
+  .ha-in{padding:15px 16px 16px 19px}
+  .ha-b{font-size:13px;line-height:1.8}
+}
+
 /* ═══ 作品展示墙 ═══ */
 
 /* ── 搜索框 + 视图切换 + 标签筛选条 ────────────────────────────
@@ -656,6 +709,58 @@ body:has(.topbar.scrolled) .gfilter{top:58px}
 /* 无图占位（用 SVG 渐变兜底时）需要一个最小高度，否则会塌成一条线 */
 .gitem img[src^="data:image/svg+xml"]{min-height:180px;object-fit:cover}
 
+/* ── 纯文字作品卡片（无封面）────────────────────────────────────
+ *
+ * 背景：作品没有封面时，以前 imgPath() 会兜底成一张 480×600 的 SVG 渐变图
+ * （WPAL 第一组是红黑），直接塞进 <img> 撑满卡片 —— 既难看（大面积纯色），
+ * 又白占一大块版面（一张只有两行字的作品也要占 4:5 的高度）。
+ *
+ * 现在无图作品**不渲染 <img>**，改由这里控制版面：
+ *   高度完全由「标题 + 简介」的文字行数决定，写多少占多少。
+ *
+ * ⚠ 这里所有选择器都带 `.gitem.gitem-txt` 前缀（特异性 0,2,x），
+ *   为了稳定压过下面原有的 `.gitem .pill` / `.gacts` / `.gmeta .gs`。
+ */
+.gitem.gitem-txt{
+  padding:19px 20px 17px;
+}
+/* 左侧竖线：替代原来图片区承担的「独立条目」视觉锚点。
+   ⚠ 渐变终点别写 `transparent` —— 它算 rgba(0,0,0,0)，
+   中间过渡会带一层灰，在深色底上发脏。写同色 0 透明度的 rgba
+   才是干净的「红→无」。 */
+.gitem.gitem-txt::before{
+  content:"";
+  position:absolute;left:0;top:15px;bottom:15px;width:3px;
+  border-radius:0 3px 3px 0;
+  background:linear-gradient(180deg,var(--c1),rgba(255,45,74,0));
+  opacity:.95;
+}
+/* 标签与操作按钮在纯文字卡片里改为文档流内排列 ——
+   原来它们是 absolute 浮在图片上的，没有图片就没地方浮了 */
+.gitem.gitem-txt .pill{
+  position:static;display:inline-block;margin-bottom:10px;
+}
+.gitem.gitem-txt .gacts{
+  position:static;justify-content:flex-start;margin-bottom:12px;
+  opacity:1;transform:none;               /* 不靠 hover 显隐，文字卡片始终可见 */
+}
+/* ⚠ 关键：.gmeta 原本是 absolute + bottom:0（浮在图片底部）。
+   纯文字卡片没有图片撑高，若不改成静态流，卡片会塌缩、
+   标题正文全部叠在一起（实测踩过）。改成 static 后，
+   卡片高度就完全由 pill + gacts + 标题 + 正文的文档流撑开。 */
+.gitem.gitem-txt .gmeta{
+  position:static;padding:0;transform:none;
+}
+/* 标题放大：它是这张卡片唯一的视觉主体 */
+.gitem.gitem-txt .gmeta .gt{font-size:15.5px;line-height:1.5}
+/* 简介覆盖掉「全大写 + 拉开字距」的小字样式 —— 那是给图片配说明用的，
+   放正文完全读不了。改成正常正文排版，最多 6 行。 */
+.gitem.gitem-txt .gmeta .gs{
+  font-size:12.5px;line-height:1.7;letter-spacing:normal;text-transform:none;
+  color:var(--text);opacity:.78;margin-top:8px;
+  display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;
+}
+
 /* ── <picture> 包装层不参与布局 ────────────────────────────────
  *
  * 作品卡片与详情页大图现在用 <picture> 包了一层（为 AVIF 择优加载，见 app.js
@@ -847,6 +952,40 @@ img.pimg-on{filter:blur(0)}
 /* hover 微放大：同样排除「还在模糊加载中」的图（理由见作品墙那条注释） */
 .wd-media:hover img{transform:scale(1.02)}
 .wd-media:hover img.pimg:not(.pimg-on){transform:none}
+
+/* ── 详情页：纯文字作品（无视频、无图）──────────────────────────
+ *
+ * 以前这种情况会塞一张 480×600 渐变占位图，形成一大块纯色。
+ * 现在改成把正文提上来，让媒体区变成"文章头"：kicker + 大标题 + 正文。
+ * 视觉上比配一块假图合理得多。
+ *
+ * ⚠ .wd-media 默认 cursor:zoom-in + min-height:180px + hover 放大，
+ *   这些对文字块都不适用，需要逐条覆盖。
+ */
+.wd-textonly{
+  cursor:default;
+  padding:clamp(26px,4vw,46px) clamp(22px,3.6vw,42px);
+  min-height:0;                    /* 覆盖 .wd-media 的 min-height:180px */
+  background:
+    radial-gradient(120% 90% at 100% 0%,rgba(255,45,74,.10),transparent 58%),
+    var(--surface);
+}
+.wd-textonly .wt-k{
+  font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--c1);margin-bottom:14px;
+}
+.wd-textonly .wt-t{
+  font-size:clamp(20px,2.6vw,30px);line-height:1.35;font-weight:700;
+  margin:0 0 18px;letter-spacing:.01em;
+}
+.wd-textonly .wt-b{
+  font-size:14.5px;line-height:1.95;color:var(--text);opacity:.82;
+  /* 保留换行（纯文本内容的段落靠 \n 分隔），但不让长串数字/链接撑破 */
+  white-space:pre-wrap;overflow-wrap:anywhere;
+  max-width:62ch;                  /* 长行不易读，限制到易读宽度 */
+}
+/* 纯文字作品的媒体区不响应 hover 放大（没有可放大的图） */
+.wd-media:has(.wd-textonly):hover img{transform:none}
 .wd-media .zoombadge{
   position:absolute;right:13px;bottom:13px;z-index:2;
   display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;

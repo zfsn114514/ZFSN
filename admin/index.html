@@ -536,6 +536,7 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
     <div class="tabs">
       <button data-tab="msg" class="on">留言管理</button>
       <button data-tab="work">作品管理</button>
+      <button data-tab="about">关于我</button>
       <button data-tab="inter">作品互动</button>
       <button data-tab="net">部署自检</button>
       <button data-tab="sec">安全设置</button>
@@ -672,6 +673,38 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
       </div>
 
       <div class="items" id="wlist"><div class="sk"></div><div class="sk"></div></div>
+    </div>
+
+    <!-- ── 关于我（首页自我介绍） ── -->
+    <div class="pane" id="pane-about">
+      <div class="ph">
+        <div>
+          <h2>关于我</h2>
+          <div class="desc">这段文字会显示在网站首页「平台数据」卡片的下方 · 纯文本，换行会原样保留</div>
+        </div>
+        <button class="btn" id="a-refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+          重新载入
+        </button>
+      </div>
+
+      <div class="form" style="max-width:760px">
+        <h3>自我介绍</h3>
+        <div class="fld">
+          <label>正文</label>
+          <textarea id="a-text" rows="10" maxlength="4000"
+            placeholder="写点关于自己的介绍，例如：&#10;&#10;你好，我是 ZFSN。&#10;这里放我的一些创作和折腾记录。&#10;&#10;（空着不写，首页就不会显示这一块）"></textarea>
+          <div class="hint" style="display:flex;justify-content:space-between;gap:12px">
+            <span>支持换行；不支持 HTML / Markdown，写了会按原样显示</span>
+            <span id="a-cnt" style="flex:0 0 auto">0 / 4000</span>
+          </div>
+        </div>
+        <div class="frow">
+          <button class="btn primary" id="a-save">保存</button>
+          <span class="msg" id="a-msg" style="flex:1;text-align:right"></span>
+        </div>
+        <div class="hint" id="a-updated" style="margin-top:10px"></div>
+      </div>
     </div>
 
     <!-- ── 作品互动（点赞来源 + 评论） ── -->
@@ -1054,6 +1087,7 @@ $$(".tabs button").forEach(function(b){
     $$(".pane").forEach(function(p){ p.classList.toggle("on", p.id === "pane-" + b.dataset.tab); });
     if (b.dataset.tab === "net") runNetCheck();
     if (b.dataset.tab === "inter") loadInteractions();
+    if (b.dataset.tab === "about" && !ABOUT_LOADED) loadAbout();
   });
 });
 
@@ -2176,6 +2210,78 @@ $("#p-save").addEventListener("click", function(){
 });
 
 /* ══════ 汇总刷新 ══════ */
+
+/* ══════ 关于我（首页自我介绍） ══════
+   纯文本存 config 表。换行要保留 —— 保存时后端不清 \n，
+   前端用 white-space:pre-wrap 渲染，所以这里也不做任何转换。
+   ─────────────────────────────────────────────── */
+
+var ABOUT_DIRTY = false;   // 有没有未保存的改动
+var ABOUT_LOADED = false;
+
+function aboutCharCount(){
+  var el = $("#a-text");
+  var n = el.value.length;
+  $("#a-cnt").textContent = n + " / 4000";
+  $("#a-cnt").style.color = n > 3800 ? "var(--warn, #e0a030)" : "";
+}
+
+function loadAbout(){
+  return api("/api/about").then(function(d){
+    $("#a-text").value = d.text || "";
+    ABOUT_DIRTY = false;
+    ABOUT_LOADED = true;
+    aboutCharCount();
+    $("#a-updated").textContent = d.updated ? ("上次更新：" + d.updated) : "还没有保存过内容";
+    $("#a-msg").textContent = "";
+  }).catch(function(e){
+    $("#a-msg").textContent = "载入失败：" + e.message;
+  });
+}
+
+if ($("#a-text")){
+  $("#a-text").addEventListener("input", function(){
+    ABOUT_DIRTY = true;
+    aboutCharCount();
+  });
+
+  $("#a-refresh").addEventListener("click", function(){
+    if (ABOUT_DIRTY && !window.confirm("当前有未保存的修改，重新载入会丢弃它们。继续？")) return;
+    loadAbout().then(function(){ toast("已重新载入"); });
+  });
+
+  $("#a-save").addEventListener("click", function(){
+    var btn = $("#a-save");
+    var text = $("#a-text").value;
+    if (text.length > 4000){ toast("内容超过 4000 字", "err"); return; }
+
+    btn.disabled = true;
+    btn.textContent = "保存中…";
+    $("#a-msg").textContent = "";
+
+    api("/api/admin/about", { method: "POST", body: JSON.stringify({ text: text }) })
+      .then(function(d){
+        ABOUT_DIRTY = false;
+        ABOUT_LOADED = true;
+        $("#a-updated").textContent = "上次更新：" + d.updated;
+        $("#a-msg").textContent = "";
+        toast(d.has_content ? "已保存，首页立即生效" : "已清空，首页不再显示该板块");
+      })
+      .catch(function(e){
+        $("#a-msg").textContent = e.message;
+        if (/登录|会话/.test(e.message)) backToLogin();
+      })
+      .then(function(){
+        btn.disabled = false;
+        btn.textContent = "保存";
+      });
+  });
+
+  // 切走标签时提醒一下，避免辛苦写的内容没保存就丢了
+  window.addEventListener("beforeunload", function(e){
+    if (ABOUT_DIRTY){ e.preventDefault(); e.returnValue = ""; return ""; }
+  });
+}
 
 function refreshAll(){
   loadStats().catch(function(){});

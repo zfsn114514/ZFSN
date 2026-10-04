@@ -417,7 +417,60 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════
-hdr "⑩ 关键子资源"
+hdr "⑩ 「关于我」接口"
+# ══════════════════════════════════════════════════════════════
+#
+# GET /api/about 是首页自我介绍的数据源。它是公开读接口，
+# 线上必须返回 200 且是 {ok:true, text, has_content} 结构 ——
+# 首页渲染依赖 has_content 决定要不要显示那一块。
+#
+# 踩坑提醒：`has_content` 必须是**布尔值**，不是字符串。
+# 前端写的是 `if (!d.has_content) return;`（真值判断），
+# 若后端误返回字符串 "false"，首页会把空内容当有内容渲染出来。
+ACODE=$(fetch "$SITE/api/about" "$TMP/about")
+if [ "$ACODE" = "200" ]; then
+  if grep -q '"ok":true' "$TMP/about" 2>/dev/null; then
+    ok "GET /api/about 200（结构正常）"
+    if grep -qE '"has_content":(true|false)' "$TMP/about"; then
+      ok "  has_content 是布尔值"
+    else
+      bad "  has_content 字段缺失或类型不对" "前端靠它判断是否显示，必须是布尔"
+    fi
+    if grep -qE '"text":"' "$TMP/about"; then
+      ok "  含 text 字段"
+    else
+      bad "  缺少 text 字段" "首页正文取不到内容"
+    fi
+  else
+    bad "  /api/about 返回体不是 {ok:true}" "看 $(cat "$TMP/about" 2>/dev/null | head -c 120)"
+  fi
+else
+  bad "GET /api/about 返回 ${ACODE:-（空）}" "接口未部署或被拦截"
+fi
+
+# ⚠ --c1 这类「CSS 变量忘了定义」的坑必须线上验：
+#   无 fallback 的 var(--undefined) 会让**整条声明失效**，
+#   而且浏览器控制台一个字都不提示，本地看源码完全看不出来。
+#   检查方式：拉下 CSS 确认 --c1 有定义，且没有满屏的 var(--c1) 裸引用。
+CSSCUR=$(grep -oE 'assets/css/app\.[0-9a-f]{8}\.css' index.html | head -1)
+if [ -n "$CSSCUR" ]; then
+  fetch "$SITE/$CSSCUR" "$TMP/css" >/dev/null
+  if grep -q -- '--c1:' "$TMP/css" 2>/dev/null; then
+    ok "CSS 变量 --c1 已定义（${CSSCUR}）"
+  else
+    C1USE=$(grep -o 'var(--c1)' "$TMP/css" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${C1USE:-0}" -gt 0 ]; then
+      bad "  --c1 未定义但有 ${C1USE} 处引用" "会导致竖线/装饰色整条声明失效，且控制台无提示"
+    else
+      ok "  未使用 --c1（无需定义）"
+    fi
+  fi
+else
+  warn "index.html 里找不到 app.<hash>.css 引用"
+fi
+
+# ══════════════════════════════════════════════════════════════
+hdr "⑪ 关键子资源"
 # ══════════════════════════════════════════════════════════════
 for f in "llms.txt" "assets/favicon.svg"; do
   C=$(fetch "$SITE/$f" /dev/null)

@@ -32,7 +32,7 @@ tools/
 ├── build_bili_profile.py     ← ⚠ 历史脚本（职责已被 build_bili_full.py 覆盖）
 │
 └── dev/
-    ├── verify_deploy.sh        ← 部署后自动线上验证（10 个检查段）
+    ├── verify_deploy.sh        ← 部署后自动线上验证（11 个检查段）
     ├── sanity_frontend.js      ← 前端脚本冒烟测试（顶层运行时错误）
     ├── check_bili_render.js    ← B站 页渲染回归（条数 / 懒加载 / 排序 / 搜索 / 破图）
     ├── check_steam_merge.js    ← Steam 自有 + 家庭共享 的合并契约检查
@@ -354,11 +354,12 @@ sitemap；反复提交未变动的 URL 会被当垃圾（返回 429）并降低�
 
 ### `dev/verify_deploy.sh` —— 部署后自动线上验证
 
-部署完跑一遍，10 个检查段覆盖整条交付链：可达性、charset、
+部署完跑一遍，11 个检查段覆盖整条交付链：可达性、charset、
 哈希静态资源（JS + CSS，含 `text/css` 与 `immutable` 缓存头，
 以及「首页**不应**长缓存」）、JSON-LD、RSS、sitemap/robots（含死链检测）、
 统计接口、光标与图片、**AVIF 副本（存在性 + `image/avif` + 头不重复）**、
-关键子资源（**缺失资源须 404 而非 500**）。
+**「关于我」接口（`/api/about` 结构 + `has_content` 布尔类型）+
+CSS 变量 `--c1` 是否定义**、关键子资源（**缺失资源须 404 而非 500**）。
 
 ```bash
 bash tools/dev/verify_deploy.sh

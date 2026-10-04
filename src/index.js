@@ -20,6 +20,10 @@ const MSG_VOICE_LIMIT = 4 * 1024 * 1024;
 const MSG_BODY_LIMIT = 22 * 1024 * 1024;
 const MESSAGE_KEEP = 5000;
 
+// 「关于我」自我介绍：纯文本 + 换行。4000 字够写一大段了，
+// 再长首页也放不下；上限同时也限制了 config 表那一行的大小。
+const ABOUT_MAX = 4000;
+
 const ID_RE = "[a-f0-9]{8,32}";
 
 /* ── 小工具 ──────────────────────────────────────────────────── */
@@ -469,6 +473,54 @@ async function handleAPI(request, env, ctx, url) {
       byPath: byPath.results || [],
       topWorks: topWorks.results || [],
     });
+  }
+
+  /* ══ 「关于我」══
+   *
+   * 存在 D1 的 config 表里（k='about'），跟密码记录同一张表 ——
+   * 只有一条记录、没有查询需求，为它单开一张表不值得。
+   *
+   * 为什么不像留言那样存 IP/UA：这是一段由站长自己维护的静态文案，
+   * 不是用户产出内容，没有溯源需求。
+   *
+   * 公开读不鉴权：它本来就要显示在首页给所有人看。
+   */
+  if (p === "/api/about" && method === "GET") {
+    const row = await env.DB.prepare("SELECT v FROM config WHERE k = 'about'").first();
+    let data = { text: "", updated: "" };
+    if (row) {
+      try { data = Object.assign(data, JSON.parse(row.v)); } catch (_) { /* 脏数据当空处理 */ }
+    }
+    return L.ok({
+      text: String(data.text || ""),
+      // 展示用：没填过就是空串，前端据此决定要不要显示这一块
+      has_content: !!(data.text && String(data.text).trim()),
+      updated: String(data.updated || "")
+    });
+  }
+
+  if (p === "/api/admin/about" && method === "POST") {
+    if (!(await L.checkToken(env, L.adminTokenOf(request)))) {
+      return L.fail("未登录或会话已过期", 401);
+    }
+    let body;
+    try { body = await L.readJSON(request, 64 * 1024); } catch (_) { return L.fail("请求体格式错误"); }
+
+    // 保留换行（前端用 white-space:pre-wrap 渲染），所以不能走 L.clean ——
+    // 它会把 \n \r 一起当控制字符清掉。这里只挡其它控制字符。
+    const raw = String(body.text == null ? "" : body.text);
+    const text = raw
+      .replace(/\r\n?/g, "\n")                  // 统一换行符
+      .replace(/[\u0000-\u0009\u000B\u000C\u000E-\u001F]/g, "")  // 除 \n 外的控制字符
+      .slice(0, ABOUT_MAX);
+
+    const updated = L.stamp(L.now(), tz);
+    await env.DB.prepare(
+      "INSERT INTO config (k, v) VALUES ('about', ?) " +
+      "ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+    ).bind(JSON.stringify({ text, updated })).run();
+
+    return L.ok({ text, has_content: !!text.trim(), updated });
   }
 
   /* ── 健康检查（前端靠它探测后端在不在）───────────────────── */
