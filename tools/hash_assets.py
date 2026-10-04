@@ -41,9 +41,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
 # 需要加哈希的资源（相对站点根）。顺序无关。
+#
+# ⚠ CSS 也走这里：index.html 里的样式已拆到 assets/css/app.css（约 86 KB）。
+#   拆出去是为了让 HTML 变小 —— 它每次都要协商缓存（max-age=0），
+#   而 CSS 加了内容哈希后可以 immutable 长缓存，改文案/作品时不用重下样式。
 ASSETS = [
     "assets/js/app.js",
     "assets/js/danmaku.js",
+    "assets/css/app.css",
 ]
 
 # 会被回写的 HTML
@@ -188,11 +193,12 @@ def main():
         with open(hdr, "r", encoding="utf-8") as f:
             ht = f.read()
         block = build_headers_block(plan)
-        marker = "# ── 哈希化的 JS（由 tools/hash_assets.py 自动生成）──"
+        # marker 兼容新旧写法（旧提交里是「哈希化的 JS」）
+        marker = "# ── 哈希化的"
         if marker in ht:
             # 替换整个托管区块（从 marker 到下一个 "── " 标题行之前）
             pat = re.compile(re.escape(marker) + r".*?(?=\n# ── |\Z)", re.S)
-            ht2 = pat.sub(block.rstrip() + "\n", ht)
+            ht2 = pat.sub(block.lstrip("\n").rstrip() + "\n", ht)
         else:
             ht2 = ht.rstrip() + "\n\n" + block
         if ht2 != ht:
@@ -209,14 +215,15 @@ def main():
 def build_headers_block(plan):
     lines = [
         "",
-        "# ── 哈希化的 JS（由 tools/hash_assets.py 自动生成）────────────────",
+        "# ── 哈希化的静态资源（由 tools/hash_assets.py 自动生成）──────────",
         "#",
         "# 文件名里带内容哈希，所以内容一变文件名就变 —— 可以放心缓存很久。",
         "# 这些规则**不要手改**：跑一次 hash_assets.py 会自动重写本区块。",
         "#",
-        "# 没被列进来的 assets/js/*.js（比如你新加但忘了登记的）仍走默认策略：",
+        "# 覆盖 assets/js/*.js 与 assets/css/*.css。",
+        "# 没被列进来的资源（比如新加但忘了登记的文件）仍走默认策略：",
         "# `public, max-age=0, must-revalidate`，也就是每次回源协商。",
-        "# 新加脚本后请把它填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。",
+        "# 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。",
     ]
     for rel, newrel, h in plan:
         lines.append("")

@@ -124,17 +124,21 @@
 
 
 
-# ── 哈希化的 JS（由 tools/hash_assets.py 自动生成）────────────────
+# ── 哈希化的静态资源（由 tools/hash_assets.py 自动生成）──────────
 #
 # 文件名里带内容哈希，所以内容一变文件名就变 —— 可以放心缓存很久。
 # 这些规则**不要手改**：跑一次 hash_assets.py 会自动重写本区块。
 #
-# 没被列进来的 assets/js/*.js（比如你新加但忘了登记的）仍走默认策略：
+# 覆盖 assets/js/*.js 与 assets/css/*.css。
+# 没被列进来的资源（比如新加但忘了登记的文件）仍走默认策略：
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
-# 新加脚本后请把它填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
+# 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
 /assets/js/app.46c43db9.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/danmaku.49303c11.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/app.c6a3c2c4.css
   Cache-Control: public, max-age=31536000, immutable
