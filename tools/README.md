@@ -359,9 +359,15 @@ sitemap；反复提交未变动的 URL 会被当垃圾（返回 429）并降低�
 以及「首页**不应**长缓存」）、JSON-LD、RSS、sitemap/robots（含死链检测）、
 统计接口、光标与图片、**AVIF 副本（存在性 + `image/avif` + 头不重复）**、
 **「关于我」接口（`/api/about` 结构 + `has_content` 布尔类型）+
-CSS 变量 `--c1` 是否定义**、**留言板瀑布流（分列逻辑 + `.gcol` 规则 +
-`.glist` 不残留 `column-width` + 空态 flex 适配）**、
+CSS 变量 `--c1` 是否定义**、**留言板布局（`.glist` 是 grid +
+不残留 `column-width`/`display:flex`/`.gcol` + `.glist .gitem` 有 `margin:0` +
+JS 无分列残留、有 `data-idx`）**、
 关键子资源（**缺失资源须 404 而非 500**）。
+
+> ⚠ `fetch()` 全部带**最小字节数**下限。Cloudflare 偶发返回 HTTP 200 但
+> **内容被截断**（实测首页只下到 6 KB / 正常 36 KB），只看状态码会把
+> 下游所有基于 HTML/JS 内容的检查全部带成假失败。体积不达标会重试 3 次，
+> 三次都失败返回自定义码 `598`。
 
 ```bash
 bash tools/dev/verify_deploy.sh

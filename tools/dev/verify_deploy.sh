@@ -43,13 +43,44 @@ hdr()  { printf '\n\033[1m══ %s\033[0m\n' "$1"; }
 
 # ── 带重试的请求 ──────────────────────────────────────────────
 # $1=url  $2=输出文件（可选）  回显 http 状态码
+# 下载并校验完整性。
+#
+# ⚠ 只判 HTTP 状态码不够 —— 实测遇到过「返回 200 但内容被截断」：
+#   首页 HTML 正常 36 KB，某个瞬间只下到 6 KB 就结束了，
+#   于是下游所有基于 HTML 的检查（JS 引用、JSON-LD、meta）
+#   全线误报「找不到」，看起来像部署出了问题，实际是网络抖动。
+#   所以这里对 HTML/JS/CSS 这类文本资源加**最小体积校验 + 重试**：
+#   小于 MIN_BYTES 就当作失败重下，三次都不行才认账。
+#
+# 用法：fetch <url> <输出文件> [最小字节数]
 fetch() {
-  local u="$1" out="${2:-/dev/null}" code=""
+  local u="$1" out="${2:-/dev/null}" min="${3:-0}" code="" sz=0
   for i in 1 2 3; do
     code=$(curl -sL -o "$out" -w "%{http_code}" --max-time 45 -A "$UA" "$u" 2>/dev/null)
-    [ "$code" != "000" ] && { echo "$code"; return; }
+    if [ "$code" != "000" ]; then
+      if [ "$min" -gt 0 ] && [ "$out" != "/dev/null" ]; then
+        sz=$(wc -c < "$out" 2>/dev/null | tr -d ' ')
+        if [ "${sz:-0}" -ge "$min" ]; then echo "$code"; return; fi
+        # ⚠ 这里不能调 warn() —— 它写 stdout 会把计数和文本混进
+        #   `$(fetch ...)` 的返回值里。直接写 stderr。
+        printf '  \033[33m!\033[0m 下载只有 %sB（<%sB），重试 %s/3：%s\n' \
+          "${sz:-0}" "$min" "$i" "$u" >&2
+        sleep 2
+        continue
+      fi
+      echo "$code"; return
+    fi
     sleep 2
   done
+  # 三次都拿不到完整内容：回一个非 200 的码，
+  # 让下游 `[ "$C" = "200" ]` 直接判失败 —— 而不是拿着截断内容
+  # 一路往下跑，最后报出一堆莫名其妙的「找不到 X」。
+  if [ "$min" -gt 0 ] && [ "$out" != "/dev/null" ] && [ "${sz:-0}" -lt "$min" ]; then
+    printf '  \033[31m✗\033[0m %s 三次均未拿到完整内容（末次 %sB < %sB）\n' \
+      "$u" "${sz:-0}" "$min" >&2
+    echo "598"   # 自定义码：内容不完整
+    return
+  fi
   echo "$code"
 }
 
@@ -69,10 +100,11 @@ hdrval() { grep -i "^$2:" "$1.h" 2>/dev/null | head -1 | sed 's/^[^:]*: *//' | t
 # ══════════════════════════════════════════════════════════════
 hdr "① 基础可达性"
 # ══════════════════════════════════════════════════════════════
-C=$(fetch "$SITE/" "$TMP/index.html")
-[ "$C" = "200" ] && ok "首页 200" || bad "首页返回 $C"
+C=$(fetch "$SITE/" "$TMP/index.html" 20000)
+[ "$C" = "200" ] && ok "首页 200" || bad "首页返回 $C" \
+  "$([ "$C" = "598" ] && echo '下载内容不完整（非部署问题），重跑一次通常就好' || echo '')"
 
-C=$(fetch "$SITE/pvz/pvz-portable" "$TMP/pvz.html")
+C=$(fetch "$SITE/pvz/pvz-portable" "$TMP/pvz.html" 5000)
 [ "$C" = "200" ] && ok "游戏页 /pvz/pvz-portable 200" || bad "游戏页返回 $C"
 
 # ══════════════════════════════════════════════════════════════
@@ -108,7 +140,7 @@ else
   while IFS= read -r p; do
     [ -z "$p" ] && continue
     NJ=$((NJ+1))
-    cs=$(fetch "$SITE/$p" "$TMP/js")
+    cs=$(fetch "$SITE/$p" "$TMP/js" 3000)
     if [ "$cs" = "200" ]; then
       if echo "$p" | grep -qE '\.[0-9a-f]{8}\.js$'; then
         ok "哈希脚本可访问：$p"
@@ -145,7 +177,7 @@ if [ -z "$CSSLIST" ]; then
   bad "HTML 里没找到任何 CSS 外链引用" "CSS 应已拆出为 assets/css/app.<hash>.css"
 else
   for p in $CSSLIST; do
-    cs=$(fetch "$SITE/$p" "$TMP/css")
+    cs=$(fetch "$SITE/$p" "$TMP/css" 5000)
     if [ "$cs" = "200" ]; then
       if echo "$p" | grep -qE '\.[0-9a-f]{8}\.css$'; then
         ok "哈希样式可访问：$p"
@@ -229,7 +261,7 @@ fi
 # ══════════════════════════════════════════════════════════════
 hdr "⑤ RSS 订阅源"
 # ══════════════════════════════════════════════════════════════
-C=$(fetch "$SITE/feed.xml" "$TMP/feed.xml")
+C=$(fetch "$SITE/feed.xml" "$TMP/feed.xml" 500)
 if [ "$C" = "200" ]; then
   ok "feed.xml 200"
   if head -1 "$TMP/feed.xml" | grep -q '<?xml'; then ok "  有 XML 声明"; else bad "  缺 XML 声明"; fi
@@ -264,11 +296,11 @@ hdr "⑥ sitemap / robots"
 # ══════════════════════════════════════════════════════════════
 # ⚠ /robots.txt 这类特殊路径 CF 会做规范化，307 指向自身是正常的。
 #   用 -L 跟随后应得 200，且只跳 1 次。不要因为看到 307 就判死循环。
-C=$(fetch "$SITE/robots.txt" "$TMP/robots.txt")
+C=$(fetch "$SITE/robots.txt" "$TMP/robots.txt" 50)
 [ "$C" = "200" ] && ok "robots.txt 200（跟随 307 后）" || bad "robots.txt 返回 $C"
 grep -qi 'sitemap:' "$TMP/robots.txt" 2>/dev/null && ok "  robots 里声明了 sitemap" || warn "  robots 未声明 sitemap"
 
-C=$(fetch "$SITE/sitemap.xml" "$TMP/sitemap.xml")
+C=$(fetch "$SITE/sitemap.xml" "$TMP/sitemap.xml" 100)
 if [ "$C" = "200" ]; then
   ok "sitemap.xml 200"
   NURL=$(grep -c '<loc>' "$TMP/sitemap.xml" 2>/dev/null || echo 0)
@@ -454,7 +486,7 @@ fi
 #   检查方式：拉下 CSS 确认 --c1 有定义，且没有满屏的 var(--c1) 裸引用。
 CSSCUR=$(grep -oE 'assets/css/app\.[0-9a-f]{8}\.css' index.html | head -1)
 if [ -n "$CSSCUR" ]; then
-  fetch "$SITE/$CSSCUR" "$TMP/css" >/dev/null
+  fetch "$SITE/$CSSCUR" "$TMP/css" 5000 >/dev/null
   if grep -q -- '--c1:' "$TMP/css" 2>/dev/null; then
     ok "CSS 变量 --c1 已定义（${CSSCUR}）"
   else
@@ -470,60 +502,71 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════
-hdr "⑪ 留言板瀑布流（阅读顺序 = 时间顺序）"
+hdr "⑪ 留言板布局（grid，阅读顺序 = 时间顺序）"
 # ══════════════════════════════════════════════════════════════
 #
-# 留言板从 CSS columns 改成「JS 按序填充 + flex 分列」。
-# 这套机制有三个绝不能少的部件，少一个就会静默退化：
-#   ① JS 里要有分列逻辑（colCount / distribute）
-#   ② CSS 里要有 .gcol 列容器规则
-#   ③ .glist 不能残留 columns 属性（会和 flex 打架）
+# 留言板最终选定 **grid 多列网格**（试过 CSS columns 和 JS 分列两轮后回退）。
+# grid 的好处是 DOM 顺序 = 时间倒序，行内从左到右、换行往下，
+# 天然满足「由左到右、由下到上、最旧在最下面」。
 #
-# ⚠ 为什么必须线上验：这些改动都是「静默失效」型的 ——
-#   少一个 .gcol 规则，页面照样渲染，只是所有卡片堆成一列；
-#   columns 和 flex 同时存在时，浏览器不报错，直接按 flex 走。
-#   光看页面「没崩」判断不出问题，得确认关键规则真的在。
+# ⚠ 必须线上验的理由：这一段历史上反复被改坏，且**坏得毫无征兆** ——
+#   · 用 columns 时阅读顺序在列间乱跳（用户两次点名）
+#   · 用 JS 分列时若 .gcol 规则缺失，页面照常渲染，只是全堆成一列
+#   · grid 与 columns 同时存在时浏览器不报错，静默按后者走
+#   光看「页面没崩」判断不出问题，得确认关键声明真的在。
 JSCCUR=$(grep -oE 'assets/js/app\.[0-9a-f]{8}\.js' index.html | head -1)
 if [ -n "$JSCCUR" ]; then
-  fetch "$SITE/$JSCCUR" "$TMP/js" >/dev/null
-  # distribute 是分列主函数；__zfsnRelayoutCols 是 resize 重排钩子
-  if grep -q '__zfsnRelayoutCols' "$TMP/js" 2>/dev/null; then
-    ok "JS 含瀑布流分列逻辑（${JSCCUR}）"
-  else
-    bad "  JS 里找不到 __zfsnRelayoutCols" "分列/重排逻辑缺失，留言会堆成一列"
-  fi
-  # 按序填充是「时间顺序 = 阅读顺序」的关键；如果线上还是最矮列优先，
-  # 阅读序会在列间乱跳（用户明确否决过这种排列）
+  fetch "$SITE/$JSCCUR" "$TMP/js" 3000 >/dev/null
+  # grid 版不该再有分列逻辑；data-idx 保留给折叠判定与测试挂桩
   if grep -q 'data-idx' "$TMP/js" 2>/dev/null; then
-    ok "  卡片带 data-idx（重排时能按时间顺序取回）"
+    ok "JS 含 data-idx（折叠判定与测试挂桩用）"
   else
-    warn "  未发现 data-idx" "resize 重排可能按「按列」的 DOM 顺序取卡，导致顺序错乱"
+    warn "  未发现 data-idx" "折叠补判可能取不到卡片"
+  fi
+  if grep -q 'relayoutCols\|function distribute' "$TMP/js" 2>/dev/null; then
+    bad "  JS 仍残留 JS 分列逻辑" "已回退到 grid，残留代码是死代码但会误导后来人"
+  else
+    ok "  JS 无残留分列逻辑（已回退 grid）"
   fi
 else
   warn "index.html 里找不到 app.<hash>.js 引用"
 fi
 
 if [ -n "$CSSCUR" ]; then
-  if grep -q '\.glist > \.gcol' "$TMP/css" 2>/dev/null || grep -q '\.glist \.gcol' "$TMP/css" 2>/dev/null; then
-    ok "CSS 含 .gcol 列容器规则"
-  else
-    bad "  CSS 里找不到 .gcol 规则" "列容器没有样式，flex 分列会退化成单列堆叠"
-  fi
-  # columns 与 flex 不能共存：.glist 若还留着 column-width，说明旧规则没删干净
   GLBLOCK=$(awk '/^\.glist\{/,/\}/' "$TMP/css" 2>/dev/null)
-  if echo "$GLBLOCK" | grep -q 'column-width'; then
-    bad "  .glist 仍带 column-width" "columns 与 flex 打架，实际布局不可预期"
+  if echo "$GLBLOCK" | grep -q 'display:grid'; then
+    ok ".glist 是 grid（阅读顺序 = 时间顺序）"
   else
-    ok "  .glist 已移除 column-width（不再与 flex 冲突）"
+    bad "  .glist 不是 grid" "grid 才能保证「由左到右、由下到上」的时间顺序"
+    echo "$GLBLOCK" | sed 's/^/      当前：/'
   fi
-  # 上一版的空态靠 grid-column 横跨；换成 flex 后必须改成 flex-basis
-  if awk '/^\.gempty\{/,/\}/' "$TMP/css" 2>/dev/null | grep -q 'flex:1 1 100%'; then
-    ok "  空态 .gempty 已适配 flex（flex:1 1 100%）"
+  # columns / flex 残留会静默覆盖 grid
+  if echo "$GLBLOCK" | grep -qE 'column-width|display:flex'; then
+    bad "  .glist 仍带 column-width 或 display:flex" "会静默覆盖 grid，实际布局不可预期"
   else
-    warn "  .gempty 未见 flex 适配" "留言为空时提示条可能被压成一列宽的窄条"
+    ok "  .glist 无 columns/flex 残留"
+  fi
+  # 列宽定义（grid 的 minmax 目标列宽）
+  if echo "$GLBLOCK" | grep -q 'minmax('; then
+    ok "  列宽由 minmax 定义（$(echo "$GLBLOCK" | grep -o 'minmax([^)]*)' | head -1)）"
+  else
+    warn "  .glist 未见 minmax" "可能列宽未定义，列数会退化"
+  fi
+  # 留言卡 margin 必须为 0，否则与 grid 的 gap 叠加成双倍间距
+  if awk '/^\.glist \.gitem\{/,/\}/' "$TMP/css" 2>/dev/null | grep -q 'margin:0'; then
+    ok "  留言卡 margin 已归零（不与 grid gap 叠加）"
+  else
+    bad "  留言卡 margin 未归零" "窄屏 .gitem{margin:0 0 12px} 会叠加 gap，间距翻倍"
+  fi
+  # 作品墙是 columns、留言板是 grid，两者不能互相污染
+  if grep -q '\.gcol' "$TMP/css" 2>/dev/null; then
+    bad "  CSS 仍含 .gcol 规则" "回退 grid 后应删除列容器样式，否则误导后来人"
+  else
+    ok "  无 .gcol 残留（已回退 grid）"
   fi
 fi
 
+# ══════════════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════════════
 hdr "⑫ 关键子资源"
 # ══════════════════════════════════════════════════════════════

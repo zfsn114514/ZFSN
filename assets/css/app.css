@@ -1478,49 +1478,39 @@ img.pimg-on{filter:blur(0)}
 }
 .gstat .k{font-size:10.5px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
 
-/* 留言列表：多列瀑布式排布。
+/* 留言列表：grid 多列网格。
  *
- * 演进过程（两轮）：
+ * 演进过程（三轮，最终选定 grid）：
  *   第一轮：单列满宽 → 一条两三个字的留言横跨整屏，右侧巨大空白，滚动很累
- *   第二轮：grid 多列 → 一屏能看十几条，但 grid **每行等高**，
- *           同一行里短留言下方留出大片空白（被用户点名吐槽）
- *   现在：columns 多列瀑布流 —— 卡片按自身高度紧凑堆叠，不留行内空隙
+ *   第二轮：CSS columns 瀑布流 → 卡片紧凑无空隙，但 column-fill:balance
+ *           按「均衡」分配、与时间顺序无关，阅读顺序在列之间来回跳
+ *   第三轮：JS 按序填充 + flex 分列 → 时间顺序对了，但各列底部参差
+ *   第四轮（现行）：**回到 grid** —— 每行等高、严格「由左到右、由下到上」，
+ *           时间顺序天然正确；代价是同一行里短留言下方会留空，
+ *           但这个取舍用户明确认可（试过三种方案后选定这个）
  *
- * ⚠ 与作品墙 .gallery 用同一套机制（column-width 自动定列数），
- *   区别只在目标列宽：留言卡内容更窄，232px 会显得空，用 272px。
- *
- * ⚠ 为什么不用 grid + JS 计算绝对定位（真正的瀑布流）：
- *   columns 零 JS、响应式免费、增删卡片浏览器自己重排。
- *   代价是阅读顺序「先填满一列再下一列」而非从左到右 ——
- *   留言按时间倒序，顺序不承载语义（且每条都带时间戳），无影响。
+ * ⚠ 为什么 grid 能天然保证时间顺序：DOM 顺序 = 时间倒序，
+ *   grid 按行填充，行内从左到右、换行往下 —— 正是留言该有的读法。
+ *   而 CSS columns / 最短列优先都会打乱这个顺序。
  */
 .glist{
-  display:flex;align-items:flex-start;gap:12px;
-}
-/* 列容器。列数由 JS 算（见 app.js 的 colCount），JS 按「列高最短优先」
-   把留言逐条分发进各列。纯 CSS columns 做不到这件事 ——
-   column-fill:balance 是按「均衡」分发的，跟时间顺序无关：
-   最新的一批会挤满第一列，第 N 条之后才跳到第二列，
-   视觉上就成了「时间顺序在列之间来回跳」（用户点名的问题）。
-
-   ⚠ 列宽由 JS（app.js 的 targetColW）算列数时用的同一个目标值，
-   CSS 这边只负责「等分 + 不被内容撑破」，两边不必严格一致。 */
-.glist > .gcol{
-  flex:1 1 0;min-width:0;
-  display:flex;flex-direction:column;gap:12px;
+  display:grid;gap:12px;
+  grid-template-columns:repeat(auto-fill,minmax(272px,1fr));
+  align-items:start;
 }
 .glist .gitem{
   position:relative;padding:14px 16px 14px 18px;border-radius:12px;
   background:var(--surface);border:1px solid var(--line);
   /* ★ 留言卡的 .gitem 和作品墙的 .gitem 是同一个类名。
-     作品墙走多列瀑布流，留言列表这里走 flex 分列，两者规则不能互相污染，
+     作品墙走多列瀑布流，留言列表是普通网格，两者不能互相污染，
      所以统一用 `.glist .gitem` 提高特异性隔离。
-     · 卡片间距由 .gcol 的 gap 控制，margin 必须归零 ——
-       否则窄屏媒体查询里的 `.gitem{margin:0 0 12px}` 会命中，
-       变成 gap + margin 的双倍间距。
+     · margin 必须归零 —— 窄屏媒体查询里的 `.gitem{margin:0 0 12px}`
+       会叠加 grid 的 gap 变成双倍间距。
      · overflow 归 visible：作品墙的 .gitem 是 hidden（裁图片圆角），
-       留言卡没有图片，hidden 会把折叠态的 ::after（"展开全文"）裁掉。 */
-  margin:0;aspect-ratio:auto;height:auto;overflow:visible;
+       留言卡没有图片，hidden 会把折叠态的 ::after（"展开全文"）裁掉。
+     · break-inside 显式重置成 auto：作品墙那条是给 columns 用的，
+       在 grid 容器里虽然无害，但写清楚避免以后误读。 */
+  margin:0;aspect-ratio:auto;height:auto;overflow:visible;break-inside:auto;
   transition:border-color .35s,box-shadow .35s,transform .35s var(--ease);
 }
 .glist .gitem::before{
@@ -1584,9 +1574,9 @@ img.pimg-on{filter:blur(0)}
 .gitem .msg-voice b{font-variant-numeric:tabular-nums;color:var(--red-soft);font-weight:600;flex:0 0 auto;font-size:10.5px}
 
 .gempty{
-  /* .glist 现在是 flex 容器，grid-column 不再生效 ——
-     不改成 flex 的话空态提示会被压成一列宽的窄条。 */
-  flex:1 1 100%;min-width:0;grid-column:1/-1;
+  /* 容器是 grid，grid-column 横跨整行才是对的。
+     （flex 版容器下这条会失效，需要 flex:1 1 100% —— 见 git 历史） */
+  grid-column:1/-1;
   text-align:center;padding:70px 20px;border-radius:14px;
   background:var(--surface);border:1px dashed var(--line);
 }
@@ -1904,11 +1894,10 @@ footer .rss svg{width:11px;height:11px;flex:0 0 11px}
      手机上 140px 目标列宽 ≈ 2 列。 */
   .gallery{column-width:140px;column-gap:12px}
   .gitem{margin:0 0 12px}
-  /* 留言板是 flex 分列（列数由 JS 算），窄屏把目标列宽收到 150px ≈ 2 列。
-     ⚠ 要同步 app.js 的 targetColW()，否则 JS 以为有 3 列、
-     CSS 只摆得下 2 列，最后一列会挤成窄条。 */
-  .glist{gap:10px}
-  .glist > .gcol{gap:10px}
+  /* 留言板容器是 grid：手机上把目标列宽从 272px 收到 150px，
+     约 2~3 列。这个值只影响 minmax()，不需要与 JS 同步
+     （grid 的列数完全由 CSS 决定，这也是选它的好处之一）。 */
+  .glist{gap:10px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
   /* 之前是 1fr（单列全宽），每个塞满整个手机宽度，作品卡大得离谱。
      改成 auto-fill + 小 minmax，让手机端也是 2~3 列网格。 */
   .vgrid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
