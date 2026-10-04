@@ -2304,5 +2304,15 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
   <!-- 站点主逻辑：内联脚本已拆到 assets/js/app.js（原约 79 KB 内联） -->
   <script defer src="assets/js/app.46c43db9.js"></script>
   <script defer src="assets/js/danmaku.49303c11.js"></script>
+
+  <!--
+    Cloudflare Web Analytics —— 免 cookie 的边缘访问统计。
+    与本站自建的 /api/pv（第一方，写入 D1）并存，两者互不冲突：
+      · 这个：CF 边缘统计，数据更准（含被 CF 缓存的请求），在 CF 面板看
+      · 自建：数据在自己手里，随时可查可改，作品维度更细
+    官方说明：https://developers.cloudflare.com/analytics/web-analytics/
+    type=module 自带 defer 语义，不阻塞渲染；脚本约 10 KB。
+  -->
+  <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "769eabb4db2347bcaa66b69fc7bbba46"}'></script>
 </body>
 </html>

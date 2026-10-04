@@ -1,15 +1,45 @@
 # 访问统计接入说明
 
-站点**没有**接入任何第三方统计脚本（Google Analytics / 百度统计 / 51.la 等）。
-原因是这类脚本会在页面里插一段外部 JS：既拖慢首屏，又需要 cookie 同意弹窗，
-而且很容易被广告拦截插件屏蔽 —— 数据反而不可信。
+站点有**两套并行的统计**，互不冲突：
 
-改用 **Cloudflare Web Analytics**：免费、无 cookie、不跨站追踪、不需要同意弹窗，
-而且**统计逻辑在 Cloudflare 边缘完成**，页面里可以一行脚本都不加。
+| | ① 第一方自建（`/api/pv`） | ② Cloudflare Web Analytics |
+|---|---|---|
+| 实现 | Worker + D1，自己写 | CF 边缘 + 一段 beacon 脚本 |
+| 页面改动 | 无额外脚本（页面自己 fetch） | `index.html` 里一行 `<script type='module'>` |
+| 数据在哪 | 自己的 D1，随时可查可改 | CF 面板 |
+| 优势 | 数据自主、可做作品维度细分 | 边缘统计更准（含缓存命中）、带 Core Web Vitals |
+| 状态 | ✅ 已上线跑通 | ✅ 已启用（见下文「当前状态」） |
+
+> 自建部分的表结构与端点见 `schema/0002_analytics.sql` 与 `src/index.js`；
+> UV 用 `SHA-256(ip+ua+day+salt)` 去重，**不存原始 IP**，无需 cookie 同意弹窗。
+
+**没有**接入 Google Analytics / 百度统计 / 51.la 这类通用第三方分析脚本 ——
+它们既拖慢首屏、又要 cookie 弹窗，还容易被拦截插件屏蔽，数据反而不可信。
 
 ---
 
-## 方案 A：自动注入（推荐，零代码）
+## 当前状态（已启用）
+
+站点走的是**手动埋点**（方案 B），不是自动注入。token：
+
+```
+769eabb4db2347bcaa66b69fc7bbba46
+```
+
+脚本已写入 `index.html` 的 `</body>` 之前。**这条不要删、不要改 token** ——
+删了就收不到数据，改错了会记到别人的站点上。
+
+如需确认是否在正常工作：打开线上站点按 F12 → Network，
+筛选 `rum` 或 `cloudflareinsights`，应当能看到：
+
+- `static.cloudflareinsights.com/beacon.min.js` 加载
+- `cloudflareinsights.com/cdn-cgi/rum` 的 POST 上报
+
+数据不会实时出现，首次录入通常要等 **几分钟到几十分钟**。
+
+---
+
+## 方案 A：自动注入（零代码，本站未采用）
 
 适用前提：站点已经走 Cloudflare 代理 —— 本站满足
 （`www.zfsnnb.dpdns.org` 是 Cloudflare Worker 的自定义域名）。
@@ -31,30 +61,27 @@
 > Web Analytics 页面**手动添加一次站点**才会真正开始收集数据。
 > 只是「已经在用 Cloudflare」并不会自动开始统计。
 
-### 验证是否生效
-
-打开线上站点，按 F12 → Network，筛选 `rum` 或 `cloudflareinsights`。
-应当能看到一个对 `/cdn-cgi/rum` 的 POST 请求（或
-`static.cloudflareinsights.com/beacon.min.js` 的加载）。
-
-数据不会实时出现，首次录入通常要等 **几分钟到几十分钟**。
+**本站未采用方案 A 的原因**：面板里选择了「JS Snippet」安装方式，
+所以改用了下面的手动埋点。两种方式**不要同时用** —— 会导致重复上报。
 
 ---
 
-## 方案 B：手动埋点（自动注入被关掉时用）
-
-如果面板里把 Web Analytics 的 setup 改成了 **Disable**，或者用了
-「Enable with JS Snippet installation」，就需要手动加脚本。
+## 方案 B：手动埋点（本站当前采用）
 
 1. 面板 → Web Analytics → 选中站点 → **Manage site**
-2. 复制其中的 **JS Snippet**（形如 `<script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token":"<TOKEN>"}'></script>`）
-3. 把 `index.html` 里下面这段的注释去掉，并把 `TOKEN` 换成真实 token：
+2. 复制其中的 **JS Snippet**
+3. 贴进 `index.html` 的 `</body>` 之前（本站已完成，见上方「当前状态」）
+
+参考形式：
 
 ```html
 <!-- 在 </body> 之前 -->
-<script defer src="https://static.cloudflareinsights.com/beacon.min.js"
-        data-cf-beacon='{"token":"这里填你的 TOKEN"}'></script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon='{"token":"<TOKEN>"}'></script>
 ```
+
+> `type="module"` 自带 defer 语义（异步、不阻塞渲染），放在 `<head>` 或
+> `</body>` 前都行。CF 官方给的 snippet 用的是 `type='module'`，照抄即可。
 
 ### ⚠ CSP 注意事项
 
