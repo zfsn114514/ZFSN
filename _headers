@@ -51,16 +51,17 @@
 /assets/*.webp
   Cache-Control: public, max-age=2592000
 
-# AVIF 副本（作品图 AVIF 择优加载用，见 docs/avif-evaluation.md）。
-# ⚠ 必须显式给 Content-Type：Workers 静态资源层的扩展名→MIME 表若
+# —— AVIF 副本（作品图 AVIF 择优加载用，见 docs/avif-evaluation.md）——
+# ⚠ 只写**一条** `/assets/*.avif` 就够：实测它能匹配到子目录（assets/works/），
+#   不要再补 `/assets/works/*.avif` —— Cloudflare 对同名响应头是**追加**而非覆盖，
+#   两条规则同时命中会拼成 `image/avif, image/avif` 与重复的 Cache-Control
+#   （实测已复现，与 /pvz/pvz-portable.html 那次 charset 重复是同一类问题）。
+#
+# 为什么必须显式给 Content-Type：Workers 静态资源层的扩展名→MIME 表若
 #   不认识 .avif，会退回 application/octet-stream —— <picture> 的
 #   <source type="image/avif"> 匹配的是**声明类型**，MIME 不对会导致
 #   浏览器丢弃这个候选、回落到主文件，AVIF 就白做了。
 /assets/*.avif
-  Content-Type: image/avif
-  Cache-Control: public, max-age=2592000
-
-/assets/works/*.avif
   Content-Type: image/avif
   Cache-Control: public, max-age=2592000
 
