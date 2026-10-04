@@ -280,9 +280,15 @@ async function assetWithIndexHtml(request, env, p) {
     ? ["/index.html"]
     : [p + ".html", p + "/index.html"];
 
+  /* ⚠ 必须用**入站请求的同一个 origin** 构造补全请求，不能图省事写
+   *   `new Request("https://placeholder.local" + target)`。
+   *   Workers 的 ASSETS 绑定会校验请求 URL，跨域/伪造 host 可能被直接拒绝
+   *   （表现为永远取不到、静默回退 404）。用真实 origin 最稳。 */
+  const origin = new URL(request.url).origin;
+
   for (const target of candidates) {
     try {
-      const r2 = await env.ASSETS.fetch(new Request("https://placeholder.local" + target, {
+      const r2 = await env.ASSETS.fetch(new Request(origin + target, {
         method: "GET",
         headers: request.headers,
       }));
