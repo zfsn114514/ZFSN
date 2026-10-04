@@ -209,26 +209,38 @@ function notFound() {
  * 换扩展名会让这些引用直接 404。现在改为离线「原地压缩、保留扩展名」。
  */
 async function serveAsset(request, env, p) {
-  let res;
+  let res = null;
   try {
     res = await env.ASSETS.fetch(request);
   } catch (e) {
-    /* ★ 必须自己补全 index.html，否则首页会 404。
-     *
-     * CF 静态资源层的「自动补 index.html」是**在它自己处理请求时**做的。
-     * 一旦某个路径被 wrangler.toml 的 `assets.run_worker_first` 命中，
-     * 请求就会改走 Worker —— 此时 ASSETS.fetch() 拿到的是**原始路径**，
-     * `/` 不会自动对应到 `index.html`、目录页同理，于是全部 404。
-     *
-     * 实测踩过：为了让 workers.dev 的 301 对首页生效而加了 run_worker_first，
-     * 结果 `/` 和 `/pvz/pvz-portable` 双双 404，整站 HTML 挂掉。
-     * 静态层不报错、不告警，只是静默返回 404。 */
+    // ASSETS 绑定在找不到文件时可能抛异常，也可能**返回 404 Response**
+    // （两种行为都出现过，取决于运行版本）。所以下面不区分，
+    // 只要不是 200 就走补全逻辑。
+    res = null;
+  }
+
+  /* ★ 命中失败时要自己补全「无扩展名路径 → HTML」，否则首页会 404。
+   *
+   * CF 静态资源层的「自动补 index.html」是**在它自己处理请求时**做的。
+   * 一旦某个路径被 wrangler.toml 的 `assets.run_worker_first` 命中，
+   * 请求就会改走 Worker —— 此时 ASSETS.fetch() 拿到的是**原始路径**，
+   * `/` 不会自动对应到 `index.html`，于是返回 404。
+   *
+   * 实测踩过：为了让 workers.dev 的 301 对首页生效而加了 run_worker_first，
+   * 结果 `/` 和 `/pvz/pvz-portable` 双双 404，整站 HTML 挂掉。
+   * 静态层不报错、不告警，只是静默 404。
+   *
+   * ⚠ 条件是 `!res || res.status !== 200` 而不是「catch 里才补」——
+   *   实测 ASSETS 找不到文件时**多数情况是返回 404 而不是抛异常**，
+   *   只在 catch 里补等于永远不执行（这个 bug 让我以为已修好，实际线上仍 404）。 */
+  if (!res || res.status !== 200) {
     const alt = await assetWithIndexHtml(request, env, p);
     if (alt) return alt;
-    console.warn("[assets] 未命中，按 404 处理: %s", p);
-    return notFound();
+    if (!res) console.warn("[assets] 未命中，按 404 处理: %s", p);
+    return res || notFound();
   }
-  if (res && res.status === 200 && IMG_EXT.test(p)) {
+
+  if (IMG_EXT.test(p)) {
     const h = new Headers(res.headers);
     h.set("Cache-Control", "public, max-age=2592000");
     return new Response(res.body, { status: 200, headers: h });
