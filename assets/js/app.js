@@ -320,6 +320,11 @@
     // 切到作品页时刷新一次 —— 保证后台新加的作品马上可见，
     // 也顺带同步最新的点赞/评论数。
     if (key === "works" && window.__zfsnLoadGallery) window.__zfsnLoadGallery();
+    // 切到留言页时重判一次折叠 ——
+    // ⚠ 留言数据在页面启动时就加载好了，但那一刻 #guest 还是 display:none，
+    //   卡片里的测量值全是 0，markClamped 判定必然失败（短留言侥幸没错，
+    //   长留言则该折叠的没折叠）。页面一旦可见，测量才有意义。
+    if (key === "guest" && window.__zfsnRemarkClamped) window.__zfsnRemarkClamped();
     countView(key);
   }
 
@@ -2434,22 +2439,53 @@
 
     // 正文超过 6 行会被 CSS 折叠，点一下展开看全文。
     // 只给"真的被截断"的加交互，短留言点了没反应反而奇怪。
-    var body = d.querySelector(".body");
-    if (body && body.scrollHeight > body.clientHeight + 4){
-      d.classList.add("clamped");
-      d.addEventListener("click", function(){
-        d.classList.toggle("open");
-      });
-    }
+    // ⚠ 判定不能在这里做 —— 此时元素还没进 DOM，量不出宽度，见 markClamped。
     return d;
   }
+
+  /** 判定留言卡是否被 CSS 截断，需要折叠交互。
+   *
+   * ⚠⚠ 必须在卡片**已插入 DOM 且所在页面可见**之后再测，两者缺一不可：
+   *   1. 脱离文档流时宽度为 0 → 文字每行一个字 → scrollHeight 暴涨 →
+   *      **所有留言都被误判成需要折叠**
+   *   2. 在 display:none 的页面里 → scrollHeight/clientHeight **全是 0** →
+   *      `0 > 0+4` 为假 → **该折叠的长留言反而没折叠**
+   *   第 2 条尤其隐蔽：留言数据是启动时就拉好的，那时 #guest 还不可见。
+   *   所以除了插入后立刻判一次，切页时还要 `__zfsnRemarkClamped` 再判一次。
+   *
+   * 幂等：已处理过的卡片直接跳过，避免切页多次后重复绑定 click。
+   */
+  function markClamped(card){
+    if (card.__clampChecked) return;
+    var body = card.querySelector(".body");
+    if (!body) return;
+    // 页面不可见时量不出真实高度，留待可见时再判（不要标记 __clampChecked）
+    if (!body.clientHeight) return;
+    card.__clampChecked = true;
+    if (body.scrollHeight > body.clientHeight + 4){
+      card.classList.add("clamped");
+      card.addEventListener("click", function(){
+        card.classList.toggle("open");
+      });
+    }
+  }
+
+  /** 切到留言页时重新判定全部卡片的折叠状态（见 markClamped 注释第 2 条）。 */
+  window.__zfsnRemarkClamped = function(){
+    if (!glist) return;
+    var cards = glist.querySelectorAll(":scope > .gitem");
+    for (var i = 0; i < cards.length; i++) markClamped(cards[i]);
+  };
 
   function gAppendBatch(){
     if (MSG_SHOWN >= MSG_ALL.length) return;
     var end = Math.min(MSG_SHOWN + G_BATCH, MSG_ALL.length);
-    var frag = document.createDocumentFragment();
-    for (var i = MSG_SHOWN; i < end; i++) frag.appendChild(makeMsgItem(MSG_ALL[i]));
-    glist.appendChild(frag);
+    var batch = [];
+    for (var i = MSG_SHOWN; i < end; i++) batch.push(makeMsgItem(MSG_ALL[i]));
+    for (var j = 0; j < batch.length; j++) glist.appendChild(batch[j]);
+    // 插入后再统一判定折叠状态 —— 此时宽度已确定，量出来的高度才可信。
+    // 若此刻所在页面还不可见，markClamped 内部会跳过，等切页时补判。
+    for (var k = 0; k < batch.length; k++) markClamped(batch[k]);
     MSG_SHOWN = end;
     gUpdateMore();
   }

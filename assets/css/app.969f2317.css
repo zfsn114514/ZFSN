@@ -1479,22 +1479,38 @@ img.pimg-on{filter:blur(0)}
 .gstat .k{font-size:10.5px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
 
 /* 留言列表：多列瀑布式排布。
-   原来是单列满宽 —— 一条两三个字的留言会横跨整个屏幕，
-   右侧留出巨大空白，滚动起来非常累。改成卡片式多列后
-   屏幕利用率高得多，一屏能看十几条。 */
+ *
+ * 演进过程（两轮）：
+ *   第一轮：单列满宽 → 一条两三个字的留言横跨整屏，右侧巨大空白，滚动很累
+ *   第二轮：grid 多列 → 一屏能看十几条，但 grid **每行等高**，
+ *           同一行里短留言下方留出大片空白（被用户点名吐槽）
+ *   现在：columns 多列瀑布流 —— 卡片按自身高度紧凑堆叠，不留行内空隙
+ *
+ * ⚠ 与作品墙 .gallery 用同一套机制（column-width 自动定列数），
+ *   区别只在目标列宽：留言卡内容更窄，232px 会显得空，用 272px。
+ *
+ * ⚠ 为什么不用 grid + JS 计算绝对定位（真正的瀑布流）：
+ *   columns 零 JS、响应式免费、增删卡片浏览器自己重排。
+ *   代价是阅读顺序「先填满一列再下一列」而非从左到右 ——
+ *   留言按时间倒序，顺序不承载语义（且每条都带时间戳），无影响。
+ */
 .glist{
-  display:grid;gap:12px;
-  grid-template-columns:repeat(auto-fill,minmax(272px,1fr));
-  align-items:start;
+  column-width:272px;      /* 目标列宽，实际列数由容器宽度自动取整 */
+  column-gap:12px;
+  display:block;           /* 覆盖原来的 grid —— columns 与 grid 不能共存 */
 }
 .glist > .gitem{
   position:relative;padding:14px 16px 14px 18px;border-radius:12px;
   background:var(--surface);border:1px solid var(--line);
   /* ★ 留言卡的 .gitem 和作品墙的 .gitem 是同一个类名。
-     作品墙现在走多列瀑布流（break-inside / margin 等），留言列表是普通
-     纵向列表，两者不能互相污染，所以这里用 `.glist > .gitem` 提高特异性隔离。
-     aspect-ratio / break-inside 都显式重置成普通块级行为。 */
-  aspect-ratio:auto;height:auto;break-inside:auto;margin:0;
+     作品墙走多列瀑布流，留言列表这里也走，但两者规则不能互相污染，
+     所以统一用 `.glist > .gitem` 提高特异性隔离。
+     注意 break-inside:avoid 必须**显式写**（继承不到 .gitem 的），
+     否则一条长留言会被拦腰拆到两列之间。 */
+  aspect-ratio:auto;height:auto;margin:0 0 12px;
+  break-inside:avoid;
+  -webkit-column-break-inside:avoid;
+  page-break-inside:avoid;
   transition:border-color .35s,box-shadow .35s,transform .35s var(--ease);
 }
 .glist > .gitem::before{
