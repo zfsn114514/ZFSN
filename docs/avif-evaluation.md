@@ -3,6 +3,8 @@
 > 评估日期：2026-10-04
 > 评估对象：`assets/` 目录下 128 张站点图片（> 8 KB）
 > 结论：**建议「部分落地」—— 只对首屏与详情页大图启用，其余维持现状**
+> 落地状态：**第一步已执行**（见第九节）。`assets/works/` 下 6 张大图已接入
+> `<picture>` + AVIF，线上验证通过。
 
 ---
 
@@ -263,3 +265,100 @@ python tools/dev/avif_probe2.py
 **注意**：① 省下的 86 KB HTML 与 ③ 省下的 2.25 MB 图片，
 对**首屏加载时间**的贡献是不对等的 —— 都远不如「减少一次请求」或「干掉一个阻塞脚本」。
 这也是为什么建议 ③ **按需部分落地**，而不是追求数字上的最大化。
+
+---
+
+## 九、落地实施记录（2026-10-04）
+
+按第六节「部分落地」建议执行了**第一步**：只给 `assets/works/` 的作品图
+产出 AVIF 副本，其余目录维持现状。
+
+### 9.1 实际改动
+
+| 文件 | 改动 |
+|---|---|
+| `tools/optimize_images.py` | 新增 `--dirs`（只处理指定子目录）、`--no-primary`（只产 AVIF 不改主文件）；AVIF 产物命名从双后缀 `x.jpg.avif` 改为标准 `x.avif` |
+| `assets/js/app.js` | 新增 `avifCandidate()` / `pictureHtml()`；作品卡片与详情页主图接入 `<picture>`；新增全局 `__zfsnAvifFallback()` 失败兜底 |
+| `assets/css/app.css` | 新增 `picture{display:contents}`，让包装层在布局树中消失 |
+| `_headers` | 新增 `/assets/*.avif` → `image/avif` + 长缓存 |
+| `assets/works/*.avif` | 6 个新文件，共 **451 KB**（原 768 KB，省 41.4%） |
+
+命令：
+```bash
+python tools/optimize_images.py --avif --dirs assets/works --no-primary
+python tools/hash_assets.py
+```
+
+### 9.2 ⚠ 最重要的发现：`<picture>` 的降级语义被普遍误解
+
+**`<picture>` 只在「类型/条件不匹配」时跳过 `<source>`，不会在「加载失败」后回落。**
+
+实测证据（headless Chrome + CDP，把 `.avif` 请求全部改成 `BlockedByClient`）：
+
+```
+img.getAttribute("src") = "vrc.png"      ← 主文件
+img.currentSrc          = "vrc.avif"     ← 卡在失败的候选上
+img.naturalWidth        = 0              ← 破图，没有回落
+```
+
+这与很多人的直觉相反（「404 了浏览器自然会换下一个」）。所以：
+
+- **老浏览器（真不支持 AVIF）是安全的** —— 它在解析阶段就跳过 `<source>`，不发请求
+- **但「支持 AVIF 但文件缺失 / MIME 不对」= 用户看到破图** —— 这是真风险
+
+对策：`pictureHtml()` 给 `<img>` 挂 `onerror="__zfsnAvifFallback(this)"`，
+失败时摘掉同级 `<source>` 并重置 `src`，强制回落主文件。复测结果：
+
+```
+被拦截的 .avif 请求数: 18
+能正常显示: 9/12    ← 9 张作品图全部正常（另 3 个是未展开的留言区图）
+破图数: 0
+picture 内 source 数: 0   ← 兜底已摘除
+```
+
+### 9.3 另一处踩坑：`display:contents` 让 `getBoundingClientRect` 归零
+
+`<picture>` 用了 `display:contents` 后，它自身的 `getBoundingClientRect()`
+**恒为 0**（元素在布局树中不存在）。因此验证脚本**不能**拿
+`img.parentElement.getBoundingClientRect()` 当基准算宽度比例 ——
+必须用 `img.closest('.gitem, .wd-media')`。
+
+这个坑一开始让验证脚本误报 9 处「布局异常」，实际页面完全正常。
+
+### 9.4 第三处踩坑：`_headers` 规则重复命中导致响应头拼接
+
+最初写了 `/assets/*.avif` 与 `/assets/works/*.avif` 两条。线上实测：
+
+```
+Content-Type: image/avif, image/avif
+Cache-Control: public, max-age=2592000, public, max-age=2592000
+```
+
+Cloudflare 对同名响应头是**追加而非覆盖**。删掉子目录那条即可 ——
+实测 `/assets/*.avif` 本身就能匹配到 `assets/works/` 下的文件
+（与仓库里既有的 SVG 注释「`*` 不跨目录分隔符」看似矛盾，但 AVIF 这条
+确实匹配到了，以实测为准）。同源问题参见 `/pvz/pvz-portable.html` 的 charset 重复。
+
+### 9.5 验证结果
+
+| 检查项 | 结果 |
+|---|---|
+| 正常路径 `currentSrc` | ✅ `/assets/works/vrc.avif` |
+| 布局（`display:contents` 后） | ✅ 图宽 255 / 卡片宽 257，无异常 |
+| AVIF 全失败时的兜底 | ✅ 9/9 正常显示，0 破图 |
+| hover 放大 / blur-up | ✅ 行为不变（`img.pimg` 选择器不受 `<picture>` 影响） |
+| 线上 MIME | ✅ `image/avif`（单份，无重复） |
+| 线上缓存头 | ✅ `public, max-age=2592000` |
+| `regress.cjs` | ✅ 全绿 |
+| `verify_deploy.sh` | ✅ 通过（新增第 ⑨ 节 AVIF 专项检查） |
+
+### 9.6 后续可选（第二步，未执行）
+
+若需要继续扩展，按优先级：
+
+1. `assets/xbox/`（972 KB / 15 张）—— 游戏封面首屏可见，收益明确
+2. `assets/bili/`（4.3 MB / 108 张）—— 量最大但对 LCP 影响小，**建议最后考虑**
+
+扩展时只需三步：`optimize_images.py --avif --dirs assets/xbox --no-primary`
+→ 把目录加进 `avifCandidate()` 白名单 → `hash_assets.py`。
+**`avifCandidate()` 的白名单是必需的**：它防止给没有副本的目录拼出注定 404 的候选。

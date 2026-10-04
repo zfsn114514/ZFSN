@@ -357,7 +357,14 @@ done
 for f in "assets/avatar.jpg" "assets/works/vrc.png"; do
   head_only "$SITE/$f" "$TMP/img" >/dev/null
   IC=$(hdrval "$TMP/img" "content-type")
-  SZ=$(curl -sL -o /dev/null -w "%{size_download}" --max-time 45 -A "$UA" "$SITE/$f" 2>/dev/null)
+  # ⚠ 体积取值要重试：沙箱网络偶发抖动时 curl 会返回空串，
+  #   曾经把「avatar.jpg 可下载（22 KB）」误报成「体积异常（0 字节）」。
+  SZ=""
+  for _try in 1 2 3; do
+    SZ=$(curl -sL -o /dev/null -w "%{size_download}" --max-time 45 -A "$UA" "$SITE/$f" 2>/dev/null)
+    [ -n "$SZ" ] && [ "$SZ" -gt 500 ] 2>/dev/null && break
+    sleep 2
+  done
   if [ -n "$SZ" ] && [ "$SZ" -gt 500 ]; then
     ok "$f 可下载（$((SZ/1024)) KB, $IC）"
   else
@@ -366,7 +373,51 @@ for f in "assets/avatar.jpg" "assets/works/vrc.png"; do
 done
 
 # ══════════════════════════════════════════════════════════════
-hdr "⑨ 关键子资源"
+hdr "⑨ AVIF 择优加载（作品图）"
+# ══════════════════════════════════════════════════════════════
+#
+# 为什么这几项重要：<picture> 只在「类型不匹配」时跳过 <source>，
+# 若浏览器支持 AVIF 但文件缺失 / MIME 不对，它会**直接破图**而不回落。
+# 所以 AVIF 副本的「存在 + MIME 正确 + 响应头不重复」必须逐项验证。
+AVIFCOUNT=$(ls assets/works/*.avif 2>/dev/null | wc -l | tr -d ' ')
+if [ "${AVIFCOUNT:-0}" -gt 0 ]; then
+  AVSAMPLE=$(ls assets/works/*.avif 2>/dev/null | head -1)
+  if [ -n "$AVSAMPLE" ]; then
+    # ⚠ 状态码要接 head_only 的**返回值**（它 echo 出来），
+    #   不要去 grep 下载到本地的图片文件 —— 那是二进制，抓不到状态码。
+    ACODE=$(head_only "$SITE/$AVSAMPLE" "$TMP/avif")
+    ACT=$(hdrval "$TMP/avif" "content-type")
+    ACC=$(hdrval "$TMP/avif" "cache-control")
+    if [ "$ACODE" = "200" ]; then
+      ok "AVIF 副本可访问（$AVIFCOUNT 个，样本 $AVSAMPLE）"
+    else
+      bad "AVIF 样本返回 ${ACODE:-（空）}" "检查文件是否已提交并部署"
+    fi
+    # ⚠ 重复判定：`image/avif, image/avif` 是 Cloudflare 追加所致。
+    #   不能笼统地用 *,* 判断 —— Cache-Control 本身天然含逗号。
+    case "$ACT" in
+      "image/avif") ok "  Content-Type: image/avif" ;;
+      "image/avif, image/avif"|*"image/avif, "*)
+        bad "  Content-Type 重复：$ACT" "_headers 里有两条规则同时命中，删掉子目录那条" ;;
+      *) bad "  Content-Type 异常：${ACT:-（空）}" "应为 image/avif，否则 <picture> 会丢弃该候选" ;;
+    esac
+    # 同名头被追加时，整条 Cache-Control 会出现两次（中间以逗号相连）。
+    # 判定方式：把值里的 `public` 计数，出现 2 次即重复。
+    ACCN=$(printf '%s' "$ACC" | grep -o 'public' | wc -l | tr -d ' ')
+    if [ "${ACCN:-0}" -gt 1 ]; then
+      bad "  Cache-Control 重复（出现 ${ACCN} 次）：$ACC" "同上，Cloudflare 对同名头是追加"
+    elif [ -n "$ACC" ]; then
+      ok "  Cache-Control: $ACC"
+    else
+      warn "  Cache-Control 为空" "长缓存规则未生效"
+    fi
+  fi
+else
+  warn "仓库内没有 assets/works/*.avif" "若已执行 AVIF 落地，检查是否漏提交"
+fi
+
+# ══════════════════════════════════════════════════════════════
+hdr "⑩ 关键子资源"
 # ══════════════════════════════════════════════════════════════
 for f in "llms.txt" "assets/favicon.svg"; do
   C=$(fetch "$SITE/$f" /dev/null)

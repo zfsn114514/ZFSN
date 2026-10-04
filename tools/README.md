@@ -32,7 +32,7 @@ tools/
 ├── build_bili_profile.py     ← ⚠ 历史脚本（职责已被 build_bili_full.py 覆盖）
 │
 └── dev/
-    ├── verify_deploy.sh        ← 部署后自动线上验证（9 个检查段）
+    ├── verify_deploy.sh        ← 部署后自动线上验证（10 个检查段）
     ├── sanity_frontend.js      ← 前端脚本冒烟测试（顶层运行时错误）
     ├── check_bili_render.js    ← B站 页渲染回归（条数 / 懒加载 / 排序 / 搜索 / 破图）
     ├── check_steam_merge.js    ← Steam 自有 + 家庭共享 的合并契约检查
@@ -283,10 +283,31 @@ D1 里存的 `a.png` 立刻 404。所以统一「原地压缩、同名覆盖」�
 python tools/optimize_images.py --dry-run                 # 先看收益
 python tools/optimize_images.py --backup tools/orig-images/$(date +%Y%m%d)
 python tools/optimize_images.py --only png                # 只压 PNG
+
+# 只给指定子目录产 AVIF 副本（不改主文件），配合前端 <picture>
+python tools/optimize_images.py --avif --dirs assets/works --no-primary
 ```
 
 实测 133 张 9.35 MB → 5.64 MB（省 40%）。收益全在**截图类 PNG** 上；
 摄影 JPG 本来就压过，再压只省 10~20%。
+
+#### AVIF 副本（`--avif` / `--dirs` / `--no-primary`）
+
+默认**不产** AVIF —— 因为前端没有 `<picture>` 时这些文件永远不会被请求，
+纯属浪费仓库体积。目前已对 `assets/works/` 落地（详见 `docs/avif-evaluation.md`）。
+
+| 参数 | 作用 |
+|---|---|
+| `--avif` | 额外产出 AVIF 副本 |
+| `--dirs a,b` | 只处理这些子目录（相对站点根），默认扫 `assets` 全量 |
+| `--no-primary` | 不改写主文件，**只产 AVIF 副本** |
+
+产物命名是标准单后缀：`vrc.png` → `vrc.avif`（不是 `vrc.png.avif`）。
+
+⚠ **产了 AVIF 就要同步三处**，否则会出现「支持 AVIF 的浏览器破图」：
+1. `assets/js/app.js` 的 `avifCandidate()` 白名单里加上这个目录
+2. `_headers` 里有 `/assets/*.avif` 的 `image/avif` 规则（一条即可，**别写两条**）
+3. 重跑 `hash_assets.py`
 
 ### `build_sitemap.py` —— 生成 sitemap.xml
 
@@ -333,10 +354,11 @@ sitemap；反复提交未变动的 URL 会被当垃圾（返回 429）并降低�
 
 ### `dev/verify_deploy.sh` —— 部署后自动线上验证
 
-部署完跑一遍，9 个检查段覆盖整条交付链：可达性、charset、
+部署完跑一遍，10 个检查段覆盖整条交付链：可达性、charset、
 哈希静态资源（JS + CSS，含 `text/css` 与 `immutable` 缓存头，
 以及「首页**不应**长缓存」）、JSON-LD、RSS、sitemap/robots（含死链检测）、
-统计接口、光标与图片、关键子资源（**缺失资源须 404 而非 500**）。
+统计接口、光标与图片、**AVIF 副本（存在性 + `image/avif` + 头不重复）**、
+关键子资源（**缺失资源须 404 而非 500**）。
 
 ```bash
 bash tools/dev/verify_deploy.sh
@@ -344,11 +366,17 @@ bash tools/dev/verify_deploy.sh
 
 输出分 通过 / 失败 / 警告 三类，末尾给汇总。
 **警告**是「功能未部署」这类可接受项，**失败**是「部署了但坏了」——
-两者分开避免把未上线误判成故障。约 4 分钟（20+ 请求，每个带 3 次重试，
+两者分开避免把未上线误判成故障。约 4~5 分钟（20+ 请求，每个带 3 次重试，
 本机走代理时裸 curl 偶发 000）。
 
-⚠ **改脚本时注意**：`hdrval` 内部已给参数拼 `.h`（响应头存在 `$out.h`），
-调用时**只传基础名**，别写成 `"$TMP/x.h"` —— 会变成 `x.h.h` 读不到值。
+⚠ **改脚本时注意两点**：
+
+1. `hdrval` 内部已给参数拼 `.h`（响应头存在 `$out.h`），
+   调用时**只传基础名**，别写成 `"$TMP/x.h"` —— 会变成 `x.h.h` 读不到值。
+2. 取 HTTP 状态码要接 `head_only` 的**返回值**（它 `echo` 出来），
+   不要去 grep 下载下来的文件 —— 图片是二进制，抓不到状态码。
+3. 判断响应头「是否重复」不能笼统用 `*,*`：`Cache-Control` 本身天然含逗号
+   （`public, max-age=2592000`）。要针对具体值判（如数 `public` 出现几次）。
 且每个检查的失败分支必须**打印实际取到的值**（`${VAL:-空}`），
 否则空值会静默「通过」，检查形同虚设。
 
