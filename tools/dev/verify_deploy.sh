@@ -570,7 +570,8 @@ fi
 # ══════════════════════════════════════════════════════════════
 hdr "⑫ 关键子资源"
 # ══════════════════════════════════════════════════════════════
-for f in "llms.txt" "assets/favicon.svg"; do
+# 图标：Google 抓 favicon 时优先在根路径找 /favicon.ico（只认位图，不认 SVG）
+for f in "favicon.ico" "favicon-32.png" "favicon-16.png" "apple-touch-icon.png" "llms.txt" "assets/favicon.svg"; do
   C=$(fetch "$SITE/$f" /dev/null)
   [ "$C" = "200" ] && ok "$f 200" || warn "$f 返回 $C"
 done
@@ -641,7 +642,7 @@ SELF_CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$SIT
 for P in "/" "/pvz/pvz-portable" "/admin"; do
   B=$(curl -sL --max-time 25 -A "$UA" "$SITE$P?cb=$RANDOM" -o "$TMP/h.html" -w "%{http_code}")
   SZ=$(wc -c < "$TMP/h.html" | tr -d ' ')
-  if [ "$B" = "200" ] && [ "${SZ:-0}" -gt 500 ] && grep -qi '<!DOCTYPE html' "$TMP/h.html"; then
+  if [ "$B" = "200" ] && [ "${SZ:-0}" -gt 500 ] && grep -qi '<!doctype html' "$TMP/h.html"; then
     ok "HTML 页面 $P 正常（200, ${SZ}B）"
   else
     bad "HTML 页面 $P 返回 $B / ${SZ}B" \

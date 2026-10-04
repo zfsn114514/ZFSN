@@ -82,8 +82,19 @@
   ]
 }
 </script>
+<!-- 站点图标。★ 顺序有讲究：
+     浏览器按声明顺序取，第一个支持的格式胜出（SVG 质量最好、给现代浏览器），
+     而 Google 抓图标**只认位图**（ico/png/jpg/webp，不认 SVG），
+     且它优先在**根路径**找 /favicon.ico。所以两套都要给：
+       · SVG  → 浏览器标签页
+       · .ico → Google 搜索结果的图标（传统 + 兼容）
+       · png  → Google 移动端 / 部分新版展示
+     详见 tools/gen_favicons.cjs（改图标后重跑它重新生成） -->
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
-<link rel="apple-touch-icon" href="assets/avatar.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="stylesheet" href="assets/css/app.59341de6.css">
 </head>
 <!-- data-page 标记当前页，供弹幕层判断"是否只在首页显示"。
