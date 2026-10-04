@@ -73,6 +73,30 @@ set STEAM_ID=7656119xxxxxxxxxx
 **而 80 端口（明文 HTTP）是通的。**
 
 `common.steam_api_base()` 会探测一次并缓存结果，之后所有请求都走通的通道。
+
+---
+
+## 发布一次内容，完整走这条流程
+
+```bash
+# 1) 更新数据（本地 → JSON）
+tools\更新数据.bat
+
+# 2) 静态资源有改动时重新生成内容哈希
+python tools/hash_assets.py
+
+# 3) 提交并推送（GitHub push 自动构建，约 1 分钟）
+git add -A && git commit -m "..." && git push
+
+# 4) 等构建完，线上验证
+bash tools/dev/verify_deploy.sh
+
+# 5) ★ 通知搜索引擎（内容真的变了才跑）
+python tools/indexnow.py
+```
+
+第 5 步最容易被忘 —— 忘了必应就不会知道页面更新了。
+**只有新增/更新/删除页面时才跑**，别每次 push 都跑（会被当垃圾）。
 回退到 HTTP 时脚本会明确提示 —— 那意味着 `api_key` 会以明文经过链路，
 本机/家庭网络下没问题，**别在公共网络里跑**。
 
@@ -280,10 +304,38 @@ python tools/build_sitemap.py --dry-run  # 只看会写出什么
 线上作品拉取失败时会**打警告但仍生成**（宁可少几条，也不要什么都生成不出来）。
 新增静态页就加到脚本顶部的 `STATIC_PAGES`。
 
+### `indexnow.py` —— 主动提交 URL 给必应（★ 内容更新后跑）
+
+把 URL 主动推送给搜索引擎，比在必应站长工具点「请求索引」快得多 ——
+后者只是排队等调度，实测经常几周没动静。
+
+```bash
+python tools/indexnow.py              # 提交默认列表（首页 + PvZ 页）
+python tools/indexnow.py --url <URL>  # 提交单个 URL（可重复传）
+python tools/indexnow.py --all        # 提交 sitemap 里的全部 URL
+python tools/indexnow.py --dry-run    # 只看要提交什么，不真发
+```
+
+一次提交**同步给所有参与引擎**（Bing / Yandex / Seznam / Naver），
+不用分别 ping。**Google 不参与 IndexNow**，它只能靠 sitemap + 自然抓取。
+
+- 密钥文件在仓库根目录 `8418a371656250f21c912c2f7ff3dced.txt`，
+  **不能删**（删了提交会返回 403）
+- 脚本会**先自查密钥文件可访问性**再提交 —— 403 基本都是这个原因
+- 状态码：`200` 成功（密钥已验证）/ `202` 已接受（验证中，首次常见）/
+  `403` 密钥无效 / `422` URL 不属于该 host / `429` 提交过频
+
+**⚠ 只提交真正变更的页面。** IndexNow 是事件信号，不是每晚重发的
+sitemap；反复提交未变动的 URL 会被当垃圾（返回 429）并降低抓取优先级。
+**新增 / 更新 / 删除**这三种情况才提交。
+
+背景与完整诊断见 `docs/bing-indexing-diagnosis.md`。
+
 ### `dev/verify_deploy.sh` —— 部署后自动线上验证
 
 部署完跑一遍，9 个检查段覆盖整条交付链：可达性、charset、
-哈希 JS（含 `immutable` 缓存头）、JSON-LD、RSS、sitemap/robots（含死链检测）、
+哈希静态资源（JS + CSS，含 `text/css` 与 `immutable` 缓存头，
+以及「首页**不应**长缓存」）、JSON-LD、RSS、sitemap/robots（含死链检测）、
 统计接口、光标与图片、关键子资源（**缺失资源须 404 而非 500**）。
 
 ```bash
@@ -294,6 +346,11 @@ bash tools/dev/verify_deploy.sh
 **警告**是「功能未部署」这类可接受项，**失败**是「部署了但坏了」——
 两者分开避免把未上线误判成故障。约 4 分钟（20+ 请求，每个带 3 次重试，
 本机走代理时裸 curl 偶发 000）。
+
+⚠ **改脚本时注意**：`hdrval` 内部已给参数拼 `.h`（响应头存在 `$out.h`），
+调用时**只传基础名**，别写成 `"$TMP/x.h"` —— 会变成 `x.h.h` 读不到值。
+且每个检查的失败分支必须**打印实际取到的值**（`${VAL:-空}`），
+否则空值会静默「通过」，检查形同虚设。
 
 ---
 
