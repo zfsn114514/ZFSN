@@ -600,6 +600,88 @@
     return imgPath(w.cover, i);
   }
 
+  /* AVIF 择优加载（<picture> 降级链）。
+     ────────────────────────────────────────────────────────────
+     背景：图片主文件保留了原扩展名（.jpg/.png），内容其实已是 WebP。
+     对**首屏与详情页大图**额外产出了同名 .avif 副本（省约 40% 体积）。
+     浏览器支持 AVIF 就下更小的那份，不支持（如 Safari < 16.4）自动回落主文件。
+
+     为什么用 <picture> 而不是直接改 img.src：
+       <picture><source> 是浏览器**原生**的择优机制 —— 它在解析 HTML 时
+       就决定下载哪个候选，不需要 JS 先探测再换 URL（那样会多一次请求）。
+       而且与现有 blurUp() 零冲突：实测 img.src 被 blurUp 换成占位图后，
+       浏览器依旧按 <source> 选 currentSrc（详见 docs/avif-evaluation.md）。
+
+     用法：把 `<img …>` 换成 pictureHtml(url, imgAttrsHtml)。
+       原图路径经 imgPath 归一化后可能仍是 data: URI（占位）或绝对 URL，
+       这两种情况**不产 AVIF**，直接原样返回 <img>，避免拼出无效 srcset。
+
+     ⚠⚠ 只对**确实存在 .avif 副本**的目录开候选（见 avifCandidate 的白名单）。
+       不能对没有副本的目录也包 <picture> —— 因为 <picture> 的降级语义是
+       「**类型/条件不匹配**时跳过 <source>」，**不是**「加载失败后回主文件」。
+       实测：把 .avif 请求全改成网络失败（BlockedByClient）后，浏览器
+       停在 currentSrc=.avif 且 naturalWidth=0，直接破图，**不会回落**。
+       所以「文件不存在 / MIME 不对」= 用户看到破图，必须在源头杜绝。
+       （真正不支持 AVIF 的老浏览器是另一回事：它会在解析阶段就跳过
+         <source>，压根不发请求，那条链路是安全的。） */
+  function avifCandidate(url){
+    // ⚠ 只对**仓库内**的静态图片（assets/ 开头）生成候选。
+    //   后端媒体路径（media/... 走 API_BASE 拼前缀）没有 .avif 副本，
+    //   若也拼一个出来，浏览器会发一次注定 404 的请求再回落 ——
+    //   实测第一件作品的封面就是 media/works/image/xxx.jpg，
+    //   曾被错拼成 .avif 造成无用请求（transferSize 仅 309B 的 404）。
+    if (!url || /^(data:|blob:)/i.test(url)) return null;
+    // 只认「已生成 .avif 副本」的目录。目前只有 assets/works/ 有，
+    // 其他目录（bili / xbox / steam / 头像）没有 —— 若也拼出候选，
+    // 就是一次注定 404 的请求。将来扩展目录时，这里加白名单即可。
+    if (url.indexOf("assets/works/") !== 0) return null;
+    var m = /^(.*)\.(jpe?g|png|webp)$/i.exec(url);
+    if (!m) return null;
+    return m[1] + ".avif";
+  }
+
+  /** 把 <img> 包进 <picture>（带 AVIF 候选）。
+   *  attrs 是拼好的 <img> 属性串（不含 src），src 单独传。
+   *  不满足条件时退回普通 <img>，行为与改造前完全一致。
+   *
+   *  ── 为什么要挂 onerror 兜底 ──────────────────────────────
+   *  <picture> 只在「类型不匹配」时跳过 <source>；若浏览器**支持** AVIF
+   *  但文件缺失 / MIME 不对 / 网络失败，它**不会**回主文件，而是直接破图。
+   *  实测已复现（见 docs/avif-evaluation.md 的降级链实测）。
+   *
+   *  兜底做法：img 解出来的图若失败（naturalWidth 仍为 0），就摘掉同级的
+   *  <source> 并把 src 重新指回主文件 —— 此时浏览器只能选主文件，成功加载。
+   *  只在真的出错时才多一次请求，正常路径零开销。 */
+  function pictureHtml(src, attrs){
+    var avif = avifCandidate(src);
+    if (!avif) return '<img src="' + esc(src) + '" ' + attrs + '>';
+    return '<picture>' +
+             '<source type="image/avif" srcset="' + esc(avif) + '">' +
+             '<img src="' + esc(src) + '" ' + attrs +
+               ' onerror="__zfsnAvifFallback(this)"' +
+             '>' +
+           '</picture>';
+  }
+
+  /** AVIF 候选加载失败时的兜底：摘掉 <source>，强制回落主文件。
+   *  全局暴露（HTML 属性里调用），幂等 —— 第二次失败不再处理，避免死循环。 */
+  window.__zfsnAvifFallback = function(img){
+    if (!img || img.__avifFb) return;
+    img.__avifFb = 1;
+    var pic = img.parentElement;
+    if (pic && pic.tagName === "PICTURE") {
+      var srcs = pic.querySelectorAll("source");
+      for (var i = 0; i < srcs.length; i++) {
+        if ((srcs[i].getAttribute("type") || "").indexOf("avif") >= 0) srcs[i].remove();
+      }
+    }
+    var real = img.getAttribute("src");     // 主文件（.jpg/.png）
+    if (real) {
+      img.removeAttribute("src");
+      img.setAttribute("src", real);        // 重新触发一次选择，这次只剩主文件
+    }
+  };
+
   /* 媒体地址（视频 / 下载文件）——
      这类文件**不在 git 仓库里**（几十 MB 的视频塞进仓库会拖慢每次构建），
      它们存在家里服务器上，由后端经 Cloudflare 隧道流式提供。
@@ -957,7 +1039,7 @@
           '<button class="gact" data-cmt="' + w.id + '" title="评论">' +
             ICON_CHAT + '<span class="n">' + (w.comments || 0) + '</span></button>' +
         '</div>' +
-        '<img alt="' + esc(w.title) + '" loading="lazy" decoding="async">' +
+        pictureHtml(img, 'alt="' + esc(w.title) + '" loading="lazy" decoding="async"') +
         '<div class="gmeta">' +
           badgeHtml(w) +
           '<div class="gt">' + esc(w.title) + '</div>' +
@@ -1241,8 +1323,9 @@
     } else {
       // 渐进加载：详情页主图通常最大，最值得先给占位再淡入。
       // 注意**不加** loading="lazy" —— 这是首屏主角图，越早开始下载越好。
+      // 包 <picture> 让它优先下 AVIF（详情页大图是 LCP 主角，最受益）。
       mediaInner =
-        '<img alt="' + esc(w.title) + '" id="wd-img" decoding="async">' +
+        pictureHtml(imgs[0] || "", 'alt="' + esc(w.title) + '" id="wd-img" decoding="async"') +
         '<span class="zoombadge">' + zoomSvg + '原图</span>';
     }
 

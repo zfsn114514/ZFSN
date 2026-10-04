@@ -51,6 +51,19 @@
 /assets/*.webp
   Cache-Control: public, max-age=2592000
 
+# AVIF 副本（作品图 AVIF 择优加载用，见 docs/avif-evaluation.md）。
+# ⚠ 必须显式给 Content-Type：Workers 静态资源层的扩展名→MIME 表若
+#   不认识 .avif，会退回 application/octet-stream —— <picture> 的
+#   <source type="image/avif"> 匹配的是**声明类型**，MIME 不对会导致
+#   浏览器丢弃这个候选、回落到主文件，AVIF 就白做了。
+/assets/*.avif
+  Content-Type: image/avif
+  Cache-Control: public, max-age=2592000
+
+/assets/works/*.avif
+  Content-Type: image/avif
+  Cache-Control: public, max-age=2592000
+
 /assets/*.gif
   Cache-Control: public, max-age=2592000
 
@@ -134,11 +147,11 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/assets/js/app.46c43db9.js
+/assets/js/app.9c6cf9b2.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/danmaku.49303c11.js
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/app.c6a3c2c4.css
+/assets/css/app.09d0b321.css
   Cache-Control: public, max-age=31536000, immutable

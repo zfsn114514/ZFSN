@@ -27,6 +27,16 @@ PNG 是无损格式，截图这类有大片渐变和抗锯齿文字的图，无�
     python optimize_images.py --dry-run      # 只报告，不写盘
     python optimize_images.py --only png     # 只处理 PNG（默认 all）
     python optimize_images.py --no-avif      # 跳过 AVIF（编码慢）
+
+    # 只给指定子目录生成 AVIF（配合前端 <picture>，避免全量膨胀仓库）
+    python optimize_images.py --avif --dirs assets/works --no-primary
+
+━━ AVIF 产物命名（2026-10-04 改）━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+旧行为是 `p + ".avif"`，即 `w20261004-xxx.jpg.avif`（双后缀）。
+问题是：`.avif` 的扩展名推导会拿到 `avif` 没问题，但**双后缀语义不洁**，
+某些 CDN / MIME 嗅探实现会按最后一段 `.avif` 判对，也可能按第一段 `.jpg`
+判成 image/jpeg —— 属于不确定性。现改为标准单后缀 `w20261004-xxx.avif`
+（用 splitext 剥掉原扩展名再拼 `.avif`），与 <picture> 里的 srcset 对齐。
 """
 import io
 import os
@@ -109,11 +119,18 @@ def encode(im, fmt, quality):
     return b.getvalue()
 
 
-def collect(root, only):
+def collect(root, only, dirs=None):
+    """收集待处理图片。
+
+    dirs: 若给定，只扫描这些相对站点根的子目录（用于「只给作品图产 AVIF」这类
+          局部需求）；None 表示扫默认的 SCAN_DIRS 全量。
+    """
+    scan = dirs if dirs else SCAN_DIRS
     out = []
-    for d in SCAN_DIRS:
+    for d in scan:
         base = os.path.join(root, d)
         if not os.path.isdir(base):
+            print("! 目录不存在，跳过：%s" % d)
             continue
         for dirpath, _dirnames, filenames in os.walk(base):
             parts = set(os.path.relpath(dirpath, root).split(os.sep))
@@ -134,6 +151,12 @@ def collect(root, only):
     return sorted(out)
 
 
+def avif_path_for(p):
+    """assets/works/a.jpg → assets/works/a.avif（剥掉原扩展名，标准单后缀）。"""
+    stem, _ext = os.path.splitext(p)
+    return stem + ".avif"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="只报告，不写文件")
@@ -149,7 +172,16 @@ def main():
                     help="（已废弃，现为默认行为）")
     ap.set_defaults(avif=False)
     ap.add_argument("--backup", default="", help="把原图备份到此目录（建议填）")
+    ap.add_argument("--dirs", default="",
+                    help="只处理这些子目录（逗号分隔，相对站点根），"
+                         "如 --dirs assets/works,assets/xbox；默认扫 assets 全量")
+    ap.add_argument("--no-primary", dest="primary", action="store_false",
+                    help="不改写主文件，只产出 AVIF 副本（配合 <picture> 的轻量接入）")
+    ap.set_defaults(primary=True)
     args = ap.parse_args()
+
+    dirs = [d.strip().strip("/").replace("\\", "/") for d in args.dirs.split(",") if d.strip()] \
+        if args.dirs else None
 
     root = common.site_root()
     common.banner("图片再压缩")
@@ -161,14 +193,21 @@ def main():
         print("! 本机 Pillow 不支持 AVIF，自动跳过 AVIF 产物。")
         args.avif = False
 
-    files = collect(root, args.only)
-    print("待处理 %d 个文件（>= %s，目录 %s）" % (len(files), human(MIN_BYTES), ",".join(SCAN_DIRS)))
+    files = collect(root, args.only, dirs)
+    scan_desc = ",".join(dirs) if dirs else ",".join(SCAN_DIRS)
+    print("待处理 %d 个文件（>= %s，目录 %s）" % (len(files), human(MIN_BYTES), scan_desc))
     if args.backup:
         print("原图备份到：%s" % args.backup)
+    if not args.primary:
+        print("模式：只产 AVIF 副本，不改写主文件（--no-primary）")
+    if not args.dry_run and not args.primary and not args.avif:
+        print("! --no-primary 但没开 --avif，什么都不会产出。加上 --avif。")
+        return 1
     print()
 
-    tot_before = tot_after = 0
+    tot_before = tot_after = tot_avif = 0
     saved_list = []
+    avif_saved_list = []
     bad = []
 
     print("%-46s %9s %9s %9s %7s %6s" % ("文件", "原", "webp主", "avif", "省", "PSNR"))
@@ -187,21 +226,25 @@ def main():
         has_alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
         note = ""
 
-        # ── 主文件：原地换内容，保留文件名 ──
+        # ── 主文件：原地换内容，保留文件名（--no-primary 时跳过）──
         # 有 alpha 的必须是 WEBP/PNG，不能落 JPEG
         work = im.convert("RGBA" if has_alpha else "RGB")
-        try:
-            wb = encode(work, "WEBP", WEBP_Q)
-        except Exception as e:
-            print("%-46s  跳过：webp 编码失败 (%s)" % (rel, e))
-            continue
+        wb = None
+        if args.primary:
+            try:
+                wb = encode(work, "WEBP", WEBP_Q)
+            except Exception as e:
+                print("%-46s  跳过：webp 编码失败 (%s)" % (rel, e))
+                continue
 
-        # 安全阀：压完反而变大就别换（小图 / 已高度优化的图会出现）
-        if len(wb) >= before:
-            note = "webp不划算，保留原文件"
-            after = before
+            # 安全阀：压完反而变大就别换（小图 / 已高度优化的图会出现）
+            if len(wb) >= before:
+                note = "webp不划算，保留原文件"
+                after = before
+            else:
+                after = len(wb)
         else:
-            after = len(wb)
+            after = before    # 不动主文件
 
         # ── AVIF 副本（默认不生成，见 --avif 说明）──
         ab = None
@@ -211,9 +254,9 @@ def main():
             except Exception as e:
                 note = (note + " avif失败").strip()
 
-        # 质量自检（只在真的替换时算）
+        # 质量自检（只在真的替换主文件时算）
         q = None
-        if after != before:
+        if args.primary and after != before:
             try:
                 back = Image.open(io.BytesIO(wb)).convert("RGB")
                 q = psnr(work.convert("RGB"), back)
@@ -239,6 +282,9 @@ def main():
         tot_after += after
         if after != before:
             saved_list.append((before - after, rel))
+        if ab:
+            avif_saved_list.append((before - len(ab), rel))
+            tot_avif += len(ab)
 
         if args.dry_run:
             continue
@@ -251,14 +297,15 @@ def main():
                 dst = os.path.join(bdir, os.path.basename(rel))
                 if not os.path.exists(dst):
                     shutil.copy2(p, dst)
-            if after != before:
+            if wb is not None and after != before:
                 # 原子替换：先写临时文件再 os.replace，避免中断留下半个图
                 tmp = p + ".tmpimg"
                 with open(tmp, "wb") as f:
                     f.write(wb)
                 os.replace(tmp, p)
             if ab:
-                with open(p + ".avif", "wb") as f:
+                # 标准单后缀：xxx.jpg → xxx.avif（不再产出 xxx.jpg.avif）
+                with open(avif_path_for(p), "wb") as f:
                     f.write(ab)
         except Exception as e:
             bad.append((rel, str(e)))
@@ -269,6 +316,11 @@ def main():
         human(tot_before), human(tot_after),
         human(tot_before - tot_after),
         (1 - tot_after / float(tot_before)) * 100 if tot_before else 0))
+
+    if avif_saved_list:
+        print("AVIF 副本合计：%s（相对原文件省 %.1f%%）" % (
+            human(tot_avif),
+            (1 - tot_avif / float(tot_before)) * 100 if tot_before else 0))
 
     if saved_list:
         print()

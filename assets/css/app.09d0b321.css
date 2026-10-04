@@ -656,6 +656,31 @@ body:has(.topbar.scrolled) .gfilter{top:58px}
 /* 无图占位（用 SVG 渐变兜底时）需要一个最小高度，否则会塌成一条线 */
 .gitem img[src^="data:image/svg+xml"]{min-height:180px;object-fit:cover}
 
+/* ── <picture> 包装层不参与布局 ────────────────────────────────
+ *
+ * 作品卡片与详情页大图现在用 <picture> 包了一层（为 AVIF 择优加载，见 app.js
+ * 的 pictureHtml()）。而 <picture> 默认是 **inline** 元素，会在 img 外
+ * 多出一个行盒：img 的 width:100% 是相对 <picture> 算的，而 <picture>
+ * 宽度又由内容决定 —— 典型的循环依赖，实测会把图片压成一行高的小条。
+ *
+ * 解法是 display:contents —— 让 <picture> 在布局树上「消失」，
+ * 它唯一的子元素 <img> 直接成为 .gitem / .wd-media 的子元素参与布局。
+ * 这样上面所有 `.gitem img{…}` / `.wd-media img{…}` 规则**行为完全不变**，
+ * 包括 `img[src^="data:image/svg+xml"]` 这种属性选择器也不会失配。
+ *
+ * ⚠ 不用 display:block 的原因：那样 <picture> 会变成一个块级盒子，
+ *   虽然也能撑开宽度，但 `.gitem > img` 之类的直接子代选择器会失配，
+ *   且 blur-up 的占位高度计算要多绕一层。contents 是零副作用方案。
+ *
+ * 兼容性：display:contents 在 Chrome 65+ / Safari 11.1+ / Firefox 37+ 可用。
+ *   **Safari 旧版（< 15）对 contents 用在普通元素上有已知 bug**，但本项目的
+ *   降级目标正是老 Safari —— 它们同样不支持 AVIF，此时 <source> 被忽略、
+ *   只渲染 <img>，而 picture 又被 contents 处理掉，所以布局问题不存在。
+ *   为保险，下一行的 fallback 让不认识 contents 的引擎退回 inline，
+ *   （inline 对单图场景其实也够用，因为 img 是块级）。
+ */
+picture{display:contents}
+
 /* ── 图片渐进加载（blur-up）────────────────────────────────────
  *
  * 配合 assets/js/app.js 的 blurUp()：src 先指向一张几 KB 的 SVG 渐变，
