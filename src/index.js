@@ -213,6 +213,18 @@ async function serveAsset(request, env, p) {
   try {
     res = await env.ASSETS.fetch(request);
   } catch (e) {
+    /* ★ 必须自己补全 index.html，否则首页会 404。
+     *
+     * CF 静态资源层的「自动补 index.html」是**在它自己处理请求时**做的。
+     * 一旦某个路径被 wrangler.toml 的 `assets.run_worker_first` 命中，
+     * 请求就会改走 Worker —— 此时 ASSETS.fetch() 拿到的是**原始路径**，
+     * `/` 不会自动对应到 `index.html`、目录页同理，于是全部 404。
+     *
+     * 实测踩过：为了让 workers.dev 的 301 对首页生效而加了 run_worker_first，
+     * 结果 `/` 和 `/pvz/pvz-portable` 双双 404，整站 HTML 挂掉。
+     * 静态层不报错、不告警，只是静默返回 404。 */
+    const alt = await assetWithIndexHtml(request, env, p);
+    if (alt) return alt;
     console.warn("[assets] 未命中，按 404 处理: %s", p);
     return notFound();
   }
@@ -222,6 +234,52 @@ async function serveAsset(request, env, p) {
     return new Response(res.body, { status: 200, headers: h });
   }
   return res;
+}
+
+/**
+ * ASSETS 未命中时，按 CF 的 `html_handling: auto-trailing-slash` 语义
+ * 手动补全「无扩展名路径 → HTML」的两条映射。
+ *
+ * 为什么需要：CF 静态资源层的自动补全是**在它自己处理请求时**做的。
+ * 一旦某路径被 wrangler.toml 的 `assets.run_worker_first` 命中，请求改走
+ * Worker —— 此时 ASSETS.fetch() 拿到的是**原始路径**，补全不再发生。
+ *
+ * 实测踩过：为让 workers.dev 的 301 对首页生效而加了 run_worker_first，
+ * 结果 `/` 和 `/pvz/pvz-portable` 双双 404，整站 HTML 挂掉，
+ * 静态层不报错、不告警，只是静默返回 404。
+ *
+ * ⚠ **两种映射都要试，且顺序不能反**（先试哪个以实测为准，别推理）：
+ *    `/`                      → `/index.html`          （根目录）
+ *    `/a/b`（无扩展名）        → `/a/b.html`            （本站 pvz 就是这种：
+ *                                                        仓库里是
+ *                                                        pvz/pvz-portable.html，
+ *                                                        是**文件**不是目录）
+ *                              → `/a/b/index.html`      （另一种常见结构）
+ *    只试 index.html 会漏掉本站 pvz 页 —— 它的真实文件是 `x.html`。
+ *
+ * ⚠ 只在 200 时返回；非 200 一律 null，让上层走 notFound()。
+ *    这里绝不能「兜底返回 200 空页」—— 那会把真 404 掩盖成假成功。
+ */
+async function assetWithIndexHtml(request, env, p) {
+  // 只对无扩展名的路径重试。有扩展名（如 .css/.txt）没命中就是真 404。
+  if (p !== "/" && /\.[a-z0-9]+$/i.test(p)) return null;
+
+  const candidates = p === "/"
+    ? ["/index.html"]
+    : [p + ".html", p + "/index.html"];
+
+  for (const target of candidates) {
+    try {
+      const r2 = await env.ASSETS.fetch(new Request("https://placeholder.local" + target, {
+        method: "GET",
+        headers: request.headers,
+      }));
+      if (r2 && r2.status === 200) return r2;
+    } catch (e) {
+      /* 试下一个候选；都不中就是真的没有，交给上层 404 */
+    }
+  }
+  return null;
 }
 
 /* ══════════════════════════════════════════════════════════════
