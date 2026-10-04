@@ -704,7 +704,8 @@ body:has(.topbar.scrolled) .gfilter{top:58px}
   .gtl-date{display:none}   /* 窄屏日期已在左轴上有年份/月份，重复了 */
 }
 
-
+/* ═══ 作品墙：CSS 多列（瀑布流）布局 ═══════════════════════════
+ *
  * 改成 CSS 多列布局（columns），每张卡片按**图片原始宽高比**显示，
  * 不再统一裁成 4/5。这样竖构图的作品不会被拦腰砍掉，
  * 横构图也不会被拉成一柱擎天。
@@ -1759,7 +1760,12 @@ footer .rss svg{width:11px;height:11px;flex:0 0 11px}
   .avatar-stage{width:148px;height:148px}
   .links{flex-direction:column;align-items:stretch;margin-top:34px}
   .card{min-width:0;width:100%}
-  .gallery{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  /* 作品墙已改 CSS columns 布局（见上面的 .gallery 规则），
+     这里要写 column-width 而不是 grid-template-columns ——
+     写 grid 属性对 columns 容器完全无效（曾是死代码）。
+     手机上 140px 目标列宽 ≈ 2 列。 */
+  .gallery{column-width:140px;column-gap:12px}
+  .gitem{margin:0 0 12px}
   /* 之前是 1fr（单列全宽），每个塞满整个手机宽度，作品卡大得离谱。
      改成 auto-fill + 小 minmax，让手机端也是 2~3 列网格。 */
   .vgrid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
@@ -1846,8 +1852,21 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
 /* ═══ 自定义光标（必须放在样式表最末尾）═══════════════════════
  *
  * 为什么在最后：站点各处散落着 `cursor:pointer`（`.card`、`.vitem`、
- * `#lb .close` …），它们写在前面。CSS 特异性相同时**后写的赢**，
- * 所以这一块必须排在后面才能真正覆盖掉它们。
+ * `#lb .close` …），它们写在前面。CSS 特异性相同时**后写的赢**。
+ *
+ * ⚠⚠ 但「写在最后」远远不够 —— 特异性只要不同，写多后都没用：
+ *   正文里有 `.nav button` (0,1,1)、`.btools .bseg button` (0,2,1)、
+ *   `#lb .close` / `#danmaku-toggle` (1,x,x) 这类**更高特异性**的规则，
+ *   本块若只用标签/单类选择器（(0,0,1)/(0,1,0)）会被它们压掉。
+ *   【踩过】顶栏三个按钮一直是系统手型，元凶就是 259 行的
+ *   `.nav button{cursor:pointer}` —— 它 (0,1,1) 压过了这里的 `button` (0,0,1)。
+ *
+ * 所以本块用两条保险，确保**任何**位置的 cursor 都能被覆盖：
+ *   ① `:is(...)` 把整组选择器的特异性**统一抬到组内最高的那个**
+ *      （`:is()` 取参数里最高特异性，(0,1,1) 那种写法就够了；
+ *       再用 `:where(html)` 前缀只会降特异性，所以不用它）
+ *   ② `!important` —— cursor 属于「覆盖式」需求，不存在别的样式
+ *      需要压过它；ID 选择器 (1,0,0) 只能靠 !important 稳定赢下
  *
  * 为什么包 pointer:fine：触屏设备根本没有光标，规则写了也没用；
  * 而 pointer:coarse 下部分安卓浏览器仍会去请求光标图片，白费流量。
@@ -1856,24 +1875,33 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
  * 不写的话浏览器按 (0,0) 算，三角的顶点就偏到左上角外面去了。
  */
 @media (pointer:fine){
-  html,body{cursor:var(--cur)}
+  html,body{cursor:var(--cur) !important}
 
   /* 可交互元素换成发光圆环。
-     逐个类名列出，而不是只写 `a,button` ——
-     站点里不少 div 挂 click（卡片、缩略图、头像翻转），
-     只用标签选择器会漏掉一大半。 */
-  a,button,label,summary,select,option,
-  [role="button"],[onclick],[tabindex]:not([tabindex="-1"]),
-  .card,.gitem,.vitem,.vcard,.rcard,.wd-media,.wd-thumbs button,
-  .avatar-stage,.nav a,.topbar .mark,.tabs button,.close,
-  .zoombadge,.play,.dm-close{cursor:var(--cur-point)}
+     逐个列出而非只写 `a,button` —— 站点里不少 div 挂 click
+     （卡片、缩略图、头像翻转），只用标签选择器会漏掉一大半。
+     后面几项是正文里那些**高特异性**规则的显式对位：
+     `.nav button` / `.btools .bseg button` / `.sseg button` /
+     `#lb .close` / `#danmaku-toggle` / `.glist > .gitem.clamped`。 */
+  :is(a,button,label,summary,select,option,
+     [role="button"],[onclick],[tabindex]:not([tabindex="-1"]),
+     .card,.gitem,.vitem,.vcard,.rcard,.wd-media,.wd-thumbs button,
+     .avatar-stage,.nav a,.nav button,.topbar .mark,.tabs button,.close,
+     .zoombadge,.play,.dm-close,.hs-card,.gviewbtn,.gtag,.gtl-item,
+     .gact,.backbtn,.wd-like,.wd-share,.btn,.modal-x,.attach-btn,
+     .attach-thumb-x,.attach-voice-x,.bseg button,.sseg button,
+     #lb .close,#danmaku-toggle){cursor:var(--cur-point) !important}
 
   /* 文本输入区保留系统文本光标 ——
      自定义光标会抹掉「这里能打字」的视觉暗示，属于可用性倒退 */
-  input,textarea,[contenteditable="true"]{cursor:text}
+  :is(input,textarea,[contenteditable="true"]){cursor:text !important}
 
-  /* 明确不可点的区域回到三角箭头 */
-  .gitem.clamped,.wd-media.has-video,.wd-media.has-video *{cursor:var(--cur)}
+  /* 明确不可点的区域回到三角箭头。
+     注意 `*` 兜底：`.wd-media.has-video *` 是为了让视频内部的
+     控件区域也回到箭头，否则子元素会继承父级的圆环。 */
+  :is(.gitem.clamped,.wd-media.has-video,.wd-media.has-video *,
+      .glist > .gitem.clamped){cursor:var(--cur) !important}
+  :is(.wd-like:disabled,.btn.primary:disabled){cursor:not-allowed !important}
 }
 </style>
 </head>
