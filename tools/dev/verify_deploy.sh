@@ -24,6 +24,14 @@ set -uo pipefail
 SITE="${SITE:-https://www.zfsnnb.dpdns.org}"
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
+# Python 解释器（用于可靠地抽取 JSON-LD 块；找不到就退回纯文本处理）
+PY=""
+for c in \
+  "C:/Users/Administrator/.workbuddy/binaries/python/envs/default/Scripts/python.exe" \
+  "python3" "python" "py"; do
+  if command -v "$c" >/dev/null 2>&1; then PY="$c"; break; fi
+done
+
 PASS=0; FAIL=0; WARN=0
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -144,8 +152,23 @@ if grep -q 'application/ld+json' "$TMP/index.html" 2>/dev/null; then
   else
     warn "  sameAs 缺失，实体关联会变弱"
   fi
-  # 不应声明不存在的 SearchAction（hash 路由没有服务端搜索）
-  if grep -q 'SearchAction' "$TMP/index.html"; then
+  # 不应声明不存在的 SearchAction（hash 路由没有服务端搜索）。
+  # ⚠ 必须**只看 JSON-LD 块内部**，不能用全文 grep：
+  #   index.html 里有一行注释写着「刻意不写 SearchAction」，
+  #   全文 grep 会命中注释而误报（本脚本踩过一次，见 commit 记录）。
+  if [ -n "$PY" ]; then
+    JSONLD_PART=$("$PY" -c "
+import re,sys
+html=open(r'$TMP/index.html',encoding='utf-8',errors='replace').read()
+blocks=re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>',html,re.S)
+sys.stdout.write('\n'.join(blocks))
+" 2>/dev/null || echo "")
+  else
+    # 无 Python 时的近似兜底：取 ld+json 开标签到 </script> 之间的内容
+    JSONLD_PART=$(sed -n '/application\/ld+json/,/<\/script>/p' "$TMP/index.html" 2>/dev/null || echo "")
+    printf '      \033[2m(未找到 Python，JSON-LD 检查用近似方式)\033[0m\n'
+  fi
+  if printf '%s' "$JSONLD_PART" | grep -q 'SearchAction'; then
     warn "  声明了 SearchAction，但本站没有服务端搜索接口"
   else
     ok "  未声明无效的 SearchAction"
