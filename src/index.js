@@ -179,9 +179,6 @@ export default {
    静态资源
    ══════════════════════════════════════════════════════════════ */
 
-/** 图片类资源（后缀判断，够用且不用解析路径） */
-const IMG_EXT = /\.(jpg|jpeg|png|webp|avif|gif|svg|ico)$/i;
-
 function notFound() {
   return new Response("Not Found", {
     status: 404,
@@ -192,16 +189,28 @@ function notFound() {
 /**
  * 发静态资源。
  *
- * 一件事：**缺失资源必须回 404，不能冒泡成 500。**
- *    ASSETS 绑定在找不到文件时会抛异常，旧代码在 catch 里又调了一次
- *    env.ASSETS.fetch(request) —— 第二次照样抛，于是异常逃出 fetch()，
- *    客户端收到 500。PageSpeed 抓 /llms.txt 报的就是这个（HTTP 500），
- *    「智能体浏览器」这项直接被判不合格。对搜索引擎来说 500 还会被
- *    当成站点有错误，比正常的 404 伤害大得多。
+ * ⚠ 本函数**只在请求被 wrangler.toml 的 `assets.run_worker_first` 命中时
+ *   才会被走到**（目前是那几个 HTML 页面）。其余路径由 CF 静态资源层
+ *   直接返回，压根不进 Worker。
  *
- * 关于图片长缓存：那个**不在这里做**。Workers 静态资源层的请求
- * （命中已存在的文件时）根本进不到 Worker，所以在这里设 Cache-Control
- * 是无效的；真正的规则写在仓库根目录的 `_headers` 里。
+ * 一件事：**缺失资源必须回 404，不能冒泡成 500。**
+ *    旧代码在 catch 里又调了一次 env.ASSETS.fetch(request)，第二次照样抛，
+ *    异常逃出 fetch()，客户端收到 500。PageSpeed 抓 /llms.txt 报的就是这个
+ *    （HTTP 500），「智能体浏览器」这项直接被判不合格。对搜索引擎来说 500
+ *    还会被当成站点有错误，比正常的 404 伤害大得多。
+ *
+ * 关于 ASSETS 绑定的 index.html 映射：
+ *   `/` → index.html、无扩展名 → `x.html` 这类补全**由 CF 静态资源层负责**，
+ *   即使请求改走 Worker 也照样生效（前提是 `[assets] binding = "ASSETS"`
+ *   已配置，见 wrangler.toml）。**不要在这里手动补全** ——
+ *   2026-10-05 曾为此写了 assetWithIndexHtml()，结果掩盖了真正的根因：
+ *   当时缺的是 assets binding，env.ASSETS 是 undefined，补全代码无论怎么写
+ *   都只会走进 catch。三次修补全部无效，根因就在配置里那一行。
+ *
+ * 关于图片长缓存：那个**不在这里做**。图片/CSS/JS 走静态层直出，
+ * 在这里设 Cache-Control 是无效的；真正的规则写在仓库根目录的 `_headers`。
+ * ⚠ 且**不要**为此把 run_worker_first 改成全局 true —— 实测全局开会让
+ *   `_headers` 整体失效，图片缓存从 30 天退回 max-age=0（见 wrangler.toml 注释）。
  *
  * 关于图片格式协商：也**不在 Worker 做**。曾试过把 .jpg/.png 换成
  * 同名 .webp，但图片路径散落在 index.html、bili_videos.json、
@@ -209,95 +218,15 @@ function notFound() {
  * 换扩展名会让这些引用直接 404。现在改为离线「原地压缩、保留扩展名」。
  */
 async function serveAsset(request, env, p) {
-  let res = null;
   try {
-    res = await env.ASSETS.fetch(request);
+    return await env.ASSETS.fetch(request);
   } catch (e) {
-    // ASSETS 绑定在找不到文件时可能抛异常，也可能**返回 404 Response**
-    // （两种行为都出现过，取决于运行版本）。所以下面不区分，
-    // 只要不是 200 就走补全逻辑。
-    res = null;
+    /* ASSETS 找不到文件时**可能抛异常，也可能返回 404 Response**
+     * （两种行为都出现过，取决于运行版本）。抛了就转成 404，
+     * 绝不冒泡成 500。 */
+    console.warn("[assets] 未命中: %s (%s)", p, (e && e.message) || e);
+    return notFound();
   }
-
-  /* ★ 命中失败时要自己补全「无扩展名路径 → HTML」，否则首页会 404。
-   *
-   * CF 静态资源层的「自动补 index.html」是**在它自己处理请求时**做的。
-   * 一旦某个路径被 wrangler.toml 的 `assets.run_worker_first` 命中，
-   * 请求就会改走 Worker —— 此时 ASSETS.fetch() 拿到的是**原始路径**，
-   * `/` 不会自动对应到 `index.html`，于是返回 404。
-   *
-   * 实测踩过：为了让 workers.dev 的 301 对首页生效而加了 run_worker_first，
-   * 结果 `/` 和 `/pvz/pvz-portable` 双双 404，整站 HTML 挂掉。
-   * 静态层不报错、不告警，只是静默 404。
-   *
-   * ⚠ 条件是 `!res || res.status !== 200` 而不是「catch 里才补」——
-   *   实测 ASSETS 找不到文件时**多数情况是返回 404 而不是抛异常**，
-   *   只在 catch 里补等于永远不执行（这个 bug 让我以为已修好，实际线上仍 404）。 */
-  if (!res || res.status !== 200) {
-    const alt = await assetWithIndexHtml(request, env, p);
-    if (alt) return alt;
-    if (!res) console.warn("[assets] 未命中，按 404 处理: %s", p);
-    return res || notFound();
-  }
-
-  if (IMG_EXT.test(p)) {
-    const h = new Headers(res.headers);
-    h.set("Cache-Control", "public, max-age=2592000");
-    return new Response(res.body, { status: 200, headers: h });
-  }
-  return res;
-}
-
-/**
- * ASSETS 未命中时，按 CF 的 `html_handling: auto-trailing-slash` 语义
- * 手动补全「无扩展名路径 → HTML」的两条映射。
- *
- * 为什么需要：CF 静态资源层的自动补全是**在它自己处理请求时**做的。
- * 一旦某路径被 wrangler.toml 的 `assets.run_worker_first` 命中，请求改走
- * Worker —— 此时 ASSETS.fetch() 拿到的是**原始路径**，补全不再发生。
- *
- * 实测踩过：为让 workers.dev 的 301 对首页生效而加了 run_worker_first，
- * 结果 `/` 和 `/pvz/pvz-portable` 双双 404，整站 HTML 挂掉，
- * 静态层不报错、不告警，只是静默返回 404。
- *
- * ⚠ **两种映射都要试，且顺序不能反**（先试哪个以实测为准，别推理）：
- *    `/`                      → `/index.html`          （根目录）
- *    `/a/b`（无扩展名）        → `/a/b.html`            （本站 pvz 就是这种：
- *                                                        仓库里是
- *                                                        pvz/pvz-portable.html，
- *                                                        是**文件**不是目录）
- *                              → `/a/b/index.html`      （另一种常见结构）
- *    只试 index.html 会漏掉本站 pvz 页 —— 它的真实文件是 `x.html`。
- *
- * ⚠ 只在 200 时返回；非 200 一律 null，让上层走 notFound()。
- *    这里绝不能「兜底返回 200 空页」—— 那会把真 404 掩盖成假成功。
- */
-async function assetWithIndexHtml(request, env, p) {
-  // 只对无扩展名的路径重试。有扩展名（如 .css/.txt）没命中就是真 404。
-  if (p !== "/" && /\.[a-z0-9]+$/i.test(p)) return null;
-
-  const candidates = p === "/"
-    ? ["/index.html"]
-    : [p + ".html", p + "/index.html"];
-
-  /* ⚠ 必须用**入站请求的同一个 origin** 构造补全请求，不能图省事写
-   *   `new Request("https://placeholder.local" + target)`。
-   *   Workers 的 ASSETS 绑定会校验请求 URL，跨域/伪造 host 可能被直接拒绝
-   *   （表现为永远取不到、静默回退 404）。用真实 origin 最稳。 */
-  const origin = new URL(request.url).origin;
-
-  for (const target of candidates) {
-    try {
-      const r2 = await env.ASSETS.fetch(new Request(origin + target, {
-        method: "GET",
-        headers: request.headers,
-      }));
-      if (r2 && r2.status === 200) return r2;
-    } catch (e) {
-      /* 试下一个候选；都不中就是真的没有，交给上层 404 */
-    }
-  }
-  return null;
 }
 
 /* ══════════════════════════════════════════════════════════════

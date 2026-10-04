@@ -56,3 +56,11 @@ DEPLOY.md
 .idea/
 .DS_Store
 Thumbs.db
+
+# 本地验证 / 临时目录（headless Chromium 缓存、探测实例等）
+# ⚠ .tmp-v/ 下有 35MB 的 optimization_guide_model_store（Chromium 的模型），
+#   不排除会直接报 "Asset too large" 让 wrangler 起不来。
+.tmp-v/
+.tmp-avif/
+.tmp-cursor/
+.tmp-test/

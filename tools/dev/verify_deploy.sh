@@ -605,6 +605,8 @@ probe() {   # probe <path> -> "状态码|Location|CF-Cache-Status"
 # 三个入口都要测：/ 是 index.html、/pvz/pvz-portable 是 pvz 目录页。
 # ⚠ 这两个都是**已存在的静态文件**，若 wrangler.toml 的 run_worker_first
 #   没把它们列进去，CF 静态资源层会优先返回，压根不进 Worker → 重定向无效。
+# ★ 前提：wrangler.toml 的 [assets] 必须有 `binding = "ASSETS"`。
+#   缺了它 env.ASSETS 是 undefined，Worker 侧一切静态请求都会 404。
 for P in "/" "/pvz/pvz-portable"; do
   IFS='|' read -r CODE LOC CSTAT <<< "$(probe "$P")"
   if [ "$CODE" = "301" ] || [ "$CODE" = "308" ]; then
@@ -635,9 +637,12 @@ SELF_CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$SIT
 # ★★★ HTML 页面必须始终 200 —— 整站 HTML 404 是事故级故障 ★★★
 # 2026-10-05 真的发生过：为了修上面的 301 而加 assets.run_worker_first，
 # 结果 / 与 /pvz/pvz-portable 全部 404（9 字节 "Not Found"）。
-# 根因：CF 静态资源层的「无扩展名 → HTML」补全只在它自己处理请求时发生；
-#       路径改走 Worker 后 ASSETS.fetch() 拿到的就是原始路径。
-# ⚠ 加 run_worker_first 之后**必须**跑这一段，否则「改了 CSS 没生效」
+# ★ 真因**不是**「CF 静态层的无扩展名补全失效」（那个猜测是错的，
+#   有 binding 时补全照常工作，已实测）。真因是 wrangler.toml 的 [assets]
+#   **缺 binding = "ASSETS"** → env.ASSETS 是 undefined → fetch 抛 TypeError。
+#   之所以潜伏很久：run_worker_first 没开时静态层自己就发了文件，
+#   src/index.js 里的 serveAsset 压根没被走到。
+# ⚠ 改 run_worker_first 之后**必须**跑这一段，否则「改了 CSS 没生效」
 #   之类的误判会把你带偏 —— 实际是整站已经挂了。
 for P in "/" "/pvz/pvz-portable" "/admin"; do
   B=$(curl -sL --max-time 25 -A "$UA" "$SITE$P?cb=$RANDOM" -o "$TMP/h.html" -w "%{http_code}")
@@ -649,6 +654,27 @@ for P in "/" "/pvz/pvz-portable" "/admin"; do
         "若为 404，检查 wrangler.toml 的 assets.run_worker_first 是否被启用（它会让整站 HTML 失效）"
   fi
 done
+
+# ★★★ 图片 30 天长缓存必须保住 —— run_worker_first 写成全局 true 会毁掉它 ★★★
+# 实测（隔离 wrangler dev 对照，2026-10-05）：
+#   run_worker_first = true（全局） → 图片拿不到 _headers 的 Cache-Control，
+#                                     退回 `max-age=0, must-revalidate`，缓存全废
+#   run_worker_first = [路径列表]   → 图片仍走静态层，_headers 照常生效 ✅
+# 所以 wrangler.toml 里必须是**路径列表**，不能是全局 true。
+# 这一项就是防「有人图省事改成 true」的护栏。
+PROBE_IMG=$(curl -s --max-time 25 -A "$UA" "$SITE/index.html?cb=$RANDOM" 2>/dev/null \
+  | grep -oE 'assets/works/[A-Za-z0-9._-]+\.(jpg|jpeg|png|webp)' | head -1)
+if [ -z "$PROBE_IMG" ]; then
+  PROBE_IMG="assets/favicon.svg"
+fi
+IMG_CC=$(curl -s -D - -o /dev/null --max-time 40 -A "$UA" "$SITE/$PROBE_IMG?cb=$RANDOM" 2>/dev/null \
+  | tr -d '\r' | awk 'tolower($1)=="cache-control:"{c=$0} END{print c}')
+if echo "$IMG_CC" | grep -q "2592000"; then
+  ok "图片长缓存生效：$PROBE_IMG → $IMG_CC"
+else
+  bad "图片没有 30 天缓存：$PROBE_IMG → ${IMG_CC:-（无 Cache-Control）}" \
+      "检查 wrangler.toml 的 run_worker_first 是否被改成了全局 true（会让 _headers 整体失效）"
+fi
 
 # ══════════════════════════════════════════════════════════════
 printf '\n\033[1m══ 汇总\033[0m\n'

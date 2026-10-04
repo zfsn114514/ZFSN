@@ -25,38 +25,47 @@ compatibility_date = "2026-09-01"
 # 排除清单（.git / src / tools / node_modules …）见 .assetsignore。
 [assets]
 directory = "."
+# ★ binding = "ASSETS" 是**必须的**，不是可选优化。
+#   少了它，`env.ASSETS` 在 Worker 里是 undefined，`env.ASSETS.fetch()` 直接抛
+#   TypeError。而默认（run_worker_first 未开）时静态层自己就把文件发了，
+#   src/index.js 里的 serveAsset 根本没被走到 —— 所以站点看起来一切正常，
+#   **这个缺失可以潜伏很久，一旦打开 run_worker_first 就整站 HTML 404。**
+#   （2026-10-05 为修 workers.dev 的 301 打开它，才暴出整站 404；
+#     此前三次"修补全逻辑"全在错误方向上打转，真因就在这一行。）
+#   wrangler 对此有明确警告：
+#     ▲ [WARNING] run_worker_first=true set without an assets binding
+binding = "ASSETS"
 
-# ★ 暂时**注释掉** run_worker_first —— 原因见下（2026-10-05）
+# ★ 只让**这几个 HTML 页面**先进 Worker，以便对 workers.dev 做 301。
 #
-# 最初加它是为了让 workers.dev → www 的 301 对 HTML 页面生效
-# （CF 静态资源层默认优先于 Worker，已存在的文件压根不进 Worker）。
-# 但实测**加了之后整站 HTML 全部 404**：
-#   / 与 /pvz/pvz-portable 都返回 9 字节 "Not Found"。
+#   为什么不全局 run_worker_first = true：
+#   隔离 wrangler dev 对照实验（2026-10-05）实测全局开会**让 `_headers` 失效**
+#   —— 图片拿不到 `Cache-Control: public, max-age=2592000`，
+#   退回 `max-age=0, must-revalidate`，图片缓存全废。
+#   路径列表模式两者兼得：HTML 走 Worker（301 生效）+ 图片仍由静态层直出
+#   （`_headers` 规则照常生效，已实测确认）。
 #
-# 根因是 CF 静态资源层的「无扩展名路径 → HTML」自动补全
-# **只在它自己处理请求时发生**；路径一旦改走 Worker，
-# `env.ASSETS.fetch()` 拿到的就是原始路径，`/` 不再对应 `index.html`。
-# 我在 serveAsset 里手动补全了两次都没修好
-# （第一次挂在 catch 分支，但 ASSETS 找不到文件是**返回 404 不抛异常**；
-#   第二次改用真实 origin 仍无效），所以先回滚止损。
+#   实测确认：有了 binding 之后，ASSETS 的映射**完全正常**，
+#   并不需要任何手动补全：
+#     /                         -> index.html         200
+#     /index.html               -> index.html         200
+#     /pvz/pvz-portable         -> pvz-portable.html  200（无扩展名自动映射）
 #
-# 权衡：**整站 404 是事故，301 只是优化** —— 先让站点可用。
-# 301 已在 src/index.js 里实现好，等找到正确的补全方式再启用。
-#
-# run_worker_first = [
-#   "/",
-#   "/index.html",
-#   "/pvz/pvz-portable",
-#   "/pvz/pvz-portable.html",
-#   "/googleb9db891307fd40eb.html",
-# ]
+#   ⚠ 以后**新增无扩展名的 HTML 页面**必须同时加进这个列表，否则不会被 301 覆盖。
+run_worker_first = [
+  "/",
+  "/index.html",
+  "/admin",
+  "/admin/",
+  "/admin/index.html",
+  "/pvz/pvz-portable",
+  "/pvz/pvz-portable.html",
+  "/googleb9db891307fd40eb.html",
+]
 
 # 图片长缓存写在仓库根目录的 `_headers` 里，不在这里、也不在 src/index.js
-# —— 静态资源层的请求优先于 Worker，代码里设 Cache-Control 对已存在的
-# 文件是无效的。
-#
-# ⚠ 上面 run_worker_first 的例外只有 3 个 HTML 页面 —— 其余（图片/CSS/JS）
-#   仍然静态层直出，_headers 照常生效。
+# —— 上面 run_worker_first 的例外只有那几个 HTML 页面，
+#   其余（图片/CSS/JS）仍然静态层直出，_headers 照常生效。
 
 [[d1_databases]]
 binding = "DB"              # 代码里用 env.DB
