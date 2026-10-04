@@ -26,25 +26,30 @@ compatibility_date = "2026-09-01"
 [assets]
 directory = "."
 
-# ★ 301 重定向必须让「HTML 页面」先进 Worker，否则对页面完全无效。
+# ★ 暂时**注释掉** run_worker_first —— 原因见下（2026-10-05）
 #
-# 踩过的坑：只改 src/index.js 加 workers.dev → www 的 301，结果
-#   /feed.xml  正常 301（它不是静态文件，落到 Worker）
-#   /          仍 200     （index.html 存在，被静态资源层优先返回）
-#   /pvz/...   仍 200     （同上）
-# 实测 CF-Cache-Status: HIT → 拿到的是**缓存里的旧版本**，不是代码没生效。
+# 最初加它是为了让 workers.dev → www 的 301 对 HTML 页面生效
+# （CF 静态资源层默认优先于 Worker，已存在的文件压根不进 Worker）。
+# 但实测**加了之后整站 HTML 全部 404**：
+#   / 与 /pvz/pvz-portable 都返回 9 字节 "Not Found"。
 #
-# ⚠ 这里只列 HTML 入口，**不要写 ["/*"]** —— 那会让每张图片都先进
-#   Worker 一次，白白增加函数调用和延迟，图片直出才是最优。
-# ⚠ 新增 HTML 页面时**必须补进这个列表**，否则又会被静态层拦截。
-#   当前入口：index.html / pvz/pvz-portable.html / google*.html（Search Console 验证）
-run_worker_first = [
-  "/",
-  "/index.html",
-  "/pvz/pvz-portable",
-  "/pvz/pvz-portable.html",
-  "/googleb9db891307fd40eb.html",
-]
+# 根因是 CF 静态资源层的「无扩展名路径 → HTML」自动补全
+# **只在它自己处理请求时发生**；路径一旦改走 Worker，
+# `env.ASSETS.fetch()` 拿到的就是原始路径，`/` 不再对应 `index.html`。
+# 我在 serveAsset 里手动补全了两次都没修好
+# （第一次挂在 catch 分支，但 ASSETS 找不到文件是**返回 404 不抛异常**；
+#   第二次改用真实 origin 仍无效），所以先回滚止损。
+#
+# 权衡：**整站 404 是事故，301 只是优化** —— 先让站点可用。
+# 301 已在 src/index.js 里实现好，等找到正确的补全方式再启用。
+#
+# run_worker_first = [
+#   "/",
+#   "/index.html",
+#   "/pvz/pvz-portable",
+#   "/pvz/pvz-portable.html",
+#   "/googleb9db891307fd40eb.html",
+# ]
 
 # 图片长缓存写在仓库根目录的 `_headers` 里，不在这里、也不在 src/index.js
 # —— 静态资源层的请求优先于 Worker，代码里设 Cache-Control 对已存在的

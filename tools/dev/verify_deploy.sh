@@ -631,11 +631,23 @@ SELF_CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$SIT
 [ "$SELF_CODE" = "200" ] && ok "规范域名自身 200（无重定向死循环）" \
                           || bad "规范域名返回 $SELF_CODE，可能存在重定向循环"
 
-# HTML 页面必须能进 Worker（否则 run_worker_first 漏配，重定向对它无效）
-# 反证法：请求一个 CF 静态层「本来就有」的文件，看是否走了 Worker
-HTML_CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$SITE/pvz/pvz-portable" 2>/dev/null)
-[ "$HTML_CODE" = "200" ] && ok "规范域名的 /pvz/pvz-portable 200（静态层行为正常）" \
-                         || bad "规范域名 /pvz/pvz-portable 返回 $HTML_CODE"
+# ★★★ HTML 页面必须始终 200 —— 整站 HTML 404 是事故级故障 ★★★
+# 2026-10-05 真的发生过：为了修上面的 301 而加 assets.run_worker_first，
+# 结果 / 与 /pvz/pvz-portable 全部 404（9 字节 "Not Found"）。
+# 根因：CF 静态资源层的「无扩展名 → HTML」补全只在它自己处理请求时发生；
+#       路径改走 Worker 后 ASSETS.fetch() 拿到的就是原始路径。
+# ⚠ 加 run_worker_first 之后**必须**跑这一段，否则「改了 CSS 没生效」
+#   之类的误判会把你带偏 —— 实际是整站已经挂了。
+for P in "/" "/pvz/pvz-portable" "/admin"; do
+  B=$(curl -sL --max-time 25 -A "$UA" "$SITE$P?cb=$RANDOM" -o "$TMP/h.html" -w "%{http_code}")
+  SZ=$(wc -c < "$TMP/h.html" | tr -d ' ')
+  if [ "$B" = "200" ] && [ "${SZ:-0}" -gt 500 ] && grep -qi '<!DOCTYPE html' "$TMP/h.html"; then
+    ok "HTML 页面 $P 正常（200, ${SZ}B）"
+  else
+    bad "HTML 页面 $P 返回 $B / ${SZ}B" \
+        "若为 404，检查 wrangler.toml 的 assets.run_worker_first 是否被启用（它会让整站 HTML 失效）"
+  fi
+done
 
 # ══════════════════════════════════════════════════════════════
 printf '\n\033[1m══ 汇总\033[0m\n'
