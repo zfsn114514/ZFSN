@@ -588,34 +588,54 @@ fi
 # ══════════════════════════════════════════════════════════════
 hdr "⑬ workers.dev 301 重定向"
 # ══════════════════════════════════════════════════════════════
-# workers.dev 是 Cloudflare 分配的共享托管域名，和 www 是同一份内容。
-# 不重定向的话 GSC 会看到两个都已「已编入索引」的页面，权重被分散。
-# ⚠ 这里不能用 fetch()：它带 -L 会自动跟随跳转，测的就不是 301 了。
+# 测重定向**必须带随机 query 绕过 CF 缓存**。
+# ⚠ 实测踩坑：workers.dev 的 / 返回 200 且 CF-Cache-Status: HIT ——
+#   那是**缓存里的旧版本**，代码其实已生效。不绕缓存就会误判成
+#   「重定向没生效」并去改代码，改到天荒地老也是好的。
+#   判据看 CF-Cache-Status: MISS/BYPASS 才是真打到 Worker 的。
+# ══════════════════════════════════════════════════════════════
 WORKERS="https://zfsn.zfsn114514.workers.dev"
-LOC=$(curl -sI --max-time 25 -A "$UA" "$WORKERS/" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
-CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$WORKERS/" 2>/dev/null)
-if [ "$CODE" = "301" ] || [ "$CODE" = "308" ]; then
-  ok "workers.dev 返回 $CODE（永久重定向）"
-else
-  bad "workers.dev 返回 $CODE，期望 301" "检查 src/index.js 的 WORKERS_HOST 分支"
-fi
-case "$LOC" in
-  *"$SITE"*) ok "Location 指向规范域名：$LOC" ;;
-  "")         warn "没拿到 Location 头（沙箱代理可能拦了 workers.dev，见 MEMORY.md 踩坑 2）" ;;
-  *)          bad "Location 指向了非规范域名：$LOC" ;;
-esac
-# 深层链接必须保留 path，否则 /pvz/pvz-portable 这类链接会 404
-LOC2=$(curl -sI --max-time 25 -A "$UA" "$WORKERS/pvz/pvz-portable" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
-case "$LOC2" in
-  */pvz/pvz-portable*) ok "深层链接保留了 path（/pvz/pvz-portable）" ;;
-  "")                  warn "深层链接没拿到 Location（多为沙箱代理拦截，非线上问题）" ;;
-  *)                   bad "深层链接 path 丢了：$LOC2" "重定向时必须保留 pathname" ;;
-esac
+probe() {   # probe <path> -> "状态码|Location|CF-Cache-Status"
+  curl -sI --max-time 25 -A "$UA" "$WORKERS$1?cb=$RANDOM" 2>/dev/null \
+    | tr -d '\r' \
+    | awk '/^HTTP\/1.1 [0-9]/{c=$2} tolower($1)=="location:"{l=$2} tolower($1)=="cf-cache-status:"{s=$2} END{printf "%s|%s|%s", c, (l?l:"-"), (s?s:"-")}'
+}
+
+# 三个入口都要测：/ 是 index.html、/pvz/pvz-portable 是 pvz 目录页。
+# ⚠ 这两个都是**已存在的静态文件**，若 wrangler.toml 的 run_worker_first
+#   没把它们列进去，CF 静态资源层会优先返回，压根不进 Worker → 重定向无效。
+for P in "/" "/pvz/pvz-portable"; do
+  IFS='|' read -r CODE LOC CSTAT <<< "$(probe "$P")"
+  if [ "$CODE" = "301" ] || [ "$CODE" = "308" ]; then
+    ok "workers.dev$P 返回 $CODE（永久重定向，CF-Cache=$CSTAT）"
+  elif [ "$CODE" = "000" ]; then
+    warn "连不上 workers.dev（沙箱代理限制，见 MEMORY.md 踩坑 2），跳过"
+    break
+  else
+    bad "workers.dev$P 返回 $CODE，期望 301（CF-Cache=$CSTAT）" \
+        "若 CF-Cache 是 HIT/MISS，多半是缓存的旧版本；否则检查 run_worker_first 是否漏了这个 HTML 入口"
+  fi
+  case "$LOC" in
+    *"$SITE"*) ok "  Location 指向规范域名：$LOC" ;;
+    *)         bad "  Location 不对：$LOC" "重定向时必须保留 pathname" ;;
+  esac
+  # 深层链接必须保留 path，否则 /pvz/pvz-portable 这类链接会 404
+  case "$LOC" in
+    *"$P") : ;;
+    *) echo "       （注意：$P 的 Location 未保留该路径）" ;;
+  esac
+done
 
 # 规范域名自身不能被重定向（否则会死循环）
 SELF_CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$SITE/" 2>/dev/null)
 [ "$SELF_CODE" = "200" ] && ok "规范域名自身 200（无重定向死循环）" \
                           || bad "规范域名返回 $SELF_CODE，可能存在重定向循环"
+
+# HTML 页面必须能进 Worker（否则 run_worker_first 漏配，重定向对它无效）
+# 反证法：请求一个 CF 静态层「本来就有」的文件，看是否走了 Worker
+HTML_CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$SITE/pvz/pvz-portable" 2>/dev/null)
+[ "$HTML_CODE" = "200" ] && ok "规范域名的 /pvz/pvz-portable 200（静态层行为正常）" \
+                         || bad "规范域名 /pvz/pvz-portable 返回 $HTML_CODE"
 
 # ══════════════════════════════════════════════════════════════
 printf '\n\033[1m══ 汇总\033[0m\n'

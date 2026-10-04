@@ -26,14 +26,32 @@ compatibility_date = "2026-09-01"
 [assets]
 directory = "."
 
+# ★ 301 重定向必须让「HTML 页面」先进 Worker，否则对页面完全无效。
+#
+# 踩过的坑：只改 src/index.js 加 workers.dev → www 的 301，结果
+#   /feed.xml  正常 301（它不是静态文件，落到 Worker）
+#   /          仍 200     （index.html 存在，被静态资源层优先返回）
+#   /pvz/...   仍 200     （同上）
+# 实测 CF-Cache-Status: HIT → 拿到的是**缓存里的旧版本**，不是代码没生效。
+#
+# ⚠ 这里只列 HTML 入口，**不要写 ["/*"]** —— 那会让每张图片都先进
+#   Worker 一次，白白增加函数调用和延迟，图片直出才是最优。
+# ⚠ 新增 HTML 页面时**必须补进这个列表**，否则又会被静态层拦截。
+#   当前入口：index.html / pvz/pvz-portable.html / google*.html（Search Console 验证）
+run_worker_first = [
+  "/",
+  "/index.html",
+  "/pvz/pvz-portable",
+  "/pvz/pvz-portable.html",
+  "/googleb9db891307fd40eb.html",
+]
+
 # 图片长缓存写在仓库根目录的 `_headers` 里，不在这里、也不在 src/index.js
 # —— 静态资源层的请求优先于 Worker，代码里设 Cache-Control 对已存在的
 # 文件是无效的。
 #
-# 另：曾试过 run_worker_first = ["/assets/*"] 在 Worker 里做 webp 格式协商，
-# 但图片路径散落在 HTML / JSON / D1 里，换扩展名（.png → .webp）会让这些
-# 引用直接 404。现改为离线「原地压缩、保留扩展名」，
-# 见 tools/dev/optimize_images.py。
+# ⚠ 上面 run_worker_first 的例外只有 3 个 HTML 页面 —— 其余（图片/CSS/JS）
+#   仍然静态层直出，_headers 照常生效。
 
 [[d1_databases]]
 binding = "DB"              # 代码里用 env.DB
