@@ -128,10 +128,29 @@ function rowToWork(r) {
    入口
    ══════════════════════════════════════════════════════════════ */
 
+/* 规范域名 —— 只保留 www 这一个入口。
+   workers.dev 是 Cloudflare 自动分配的共享托管域名，搜索引擎也会抓它，
+   结果同一份内容出现两个搜索结果、权重被分散
+   （GSC 实测两个都已「已编入索引」）。
+   全部 301 永久重定向到 www，权重集中、用户也只看到一个地址。
+
+   ⚠ 必须是 301（永久）不是 302：302 是临时的，搜索引擎会继续把两个地址
+      都当作有效入口，等于没做。
+   ⚠ 改 hostname 时要保留 path 和 query，否则 /pvz/pvz-portable、
+      /feed.xml 这类深层链接会全部 404。 */
+const CANON_HOST = "www.zfsnnb.dpdns.org";
+const WORKERS_HOST = "zfsn.zfsn114514.workers.dev";
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const p = url.pathname;
+
+    // 共享托管域名 → 规范域名，301。放在所有路由之前（连 /api/ 也一样）。
+    if (url.hostname === WORKERS_HOST) {
+      url.hostname = CANON_HOST;
+      return Response.redirect(url.toString(), 301);
+    }
 
     try {
       if (p.indexOf("/api/") === 0) {

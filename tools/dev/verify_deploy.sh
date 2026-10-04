@@ -586,6 +586,38 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════
+hdr "⑬ workers.dev 301 重定向"
+# ══════════════════════════════════════════════════════════════
+# workers.dev 是 Cloudflare 分配的共享托管域名，和 www 是同一份内容。
+# 不重定向的话 GSC 会看到两个都已「已编入索引」的页面，权重被分散。
+# ⚠ 这里不能用 fetch()：它带 -L 会自动跟随跳转，测的就不是 301 了。
+WORKERS="https://zfsn.zfsn114514.workers.dev"
+LOC=$(curl -sI --max-time 25 -A "$UA" "$WORKERS/" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
+CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$WORKERS/" 2>/dev/null)
+if [ "$CODE" = "301" ] || [ "$CODE" = "308" ]; then
+  ok "workers.dev 返回 $CODE（永久重定向）"
+else
+  bad "workers.dev 返回 $CODE，期望 301" "检查 src/index.js 的 WORKERS_HOST 分支"
+fi
+case "$LOC" in
+  *"$SITE"*) ok "Location 指向规范域名：$LOC" ;;
+  "")         warn "没拿到 Location 头（沙箱代理可能拦了 workers.dev，见 MEMORY.md 踩坑 2）" ;;
+  *)          bad "Location 指向了非规范域名：$LOC" ;;
+esac
+# 深层链接必须保留 path，否则 /pvz/pvz-portable 这类链接会 404
+LOC2=$(curl -sI --max-time 25 -A "$UA" "$WORKERS/pvz/pvz-portable" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
+case "$LOC2" in
+  */pvz/pvz-portable*) ok "深层链接保留了 path（/pvz/pvz-portable）" ;;
+  "")                  warn "深层链接没拿到 Location（多为沙箱代理拦截，非线上问题）" ;;
+  *)                   bad "深层链接 path 丢了：$LOC2" "重定向时必须保留 pathname" ;;
+esac
+
+# 规范域名自身不能被重定向（否则会死循环）
+SELF_CODE=$(curl -sI --max-time 25 -A "$UA" -o /dev/null -w "%{http_code}" "$SITE/" 2>/dev/null)
+[ "$SELF_CODE" = "200" ] && ok "规范域名自身 200（无重定向死循环）" \
+                          || bad "规范域名返回 $SELF_CODE，可能存在重定向循环"
+
+# ══════════════════════════════════════════════════════════════
 printf '\n\033[1m══ 汇总\033[0m\n'
 printf '  通过 \033[32m%d\033[0m  失败 \033[31m%d\033[0m  警告 \033[33m%d\033[0m\n' "$PASS" "$FAIL" "$WARN"
 echo
