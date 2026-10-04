@@ -623,9 +623,12 @@ for P in "/" "/pvz/pvz-portable"; do
     *)         bad "  Location 不对：$LOC" "重定向时必须保留 pathname" ;;
   esac
   # 深层链接必须保留 path，否则 /pvz/pvz-portable 这类链接会 404
-  case "$LOC" in
-    *"$P") : ;;
-    *) echo "       （注意：$P 的 Location 未保留该路径）" ;;
+  # ⚠ 上面 probe() 加了 ?cb=$RANDOM 绕缓存，Location 里必然带这个 query，
+  #   所以判据是「去掉 query 后的路径前缀」而不是整串相等，否则每次都误报。
+  LOC_PATH=${LOC%%\?*}
+  case "$LOC_PATH" in
+    "$SITE$P") : ;;
+    *) bad "  Location 未保留路径：$LOC_PATH" "重定向必须保留 pathname，否则深层链接会 404" ;;
   esac
 done
 
