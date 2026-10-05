@@ -148,7 +148,7 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/assets/js/app.3a63f4f7.js
+/assets/js/app.1cb126fc.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/danmaku.49303c11.js

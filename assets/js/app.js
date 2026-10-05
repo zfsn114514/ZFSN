@@ -2212,69 +2212,42 @@
   var API_READY = null;       // Promise
   var API_CACHE_KEY = "zfsn_api_base";
 
-  /* Cloudflare 隧道暴露的后端地址。
-     ★ 改隧道主机名时，这里要和 D:\ZFSN-server\cloudflared\config.yml 一起改。 */
-  var TUNNEL_API = "https://api.zfsnnb.dpdns.org";
-
-  /* 后端两个监听端口，需与 D:\ZFSN-server\server.js 保持一致
-     （那边由 PORT / HTTPS_PORT 环境变量控制，默认 3000 / 3443） */
-  var HTTP_API_PORT = 3000;
+  /* ⚠ 以下三个常量**已不再被 apiCandidates() 使用**（2026-10-05 收敛后）。
+   *
+   * 保留它们仅供 backendHelp() 的提示文案引用。彻底删除的话，
+   * 记得把 backendHelp() 里对应的引用一起清理。
+   *
+   * 历史背景：站点最初是「CF 静态资源 + 家里那台机器的 node 后端经
+   * cloudflared 隧道暴露」，所以要探一串候选。迁到 Workers 之后
+   * 页面与 /api/* 同源，隧道（实测 530）与 :3000（实测 502）都已失效。 */
+  var TUNNEL_API = "https://api.zfsnnb.dpdns.org";     // 已废弃，隧道计划任务已禁用
+  var HTTP_API_PORT = 3000;                            // 已废弃，旧后端已停
   var HTTPS_API_PORT = 3443;
 
-  function portOf(loc){
-    if (loc.port) return loc.port;
-    return loc.protocol === "https:" ? "443" : "80";
-  }
 
+  /* ★ 2026-10-05 收敛为**只有一个候选：同源**。
+   *
+   * 站点已迁到 Cloudflare Workers —— 页面与 /api/* 出自同一个 Worker，
+   * /api/health 实测返回 {"ok":true,"runtime":"cloudflare-workers"}。
+   * 所以不再需要「探测一串候选、再挑最快那个」的整套机制。
+   *
+   * 原来那份候选列表（隧道 / :3443 / :3000 / localhost）在迁移后全是死路，
+   * 实测：https://api.zfsnnb.dpdns.org → 530（隧道未连接）
+   *       http://127.0.0.1:3000       → 502（旧后端已停，计划任务已禁用）
+   * 而每个死候选都要探满 probe() 的 3500ms 超时才落败。
+   * 也就是说同源万一真出问题，用户要多等好几秒才看到错误提示，
+   * 而那些候选**永远**不可能成功 —— 降级方案已经不存在了。
+   *
+   * 刻意保留函数名与「返回数组」的结构：detectAPI() / raceAll() /
+   * sessionStorage 缓存那一整套逻辑因此原样继续工作，一行都不用改。
+   * 以后若真要加回退（比如另有一套独立部署的后端），往这个数组里 push 即可。
+   *
+   * file:// 直接双击打开时没有同源概念，返回空数组 —— detectAPI 会
+   * 判定全败并渲染错误提示，那本来就是合理的（本地文件无法调线上接口）。 */
   function apiCandidates(){
     var list = [];
-    var host = location.hostname;
     var proto = location.protocol;
-    var isWeb = (proto === "http:" || proto === "https:");
-    var isHttps = (proto === "https:");
-
-    /* 页面是不是 Cloudflare 静态托管（Workers）？
-       特征：主机名 www.zfsnnb.dpdns.org 且走默认 443。
-       这种情况同源 /api/* 落在静态资源里 → 404，所以隧道必须排在同源前面，
-       否则每次首屏都要先白探一轮。（apex 域名 zfsnnb.dpdns.org 的 DNS 没走
-       Cloudflare，指向家里，不算 CF 托管；带上 :3443 时更是本地后端自己提供页面。） */
-    var isCFHost = /^www\.zfsnnb\.dpdns\.org$/i.test(host || "") &&
-                   (location.port === "" || location.port === "443");
-
-    // ① 同源 —— **线上方案**。
-    //    站点现在由 Cloudflare Worker 提供：页面和 /api/* 出自同一个服务，
-    //    所以无条件排在最前，一次命中，不必再白探别的候选。
-    //    （迁移之前 CF 只托管静态资源，同源 /api 必然 404，才需要特判跳过；
-    //     现在 Worker 自带接口，那个例外可以去掉了。）
-    if (isWeb) list.push("");
-
-    // ② Cloudflare 隧道 —— 降级为**回退方案**。
-    //    Worker 还没部署好、或者出故障时，家里那台机器上的旧后端
-    //    （node server.js + cloudflared）还能顶上，前提是它开着。
-    if (isHttps) list.push(TUNNEL_API);
-
-    // ③（已并入 ①）CF 托管下的同源不再单独登记 —— Worker 自带 /api/*。
-
-    // ④ 当前主机名的后端端口 —— 覆盖"页面在 443/IIS:88、后端在 3000/3443"的场景。
-    //    协议必须跟页面一致（见上面第 3 条坑）。
-    //    若页面端口本来就等于后端端口，说明 ① 的同源候选已经覆盖它，不必再探。
-    //    ⚠ CF 托管下跳过：CF 免费版只代理 80/443/8080/8443 等固定端口，
-    //      :3443 不在名单里，连接会一直挂到超时，纯属浪费。
-    var samePort = isWeb && (portOf(location) === String(isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
-    if (host && !samePort && !isCFHost){
-      list.push((isHttps ? "https://" : "http://") + host + ":" +
-                (isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
-    }
-
-    // ⑤ 本机兜底：页面在 file:// 时用得上。
-    //    https 页面下 localhost 只能走 https（自签名证书需先手动信任一次），
-    //    但 http://localhost 属于浏览器豁免的"可信来源"，仍然可用。
-    if (isHttps){
-      list.push("https://localhost:" + HTTPS_API_PORT);
-      list.push("https://127.0.0.1:" + HTTPS_API_PORT);
-    }
-    list.push("http://localhost:" + HTTP_API_PORT);
-    list.push("http://127.0.0.1:" + HTTP_API_PORT);
+    if (proto === "http:" || proto === "https:") list.push("");   // 同源
 
     // 去重，保持顺序
     var seen = {}, out = [];
@@ -2380,7 +2353,12 @@
     opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
     return detectAPI().then(function(base){
       if (base === null){
-        throw new Error("后端服务未启动（请在 D:\\ZFSN-server 运行 node server.js）");
+        /* ⚠ 不要在这里写「请去启动 D:\ZFSN-server\server.js」——
+           站点已迁到 Workers，页面与接口同源，**不存在**需要你手动启动的本地后端
+           （那个 ZFSN-Web-Backend 计划任务也已禁用）。
+           访客看到这种提示只会以为要自己装个 Node 服务，纯误导。
+           具体的排查指引交给 backendHelp() 按当前协议给出。 */
+        throw new Error("本站接口暂时无法访问（页面与接口同源，探测未通过）");
       }
       return fetch(base + path, opts);
     }).then(function(r){
@@ -2543,47 +2521,49 @@
   /* 后端连不上时给出可操作的排查指引。
      要点：区分"访问者是不是本机"——本机多半是服务没启动，
      外部访客则多半是端口没映射到公网，两者的解法完全不同。 */
+  /* 接口连不上时给访客看的排查提示。
+   *
+   * ⚠⚠ 2026-10-05 重写：原文案已整体过时。
+   *   它建立在一个**已经废弃的架构假设**上 —— 「页面在 CF 静态资源，
+   *   后端在家里那台机器上，经 cloudflared 隧道暴露」，于是给出了
+   *   旧文案让人「去跑 D:\ZFSN-server\启动服务.bat」「看 ZFSN-Cloudflare-Tunnel
+   *   计划任务是否在运行」—— 那套东西现在全都不再是本站的组成部分。
+   *   这类指引。
+   *
+   *   现在的实际架构：页面与 /api/* **同源**，都由 Worker 提供
+   *   （见 apiCandidates() 注释 ① 与 wrangler.toml 的 run_worker_first 路径列表）。
+   *   家里那台机器上的 node server.js 已不再被调用 ——
+   *   对应的 ZFSN-Web-Backend 计划任务也已禁用。
+   *   按旧文案去操作会让人白折腾，且完全找不到问题所在。
+   *
+   * 判据改成「同源 /api/* 是否可达」，这才是现在唯一相关的分叉。 */
   function backendHelp(){
     var lines = [];
     var proto = location.protocol;
     var isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || "");
 
-    if (proto === "https:"){
-      // ★ 线上方案：页面在 Cloudflare（Workers 静态资源），后端经 Cloudflare
-      //   隧道暴露为 https://api.zfsnnb.dpdns.org。两端都是 https 且证书受信，
-      //   正常情况下不会再有"混合内容"问题。
-      //   ⚠ 不要再建议用户去访问 https://域名:3443 —— Cloudflare 免费版只代理
-      //     80/443/8080/8443 等固定端口，3443 不在名单里，走不通。
-      if (/zfsnnb\.dpdns\.org$/i.test(location.hostname || "")){
-        lines.push('本站后端由 <b style="color:#cfe3f5">Cloudflare 隧道</b> ' +
-          '（<code style="color:#cfe3f5">' + TUNNEL_API + '</code>）提供。');
-        lines.push('如果你是站主：多半是家里那台机器上的 <code style="color:#ff8a9c">cloudflared</code> ' +
-          '没在跑，或 Node 后端（:3000）没启动。');
-        lines.push('排查：任务计划程序里看 <code style="color:#ff8a9c">ZFSN-Cloudflare-Tunnel</code> ' +
-          '是否在运行；再确认 <code style="color:#ff8a9c">D:\\ZFSN-server\\启动服务.bat</code> 已执行。');
-      } else {
-        lines.push('当前页面是 <b style="color:#ff8a9c">https</b> 协议。' +
-          '如果后端只开了 http，浏览器会按「混合内容」把接口请求直接拦掉，' +
-          '作品墙和留言就会空着 —— 这不是后端坏了，是协议不匹配。');
-        lines.push('若后端没开 HTTPS，请退回 <b style="color:#cfe3f5">http://' +
-          location.hostname + ':' + HTTP_API_PORT + '</b> 访问本站（页面和接口同源）。');
-      }
-    } else if (proto === "file:"){
-      lines.push('当前是直接双击打开的本地文件，后端地址无法自动推断。');
-      lines.push('请改用 <b style="color:#cfe3f5">http://localhost:' + HTTP_API_PORT +
-        '</b> 访问本站。');
-    } else if (isLocal){
-      lines.push('请确认后端服务已启动。');
-      lines.push('方式一：双击 <code style="color:#ff8a9c">D:\\ZFSN-server\\启动服务.bat</code>');
-      lines.push('方式二：在该目录执行 <code style="color:#ff8a9c">node server.js</code>');
-      lines.push('（注：开机自启计划任务会自动拉起，正常无需手动操作）');
+    if (isLocal){
+      /* 本地调试：页面由本地静态服务器提供，同源 /api/* 必然 404。
+       * 这种情况要么用 wrangler dev（它会连 Worker 逻辑），
+       * 要么在测试脚本里自己 mock 接口 —— 不需要启动任何后端。 */
+      lines.push('当前是<b style="color:#cfe3f5">本地调试</b>环境，页面的 <code style="color:#cfe3f5">/api/*</code> ' +
+        '没有真实后端。');
+      lines.push('正确做法：用 <code style="color:#cfe3f5">npx wrangler dev</code> 起本地 Worker，' +
+        '或在测试脚本里 mock 接口。<b style="color:#ff8a9c">不需要</b>启动 ' +
+        '<code style="color:#ff8a9c">D:\\ZFSN-server\\server.js</code> —— ' +
+        '那套旧后端已不再被本站使用。');
+    } else if (proto === "https:"){
+      lines.push('本站的页面与接口<b style="color:#cfe3f5">同源</b>（都由 Cloudflare Workers 提供），' +
+        '正常情况下不会出现这个提示。');
+      lines.push('如果你是访客：多半是站点临时故障或网络问题，稍后再试即可。');
+      lines.push('如果你是站主：优先看 Cloudflare 面板里 Worker 的实时日志与 ' +
+        '<code style="color:#cfe3f5">wrangler tail</code>，' +
+        '接口异常时 D1 / KV 绑定报错也会走到这里。');
     } else {
-      // 外部访客：本机服务大概率是好的，问题出在网络上
-      lines.push('你的浏览器没能连上本站的后端服务。');
-      lines.push('如果你是站主：请检查路由器是否把 <b style="color:#ff8a9c">' +
-        (location.protocol === "https:" ? HTTPS_API_PORT : HTTP_API_PORT) +
-        '</b> 端口映射到了本机，以及 Windows 防火墙是否放行。');
-      lines.push('如果你是访客：可能是站点暂时离线，稍后再试即可。');
+      lines.push('当前页面是 <b style="color:#ff8a9c">http</b> 协议，' +
+        '而线上服务要求 https —— 浏览器可能按「混合内容」拦掉接口请求。');
+      lines.push('请改用 <b style="color:#cfe3f5">https://' +
+        location.hostname + '</b> 访问。');
     }
     return lines.join("<br>");
   }
