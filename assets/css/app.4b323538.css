@@ -1915,10 +1915,22 @@ footer .rss svg{width:11px;height:11px;flex:0 0 11px}
      手机上 140px 目标列宽 ≈ 2 列。 */
   .gallery{column-width:140px;column-gap:12px}
   .gitem{margin:0 0 12px}
-  /* 留言板容器是 grid：手机上把目标列宽从 272px 收到 150px，
-     约 2~3 列。这个值只影响 minmax()，不需要与 JS 同步
-     （grid 的列数完全由 CSS 决定，这也是选它的好处之一）。 */
-  .glist{gap:10px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  /* 留言板：手机端**每行一条**（单列全宽），2026-10-05 改。
+     原来是 repeat(auto-fill,minmax(150px,1fr))，在 390px 手机上排成 2 列。
+
+     为什么必须单列而不是「再窄一点」：
+     auto-fill + minmax() 的列数 = floor((容器宽 + gap) / (minmax下限 + gap))，
+     是**算出来**的、随视口宽度跳变 —— 320px 是 1 列、390px 突然 2 列、
+     430px 又是 2 列。留言是「读」的内容不是「扫」的内容，
+     每行塞两条会让每条只剩 ~170px 宽、正文被压成窄条，读起来别扭。
+
+     单列还有一个附带好处：长留言几乎不再触发「展开全文」折叠
+     （折叠判定是 scrollHeight > clientHeight，卡片越宽越不容易溢出）。
+
+     ⚠ 这里写 1fr 而不是 100% —— grid 的列宽单位必须是长度，
+       百分比在 grid-template-columns 里语义不同（会按网格容器算但易踩坑）。
+     ⚠ 不需要与 JS 同步：列数完全由 CSS 决定，这正是选 grid 的好处。 */
+  .glist{gap:10px;grid-template-columns:1fr}
   /* 之前是 1fr（单列全宽），每个塞满整个手机宽度，作品卡大得离谱。
      改成 auto-fill + 小 minmax，让手机端也是 2~3 列网格。 */
   .vgrid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
