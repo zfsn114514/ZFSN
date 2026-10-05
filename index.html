@@ -95,7 +95,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-<link rel="stylesheet" href="assets/css/app.59341de6.css">
+<link rel="stylesheet" href="assets/css/app.8fbd686f.css">
 </head>
 <!-- data-page 标记当前页，供弹幕层判断"是否只在首页显示"。
      首屏默认 home；切页时由 setActive() 改写。 -->
@@ -121,10 +121,12 @@
 </div>
 <!-- ── 导航 ──────────────────────────────────────────────────────
      ⚠ 刻意与 .topbar **平级**，不放在它里面。
-     .topbar 有 backdrop-filter，而 backdrop-filter 会创建 containing
-     block —— 后代元素写 position:fixed 时是相对**它**定位而非视口，
+     .topbar 曾经有 backdrop-filter（液态玻璃），而 backdrop-filter 会创建
+     containing block —— 后代元素写 position:fixed 时是相对**它**定位而非视口，
      移动端把 .nav 改成底部固定后会跑到屏幕外（实测 top:-20px）。
-     放同级就没这个问题；桌面端靠 CSS 让 .nav 自己 fixed 到右上角。 -->
+     该模糊已于 2026-10-05 移除（它会把头像顶部糊成一条灰白横带），
+     但这里仍保持平级：顶栏将来若再加 filter/transform，平级就是零成本保险。
+     桌面端靠 CSS 让 .nav 自己 fixed 到右上角。 -->
 <nav class="nav">
     <!-- 图标只在移动端底部导航栏显示（桌面端由 CSS 隐藏），
          所以用 aria-hidden 让读屏器跳过，避免重复朗读 -->

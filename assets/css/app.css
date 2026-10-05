@@ -140,8 +140,21 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,[contenteditable
   position:fixed;top:0;left:0;right:0;z-index:20;
   display:flex;align-items:center;justify-content:space-between;
   padding:22px 40px;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);
-  background:linear-gradient(180deg,rgba(7,7,11,.9) 0%,rgba(7,7,11,.6) 60%,transparent 100%);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  /* ★ 顶栏在页面顶部时**完全透明**，不遮头像（2026-10-05 改）。
+     原来这里是「半透明渐变 + backdrop-filter:blur(12px)」，也就是所谓
+     液态玻璃。问题不在于半透明，而在于那个 blur：模糊是**横贯全宽**的，
+     顶栏覆盖的范围内背景几乎纯黑 —— 模糊纯黑还是纯黑，肉眼看不出异常；
+     唯独头像那块 184px 的白色圆形背景把模糊效果显了出来，于是头像顶部
+     出现一条灰白色横带，看起来像有块玻璃压在头上（用户反馈的就是这个）。
+
+     ⚠ 这一点很难靠读代码发现：模糊对「纯色背景」是可见的视觉退化，
+       对「深色背景」完全不可见。所以验收必须**看截图**，不能只看
+       getComputedStyle 确认 backdrop-filter 还在。
+
+     现在改成：顶部透明 → 往下滚、JS 给 .topbar 加 .scrolled 之后才变实。
+     那时头像早已滚出视口，不存在遮挡，同时滚动后导航文字的可读性
+     仍由实底保证。 */
+  background:transparent;
   /* 收缩动画：只动 padding / 背景 / 阴影这三个属性。
      刻意**不**改 height —— 顶栏是 position:fixed，改高度会触发
      整页重排（reflow）；padding 只影响自身盒模型，代价小得多。 */
@@ -153,17 +166,23 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,[contenteditable
    内容需要压暗，过早变实会让开场观感变闷。 */
 .topbar.scrolled{
   padding:13px 40px;
-  background:linear-gradient(180deg,rgba(7,7,11,.82) 0%,rgba(7,7,11,.66) 100%);
-  backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);
+  /* 滚动后的顶栏改成**不透明**实底，而不是「半透明 + 模糊」。
+     同样是为了去掉液态玻璃：模糊会把下方滚过的内容（作品图、文字）
+     搅成一片糊影，实底则只是盖住，可读性和观感都更干净。 */
+  background:rgba(7,7,11,.97);
   border-bottom-color:var(--line);
   box-shadow:0 10px 34px -12px rgba(0,0,0,.7);
 }
 /* 顶栏变实之后，下面那条红色进度条才看得清 */
 
 /* ── 导航：桌面端贴在顶栏右侧 ──────────────────────────────────
- * .nav 是 .topbar 的**同级**元素（不是子元素），原因见 HTML 里的注释：
- * .topbar 的 backdrop-filter 会创建 containing block，把 fixed 子元素
- * 的定位基准从视口改成它自己，移动端改 fixed 后导航会跑到屏幕外。
+ * .nav 是 .topbar 的**同级**元素（不是子元素）。
+ * 起因是 .topbar 曾有 backdrop-filter，而 backdrop-filter 会创建
+ * containing block，把 fixed 子元素的定位基准从视口改成它自己，
+ * 移动端把 .nav 改 fixed 到底部后会跑到屏幕外（实测 top:-20px）。
+ * ⚠ 2026-10-05 顶栏的 backdrop-filter 已移除（液态玻璃会糊住头像），
+ *   这个约束已不复存在 —— 但**结构保持平级**：
+ *   顶栏将来若再加 filter/transform 会重蹈覆辙，而平级是零成本的保险。
  *
  * 既然不是子元素，桌面端就得自己定位到顶栏右侧 ——
  * 用 fixed + top 与顶栏同高，right 对齐；宽度自适应内容。
@@ -1851,8 +1870,10 @@ footer .rss svg{width:11px;height:11px;flex:0 0 11px}
     display:flex;justify-content:space-around;align-items:stretch;
     gap:0;flex-wrap:nowrap;
     padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));
-    background:rgba(9,9,14,.92);
-    backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);
+    /* 与顶栏同理去掉液态玻璃，改实底（2026-10-05）。
+       底栏在屏幕最下方本来遮不到头像，但半透明+模糊会让滚过的
+       作品图在按钮间渗出来，看着不干净。 */
+    background:rgba(9,9,14,.97);
     border-top:1px solid var(--line);
     box-shadow:0 -8px 28px -14px rgba(0,0,0,.9);
   }
