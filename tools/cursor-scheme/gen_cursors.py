@@ -13,9 +13,9 @@ from PIL import Image, ImageDraw, ImageFilter
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zfsn")
 os.makedirs(OUT, exist_ok=True)
 
-RED = (255, 45, 74, 255)          # #ff2d4a
-RED_SOFT = (255, 45, 74, 60)      # 三角填充（对应 SVG 的 .12 opacity）
-DARK = (30, 2, 12, 255)           # 深色描边，保证浅色桌面也看得见
+RED = (255, 51, 74, 255)          # #ff334a，比原 #ff2d4a 更亮更饱和
+RED_SOFT = (255, 51, 74, 155)     # 填充提到 ~60%（原 60/255≈23%，几乎看不见）
+DARK = (45, 4, 14, 255)           # 深色描边，保证浅色桌面也看得见
 WHITE = (255, 255, 255, 255)
 
 S = 4                              # 超采样倍数
@@ -28,14 +28,22 @@ def canvas():
 
 
 def glow_from(draw_fn, blur=3, merge=2, color=RED):
-    """draw_fn(d) 画发光体；返回发光层"""
+    """draw_fn(d) 画发光体；返回发光层。
+
+    ⚠ 只模糊 alpha 通道：PIL 的 GaussianBlur 会独立模糊 RGB，
+    而透明区的 RGB 是 (0,0,0)，混进来会把红色发光拉成黑雾。
+    曾因此整套光标"发暗、看不清"—— 可见像素里纯黑低透明度像素
+    占满前列，正红一个都排不上。
+    """
     lay = Image.new("RGBA", (CV, CV), (0, 0, 0, 0))
     d = ImageDraw.Draw(lay)
     draw_fn(d)
-    g = lay.filter(ImageFilter.GaussianBlur(blur * S))
-    out = Image.new("RGBA", (CV, CV), (0, 0, 0, 0))
-    for _ in range(merge):
-        out = Image.alpha_composite(out, g)
+    alpha = lay.getchannel("A").filter(ImageFilter.GaussianBlur(blur * S))
+    base = Image.new("RGBA", (CV, CV), color[:3] + (0,))
+    base.putalpha(alpha)
+    out = base
+    for _ in range(merge - 1):
+        out = Image.alpha_composite(out, base)
     return out
 
 
@@ -49,7 +57,7 @@ def scaled(pts):
 
 # ────────────────────────── 各光标绘制 ──────────────────────────
 
-def arrow_shape(d, ox=0, oy=0, fill=RED_SOFT, stroke=RED, w=1.7, dark=True):
+def arrow_shape(d, ox=0, oy=0, fill=RED_SOFT, stroke=RED, w=2.3, dark=True):
     """站点同款三角箭头，顶点 (4,2.5)"""
     pts = scaled([(4 + ox, 2.5 + oy), (22.5 + ox, 11.5 + oy), (13 + ox, 20.5 + oy)])
     if dark:
@@ -62,7 +70,7 @@ def arrow_shape(d, ox=0, oy=0, fill=RED_SOFT, stroke=RED, w=1.7, dark=True):
 def draw_arrow(img, **kw):
     lay = canvas()
     arrow_shape(ImageDraw.Draw(lay), **kw)
-    img.alpha_composite(glow_from(lambda d: arrow_shape(d, fill=None, w=1.7), blur=3))
+    img.alpha_composite(glow_from(lambda d: arrow_shape(d, fill=None, w=2.3), blur=3))
     img.alpha_composite(lay)
 
 
@@ -87,7 +95,7 @@ def draw_help(img):
 def draw_ibeam(img):
     d = ImageDraw.Draw(img)
     x = 15.5 * S
-    w = int(2.0 * S)
+    w = int(2.4 * S)
     d.line([(x, 6 * S), (x, 26 * S)], fill=DARK, width=w + int(1.4 * S))
     d.line([(x, 6 * S), (x, 26 * S)], fill=RED, width=w)
     # 上下衬线
@@ -112,7 +120,7 @@ def draw_link(img):
     d = ImageDraw.Draw(img)
     c = 16 * S
     r = 8.4 * S
-    sw = 1.9 * S
+    sw = 2.4 * S
 
     def ring(dd, col, w):
         dd.ellipse([c - r, c - r, c + r, c + r], outline=col, width=int(w))
@@ -136,8 +144,8 @@ def draw_precision(img):
     """
     d = ImageDraw.Draw(img)
     c = 16 * S
-    w = 1.5 * S
-    inner = 4.2 * S          # 中心缺口半径
+    w = 1.9 * S
+    inner = 4.4 * S          # 中心缺口半径
     outer = 12.8 * S         # 臂长
     arms = [(0, -1), (0, 1), (-1, 0), (1, 0)]
     segs = [(c + dx * inner, c + dy * inner, c + dx * outer, c + dy * outer)
@@ -170,9 +178,9 @@ def _double_arrow(d, ang_deg, color_body=RED):
     ca, sa = math.cos(a), math.sin(a)
     c = 16 * S
     L = 11 * S
-    hw = 5.2 * S          # 箭头半宽
-    hh = 4.6 * S          # 箭头半长
-    shaft = 1.7 * S
+    hw = 5.6 * S          # 箭头半宽
+    hh = 5.2 * S          # 箭头半长
+    shaft = 2.2 * S
 
     def rot(x, y):
         return (c + x * ca - y * sa, c + x * sa + y * ca)
@@ -254,24 +262,43 @@ def draw_no(img):
 
 
 def draw_pen(img):
-    """手写光标：几何笔尖（平行四边形笔身 + 三角尖 + 端点）。
+    """手写光标：几何钢笔。
 
-    旧版只是一根斜线，是整套里最"手绘"的一个；
-    这里全部用直线段构成，无曲线、无随手取的坐标。
+    旧版把「宽度」偏移沿笔轴方向加，画出来是个细长三角条（可见像素仅 26），
+    是整套里最小的一个。这里用正确的平行四边形数学：
+    轴 u = (0.707,-0.707)（向右上），宽 v = (0.707,0.707)（向右下），
+    五边形 = 笔尖 + 下沿 + 后端 + 上沿。
     """
+    import math
     d = ImageDraw.Draw(img)
+    ux, uy = math.sqrt(0.5), -math.sqrt(0.5)     # 轴
+    vx, vy = math.sqrt(0.5), math.sqrt(0.5)      # 宽
+    T = (4.6, 25.8)                               # 笔尖根
+    L, W, NIB = 19.0, 7.2, 3.6
 
-    def poly(pts, fill):
-        d.polygon(scaled(pts), fill=fill)
+    def add(p, dx, dy):
+        return (p[0] + dx, p[1] + dy)
 
-    # 笔身：平行四边形（45 度斜向）。宽度 8 单位 —— 太细在 32px 下发虚
-    poly([(7.6, 27.0), (15.6, 19.0), (27.0, 7.6), (19.0, 15.6)], DARK)
-    poly([(9.4, 26.2), (15.8, 19.8), (25.2, 9.4), (18.8, 16.8)], RED)
-    # 笔尖：三角
-    poly([(3.8, 27.8), (10.8, 20.8), (8.6, 18.6)], DARK)
-    poly([(5.2, 26.4), (9.8, 21.8), (8.4, 20.4)], RED)
-    # 尖端点（热点）
-    d.ellipse(scaled([(3.7, 26.7), (5.9, 28.9)]), fill=WHITE)
+    A = T                                                    # 笔尖根
+    B = add(A, vx * W, vy * W)                               # 下沿起点
+    C = add(B, ux * L, uy * L)                               # 后端下角
+    D = add(C, -vx * W, -vy * W)                             # 后端上角
+    N = add(A, -ux * NIB, -uy * NIB)                          # 笔尖尖
+    outer = [N, B, C, D, A]
+
+    # 内缩版本（绕质心缩 12%，露出深色描边）
+    cx = sum(p[0] for p in outer) / len(outer)
+    cy = sum(p[1] for p in outer) / len(outer)
+    k = 0.88
+    inner = [(cx + (p[0] - cx) * k, cy + (p[1] - cy) * k) for p in outer]
+
+    d.polygon(scaled(outer), fill=DARK)
+    d.polygon(scaled(inner), fill=RED)
+    # 笔尖白点（热点提示）
+    d.ellipse(scaled([(N[0] - 1.5, N[1] - 1.5), (N[0] + 1.5, N[1] + 1.5)]), fill=WHITE)
+    # 发光
+    img.alpha_composite(glow_from(
+        lambda gd: gd.polygon(scaled(outer), fill=RED), blur=3))
 
 
 def draw_uparrow(img):
@@ -436,7 +463,7 @@ SPEC = [
     ("SizeNESW", lambda im: draw_resize(im, 135),                16, 16),
     ("Move",     lambda im: draw_move(im),                       16, 16),
     ("Unavailable", lambda im: draw_no(im),                      16, 16),
-    ("Handwriting", lambda im: draw_pen(im),                      5, 27),
+    ("Handwriting", lambda im: draw_pen(im),                      2, 29),
     ("Up",       lambda im: draw_uparrow(im),                    16, 3),
 ]
 
