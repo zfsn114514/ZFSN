@@ -8,7 +8,7 @@ echo   ZFSN 网站数据更新
 echo ============================================
 echo.
 
-REM ── 找 Python ──
+REM == 找 Python ==
 REM 优先用正式安装的 Python（模块最全），
 REM 找不到才退回 ComfyUI 自带的嵌入式版本。
 set PY=
@@ -28,7 +28,7 @@ if not defined PY (
 echo 使用 Python: %PY%
 echo.
 
-REM ── 找 Node ──
+REM == 找 Node ==
 REM [3/5] 的 B站 投稿列表要靠 Node 驱动无头 Chrome，没有 Node 就跳过该步。
 set NODE=
 if exist "%ProgramFiles%\nodejs\node.exe" set NODE=%ProgramFiles%\nodejs\node.exe
@@ -62,7 +62,7 @@ echo 说明：读出本机 Steam 的家庭组成员，逐个查他们的完整游戏库取并集，
 echo       再减去自己拥有的 = 家庭共享游戏（含**没下载过**的那些）。
 echo       需要每位成员的「游戏详情」隐私设为公开。
 echo       首次运行要查 300+ 个商店接口（约 10 分钟），之后有缓存很快。
-echo       必须跑在 [1/5] 之后 —— 它要读 steam_games.json 做差集。
+echo       必须跑在 [1/5] 之后 -- 它要读 steam_games.json 做差集。
 echo.
 "%PY%" build_steam_family.py
 echo.
@@ -72,7 +72,7 @@ echo [3/5] B站 投稿列表（无头 Chrome 抓取）
 echo --------------------------------------------
 echo 说明：B站 的投稿列表接口 /x/space/wbi/arc/search 对本机 IP 是
 echo       **IP 级风控封禁**（HTTP 412）。实测换 UA、补 dm_img_* 风控参数、
-echo       刷新 buvid cookie、换旧版接口、换 APP 端接口 —— 全部无效。
+echo       刷新 buvid cookie、换旧版接口、换 APP 端接口 -- 全部无效。
 echo       所以本步骤改用**真实 Chrome** 渲染空间页，再把页面自己发出的
 echo       接口响应钩下来，从而拿到**全部投稿**（含翻页）。
 echo.
