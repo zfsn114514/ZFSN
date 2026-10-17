@@ -1,0 +1,15 @@
+Arrow        Normal.cur       正常选择
+Help         Help.cur         帮助选择
+AppStarting  Working.ani      后台运行
+Wait         Busy.ani         忙
+NWPen        Handwriting.cur  手写
+No           Unavailable.cur  不可用
+SizeAll      Move.cur         移动
+SizeNESW     SizeNESW.cur     对角线调整 2
+SizeNS       SizeNS.cur       垂直调整
+SizeNWSE     SizeNWSE.cur     对角线调整 1
+SizeWE       SizeWE.cur       水平调整
+UpArrow      Up.cur           备用
+Crosshair    Precision.cur    精确选择
+IBeam        Text.cur         文本选择
+Hand         Link.cur         链接选择

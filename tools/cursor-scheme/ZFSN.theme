@@ -1,0 +1,19 @@
+[Theme]
+DisplayName=ZFSN Red Glow
+
+[Control Panel\Cursors]
+Arrow=%CURDIR%\Normal.cur
+Help=%CURDIR%\Help.cur
+AppStarting=%CURDIR%\Working.ani
+Wait=%CURDIR%\Busy.ani
+NWPen=%CURDIR%\Handwriting.cur
+No=%CURDIR%\Unavailable.cur
+SizeAll=%CURDIR%\Move.cur
+SizeNESW=%CURDIR%\SizeNESW.cur
+SizeNS=%CURDIR%\SizeNS.cur
+SizeNWSE=%CURDIR%\SizeNWSE.cur
+SizeWE=%CURDIR%\SizeWE.cur
+UpArrow=%CURDIR%\Up.cur
+Crosshair=%CURDIR%\Precision.cur
+IBeam=%CURDIR%\Text.cur
+Hand=%CURDIR%\Link.cur
