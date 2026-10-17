@@ -49,7 +49,15 @@ if errorlevel 1 (
 )
 
 echo [1/3] Staging changes ...
-"%GIT%" add .
+rem Stage ONLY tracked files, then explicitly pick up new files.
+rem Rationale: a bare "git add ." happily commits scratch output
+rem (test dumps, temp bat files, logs) that were never meant to be
+rem versioned -- that is how _ghb_test.bat and ghb.txt got in.
+rem -u brings in new files, but respects .gitignore.
+"%GIT%" add -u
+"%GIT%" add -A -- . ":(exclude)*.tmp-*"
+rem Drop anything that still looks like scratch output from the index.
+"%GIT%" reset -q -- _ghb_test.bat ghb.txt *.bak-lf 2>nul
 
 rem diff --cached --quiet exits 1 when there ARE staged changes,
 rem and exits 0 when there are none. Branch on that to skip the
