@@ -1,0 +1,22 @@
+# ── Windows 批处理脚本的换行与编码 ────────────────────────────────
+#
+# cmd.exe 要求 .bat 必须是 CRLF。LF-only 的批处理会在多字节 UTF-8 字符
+# 中间错位切分，整份文件被撕成碎片逐行当命令执行（满屏"不是内部或外部命令"）。
+*.bat text eol=crlf
+
+# 本项目的两个 bat 是 GBK 编码（中文 Windows 的 ACP=936，配 chcp 936 最稳）。
+# 必须标 -text：否则 git 会按 UTF-8 / CRLF 去"规范化"它们，把字节改坏。
+tools/更新数据.bat   -text
+更新github.bat       -text
+
+# ── 其它文本统一按 LF 存库 ───────────────────────────────────────
+*.js   text eol=lf
+*.py   text eol=lf
+*.cjs  text eol=lf
+*.mjs  text eol=lf
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.css  text eol=lf
+*.md   text eol=lf

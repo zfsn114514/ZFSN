@@ -33,8 +33,8 @@ if not defined GIT (
 
 echo.
 echo ============================================
-echo   ZFSN ç«™ç‚¹ - æ›´æ–°åˆ° GitHub
-echo   ç›®å½•: %CD%
+echo   ZFSN Õ¾µã - ¸üÐÂµ½ GitHub
+echo   Ä¿Â¼: %CD%
 echo   Git: %GIT%
 echo ============================================
 echo.
