@@ -6,6 +6,7 @@ set SRC=%~dp0zfsn
 set DST=%LOCALAPPDATA%\ZFSN-Cursors
 set THEMES=%LOCALAPPDATA%\Microsoft\Windows\Themes
 set THEME=%THEMES%\ZFSN.theme
+set APPLY=%~dp0apply.ps1
 
 if /i "%~1"=="/restore" goto restore
 
@@ -73,18 +74,40 @@ reg add "HKCU\Control Panel\Cursors" /v Crosshair   /t REG_SZ /d "%DST%\Precisio
 reg add "HKCU\Control Panel\Cursors" /v IBeam       /t REG_SZ /d "%DST%\Text.cur"        /f >nul
 reg add "HKCU\Control Panel\Cursors" /v Hand        /t REG_SZ /d "%DST%\Link.cur"        /f >nul
 
-powershell -NoProfile -Command "$s='[DllImport(\"user32.dll\")] public static extern bool SystemParametersInfo(uint a,uint b,System.IntPtr c,uint d)'; $t=Add-Type -MemberDefinition $s -Name ZFSNSPI -Namespace W -PassThru; $t::SystemParametersInfo(0x57,0,[System.IntPtr]::Zero,0x3)"
+rem Use the standalone apply.ps1 to call SystemParametersInfo(SPI_SETCURSORS).
+rem This P/Invoke was first written as a bat-inline "powershell -Command"
+rem one-liner; cmd and PowerShell quoting rules fought each other and the
+rem generated C# came out mangled, so Add-Type failed to compile.
+rem Calling a .ps1 via -File removes all escaping problems.
+if exist "%APPLY%" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%APPLY%"
+  if errorlevel 1 goto applyfail
+) else (
+  goto applyfail
+)
 
 echo.
 echo ============================================
 echo   Done. 15 cursor roles installed.
 echo ============================================
 echo.
-echo If some cursors still look like the old ones,
-echo sign out and back in, or reboot once.
-echo.
 echo Restore Windows default cursors later:
 echo   install.bat /restore
+echo.
+pause
+exit /b 0
+
+:applyfail
+echo.
+echo ============================================
+echo   Registry written. Live apply failed.
+echo ============================================
+echo.
+echo Trying the rundll32 fallback ...
+%SystemRoot%\System32\rundll32.exe user32.dll,UpdatePerUserSystemParameters
+echo.
+echo If the cursors still have not changed:
+echo   sign out and back in once - they will load then.
 echo.
 pause
 exit /b 0
@@ -111,9 +134,18 @@ reg add "HKCU\Control Panel\Cursors" /v Crosshair   /t REG_SZ /d ""             
 reg add "HKCU\Control Panel\Cursors" /v IBeam       /t REG_SZ /d ""                       /f >nul
 reg add "HKCU\Control Panel\Cursors" /v Hand        /t REG_SZ /d "%W%\aero_link.cur"     /f >nul
 
-powershell -NoProfile -Command "$s='[DllImport(\"user32.dll\")] public static extern bool SystemParametersInfo(uint a,uint b,System.IntPtr c,uint d)'; $t=Add-Type -MemberDefinition $s -Name ZFSNSPI2 -Namespace W -PassThru; $t::SystemParametersInfo(0x57,0,[System.IntPtr]::Zero,0x3)"
-
+if exist "%APPLY%" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%APPLY%"
+  if errorlevel 1 goto restorefail
+)
 echo Done. Default cursors restored.
+echo.
+pause
+exit /b 0
+
+:restorefail
+echo Done. Default cursors written to registry.
+echo Sign out and back in to finish restoring.
 echo.
 pause
 exit /b 0

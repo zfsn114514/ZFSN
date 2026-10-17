@@ -9,11 +9,28 @@
 
 1. 把 `zfsn\*.cur|*.ani` 复制到 `%LOCALAPPDATA%\ZFSN-Cursors\`
 2. 写主题文件 `%LOCALAPPDATA%\Microsoft\Windows\Themes\ZFSN.theme`
-3. 写注册表 `HKCU\Control Panel\Cursors` 并广播 `SPI_SETCURSORS` 应用
+3. 写注册表 `HKCU\Control Panel\Cursors`，再调 `apply.ps1` 广播
+   `SPI_SETCURSORS` 让新光标立即生效
 
 **恢复默认**：`install.bat /restore`
 
-若个别光标没立即变化，注销重登一次即可。
+若第 3 步失败，脚本会自动试 `rundll32 user32.dll,UpdatePerUserSystemParameters`，
+并提示你注销重登（注册表已写好，注销后一定会生效）。
+
+**只应用不重装**（注册表已写好时）：
+```
+powershell -ExecutionPolicy Bypass -File apply.ps1
+```
+
+## 为什么 apply 是独立 .ps1
+
+最初把 `SystemParametersInfo` 的 P/Invoke 写成 bat 内联的
+`powershell -Command "..."` 一行式。cmd 与 PowerShell 的引号规则互相打架，
+`\"` 转义被双重处理，生成的 C# 源码被撕成两截，`Add-Type` 编译失败 ——
+表现就是满屏 `SOURCE_COMPILER_ERROR`。
+
+改成独立 `.ps1`（用单引号 here-string，零转义）+ bat 用 `-File` 调用后，
+这个问题类彻底消失。**凡是含引号/反斜杠/花括号的 PowerShell 代码，都不要塞进 bat。**
 
 ## 设计原则（避免"手绘感"）
 
@@ -51,6 +68,7 @@ validate_cursors.py   结构与像素校验（必须 0 报错）
 make_preview.py       浅/深双背景预览
 make_zoom.py          5x 最近邻放大预览
 install.bat           安装 / 恢复
+apply.ps1             应用光标（SPI_SETCURSORS），可单独运行
 zfsn/                 生成的光标文件
 ```
 
