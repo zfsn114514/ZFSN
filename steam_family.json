@@ -8,11 +8,11 @@
     "queried": 5,
     "private": []
   },
-  "updated": "2026-10-02 12:10:20",
+  "updated": "2026-10-17 17:30:50",
   "steam_root": "C:\\Program Files (x86)\\Steam",
-  "count": 394,
+  "count": 395,
   "total_hours": 347.9,
-  "installed_count": 40,
+  "installed_count": 39,
   "games": [
     {
       "appid": 1245620,
@@ -1059,7 +1059,7 @@
         "独立"
       ],
       "free": false,
-      "installed": true,
+      "installed": false,
       "owner_count": 2,
       "family": true
     },
@@ -4592,6 +4592,26 @@
       "store": "https://store.steampowered.com/app/230820/",
       "release": "2013 年 5 月 28 日",
       "genres": [
+        "冒险",
+        "独立"
+      ],
+      "free": false,
+      "installed": false,
+      "owner_count": 1,
+      "family": true
+    },
+    {
+      "appid": 1304930,
+      "name": "The Outlast Trials",
+      "minutes": 0,
+      "hours": 0.0,
+      "playtime": "未玩过",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1304930/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1304930/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1304930/",
+      "release": "2024 年 3 月 5 日",
+      "genres": [
+        "动作",
         "冒险",
         "独立"
       ],

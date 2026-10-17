@@ -1,6 +1,6 @@
 {
   "source": "Steam Web API (官方)",
-  "updated": "2026-10-02 03:25:43",
+  "updated": "2026-10-17 17:30:40",
   "steamid": "76561199577166952",
   "profile": "https://steamcommunity.com/id/ZFSN114514/",
   "player": {
@@ -9,15 +9,15 @@
     "created": "2023-12-02"
   },
   "count": 165,
-  "total_hours": 2308.3,
+  "total_hours": 2334.6,
   "games": [
     {
       "appid": 438100,
       "name": "VRChat",
-      "minutes": 34883,
-      "hours": 581.4,
-      "playtime": "581 小时",
-      "recent": 687,
+      "minutes": 35933,
+      "hours": 598.9,
+      "playtime": "599 小时",
+      "recent": 953,
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/438100/header.jpg",
       "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/438100/capsule_616x353.jpg",
       "store": "https://store.steampowered.com/app/438100/"
@@ -25,10 +25,10 @@
     {
       "appid": 730,
       "name": "Counter-Strike 2",
-      "minutes": 22834,
-      "hours": 380.6,
-      "playtime": "381 小时",
-      "recent": 1197,
+      "minutes": 23241,
+      "hours": 387.4,
+      "playtime": "387 小时",
+      "recent": 377,
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/header.jpg",
       "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/capsule_616x353.jpg",
       "store": "https://store.steampowered.com/app/730/"
@@ -69,10 +69,10 @@
     {
       "appid": 431960,
       "name": "Wallpaper Engine",
-      "minutes": 5507,
+      "minutes": 5508,
       "hours": 91.8,
       "playtime": "91.8 小时",
-      "recent": 0,
+      "recent": 1,
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/431960/header.jpg",
       "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/431960/capsule_616x353.jpg",
       "store": "https://store.steampowered.com/app/431960/"
@@ -113,10 +113,10 @@
     {
       "appid": 601150,
       "name": "Devil May Cry 5",
-      "minutes": 3336,
-      "hours": 55.6,
-      "playtime": "55.6 小时",
-      "recent": 0,
+      "minutes": 3373,
+      "hours": 56.2,
+      "playtime": "56.2 小时",
+      "recent": 36,
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/601150/header.jpg",
       "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/601150/capsule_616x353.jpg",
       "store": "https://store.steampowered.com/app/601150/"
@@ -149,7 +149,7 @@
       "minutes": 1856,
       "hours": 30.9,
       "playtime": "30.9 小时",
-      "recent": 31,
+      "recent": 0,
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1139900/header.jpg",
       "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1139900/capsule_616x353.jpg",
       "store": "https://store.steampowered.com/app/1139900/"
@@ -309,6 +309,17 @@
       "store": "https://store.steampowered.com/app/2073620/"
     },
     {
+      "appid": 1238860,
+      "name": "Battlefield 4™ ",
+      "minutes": 366,
+      "hours": 6.1,
+      "playtime": "6.1 小时",
+      "recent": 86,
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1238860/header.jpg",
+      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1238860/capsule_616x353.jpg",
+      "store": "https://store.steampowered.com/app/1238860/"
+    },
+    {
       "appid": 1659040,
       "name": "HITMAN World of Assassination",
       "minutes": 351,
@@ -373,17 +384,6 @@
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/2349820/header.jpg",
       "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/2349820/capsule_616x353.jpg",
       "store": "https://store.steampowered.com/app/2349820/"
-    },
-    {
-      "appid": 1238860,
-      "name": "Battlefield 4™ ",
-      "minutes": 280,
-      "hours": 4.7,
-      "playtime": "4.7 小时",
-      "recent": 0,
-      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1238860/header.jpg",
-      "capsule": "https://cdn.cloudflare.steamstatic.com/steam/apps/1238860/capsule_616x353.jpg",
-      "store": "https://store.steampowered.com/app/1238860/"
     },
     {
       "appid": 332950,
@@ -1829,46 +1829,46 @@
   ],
   "recent": [
     {
-      "appid": 730,
-      "name": "Counter-Strike 2",
-      "minutes2w": 1197,
-      "playtime2w": "19.9 小时",
-      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/header.jpg"
-    },
-    {
       "appid": 250820,
       "name": "SteamVR",
-      "minutes2w": 792,
-      "playtime2w": "13.2 小时",
+      "minutes2w": 1112,
+      "playtime2w": "18.5 小时",
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/250820/header.jpg"
     },
     {
       "appid": 438100,
       "name": "VRChat",
-      "minutes2w": 687,
-      "playtime2w": "11.4 小时",
+      "minutes2w": 953,
+      "playtime2w": "15.9 小时",
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/438100/header.jpg"
     },
     {
       "appid": 5253140,
       "name": "NekoTrak Demo",
-      "minutes2w": 666,
-      "playtime2w": "11.1 小时",
+      "minutes2w": 763,
+      "playtime2w": "12.7 小时",
       "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/5253140/header.jpg"
     },
     {
-      "appid": 480,
-      "name": "Spacewar",
-      "minutes2w": 47,
-      "playtime2w": "47 分钟",
-      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/480/header.jpg"
+      "appid": 730,
+      "name": "Counter-Strike 2",
+      "minutes2w": 377,
+      "playtime2w": "6.3 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/730/header.jpg"
     },
     {
-      "appid": 1139900,
-      "name": "Ghostrunner",
-      "minutes2w": 31,
-      "playtime2w": "31 分钟",
-      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1139900/header.jpg"
+      "appid": 1238860,
+      "name": "Battlefield 4™ ",
+      "minutes2w": 86,
+      "playtime2w": "1.4 小时",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/1238860/header.jpg"
+    },
+    {
+      "appid": 601150,
+      "name": "Devil May Cry 5",
+      "minutes2w": 36,
+      "playtime2w": "36 分钟",
+      "cover": "https://cdn.cloudflare.steamstatic.com/steam/apps/601150/header.jpg"
     }
   ]
 }
