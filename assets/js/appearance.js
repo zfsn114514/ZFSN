@@ -45,7 +45,33 @@
     });
     document.dispatchEvent(new CustomEvent('zfsn:appearance', { detail: settings }));
   }
-  window.ZFSNAppearance = { defaults: defaults, normalize: normalize, apply: apply, isPreview: isPreview };
+  var preferenceKey = 'zfsn_visitor_theme_v1';
+  var preferred = null;
+  try { preferred = localStorage.getItem(preferenceKey); } catch (_) {}
+  if (!['classic','cyberpunk','nightcity'].includes(preferred)) preferred = null;
+  var site = defaults('classic');
+  function effective(){
+    if (!preferred || isPreview) return site;
+    var palette = themeDefaults(preferred);
+    return Object.assign({}, site, {theme:palette.theme, accent:palette.accent, background:palette.background});
+  }
+  function setSite(value){ site = normalize(value); apply(effective()); }
+  function chooseTheme(theme){
+    if (theme !== null && !['classic','cyberpunk','nightcity'].includes(theme)) return;
+    preferred = theme;
+    try { if (theme) localStorage.setItem(preferenceKey,theme); else localStorage.removeItem(preferenceKey); } catch (_) {}
+    apply(effective());
+  }
+  window.ZFSNAppearance = { defaults: defaults, normalize: normalize, apply: apply, isPreview: isPreview,
+    setSite:setSite, chooseTheme:chooseTheme, preference:function(){return preferred;}, siteTheme:function(){return site.theme;} };
+  if (!isPreview) {
+    if (preferred) apply(effective());
+    window.addEventListener('storage',function(event){
+      if (event.key !== preferenceKey && event.key !== null) return;
+      preferred = ['classic','cyberpunk','nightcity'].includes(event.newValue) ? event.newValue : null;
+      apply(effective());
+    });
+  }
   if (isPreview) {
     window.addEventListener('message', function (event) {
       if (event.source !== window.parent || !event.data || event.data.type !== 'zfsn:appearance-preview') return;

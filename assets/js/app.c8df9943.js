@@ -2885,7 +2885,7 @@
 
   function loadAppearance(){
     if (!window.ZFSNAppearance || window.ZFSNAppearance.isPreview) return;
-    api("/api/appearance").then(function(data){ window.ZFSNAppearance.apply(data.settings); }).catch(function(){ /* Keep the original theme if settings are unavailable. */ });
+    api("/api/appearance").then(function(data){ window.ZFSNAppearance.setSite(data.settings); }).catch(function(){ /* Keep the original theme if settings are unavailable. */ });
   }
   loadAppearance();
   document.addEventListener("visibilitychange", function(){ if (!document.hidden) loadAppearance(); });

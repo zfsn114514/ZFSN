@@ -28,9 +28,9 @@ const server=http.createServer(async(req,res)=>{
 });
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;let browser;try{
  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
- const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const context=await browser.newContext({viewport:{width:1440,height:1000}});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>localStorage.setItem('zfsn_admin_token','fixture-session'));
- await page.route('https://www.zfsnnb.dpdns.org/**',route=>route.fulfill({contentType:'application/json',body:'{"ok":true,"items":[]}'}));
+ await context.route('https://www.zfsnnb.dpdns.org/**',route=>route.fulfill({contentType:'application/json',body:'{"ok":true,"items":[]}'}));
  await page.goto(base+'/admin/');await page.waitForSelector('#app.on');
  await page.locator('[data-tab=work]').click();await page.waitForTimeout(450);await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(output,'admin-dashboard.png')});await page.locator('#add-work').click();
  await page.locator('#w-title').fill('自动草稿测试');await page.locator('#w-desc').fill('## 草稿正文\n\n不会发布到前台。');
@@ -61,5 +61,24 @@ const server=http.createServer(async(req,res)=>{
  await page.waitForFunction(()=>document.body.dataset.page==='works'&&!document.body.dataset.switching);
  assert.equal(await page.locator('.page.active').count(),1);assert.equal(await page.locator('#wipe').evaluate(el=>getComputedStyle(el).pointerEvents),'none');
  await page.evaluate(()=>ZFSNAppearance.apply({...ZFSNAppearance.defaults('classic'),motion:false}));await page.locator('.nav [data-go=bili]').click();await page.waitForFunction(()=>document.body.dataset.page==='bili'&&!document.body.dataset.switching);assert.equal(await page.locator('#wipe').evaluate(el=>getComputedStyle(el).display),'none');
- assert.deepEqual(errors,[]);console.log('PASS drafts survive reload; crop keeps originals; publish, ordering, site settings, mobile and rapid navigation');
+ // Visitor themes stay local, survive refresh and never replace owner settings.
+ await page.locator('#visitor-theme-toggle').click();await page.locator('.vt-option[data-theme=classic]').click();
+ assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),'classic');
+ assert.equal(await page.evaluate(()=>document.body.dataset.page),'bili');
+ await page.reload();await page.waitForFunction(()=>window.ZFSN&&document.documentElement.dataset.theme==='classic');
+ await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>ZFSNAppearance.preference()),'classic');
+ assert.equal(await page.locator('.nav [data-go=bili]>span').textContent(),'视频档案');
+ assert.equal(settings.theme,'nightcity');
+ const peer=await page.context().newPage();await peer.goto(base+'/');await peer.waitForFunction(()=>window.ZFSN&&document.documentElement.dataset.theme==='classic');
+ await peer.locator('#visitor-theme-toggle').click();await peer.locator('.vt-option[data-theme=cyberpunk]').click();
+ await page.waitForFunction(()=>document.documentElement.dataset.theme==='cyberpunk');await peer.close();
+ const preview=await page.context().newPage();await preview.goto(base+'/?appearance-preview=1');await preview.waitForFunction(()=>window.ZFSNAppearance);assert.equal(await preview.locator('#visitor-theme-toggle').count(),0);
+ await preview.evaluate(()=>ZFSNAppearance.apply(ZFSNAppearance.defaults('nightcity')));assert.equal(await preview.evaluate(()=>document.documentElement.dataset.theme),'nightcity');await preview.close();
+ await page.locator('#visitor-theme-toggle').click();await page.locator('.vt-option[data-theme=default]').click();
+ assert.equal(await page.evaluate(()=>ZFSNAppearance.preference()),null);assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),'nightcity');
+ await page.setViewportSize({width:390,height:844});await page.locator('#visitor-theme-toggle').click();
+ await page.waitForTimeout(100);const bounds=await page.locator('#visitor-theme-panel').boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=390&&bounds.y>=0&&bounds.y+bounds.height<=844);
+ await page.screenshot({path:path.join(output,'visitor-theme-mobile.png')});await page.keyboard.press('Escape');assert.equal(await page.locator('#visitor-theme-panel').evaluate(el=>el.open),false);
+ await page.setViewportSize({width:1440,height:1000});await page.locator('#visitor-theme-toggle').click();await page.screenshot({path:path.join(output,'visitor-theme-desktop.png')});await page.keyboard.press('Escape');
+ assert.deepEqual(errors,[]);console.log('PASS drafts survive reload; crop keeps originals; publish, ordering, site settings, mobile, rapid navigation and persistent visitor themes');
 }finally{if(browser)await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});
