@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 220" fill="none">
+  <title>ZFSN — Night City signature</title>
+  <defs>
+    <mask id="cuts">
+      <path fill="#fff" d="M0 0h700v220H0z"/>
+      <path fill="#000" d="m0 92 700-8v5L0 97zm0 48 700-19v3L0 143zm124-95 6 1-42 128-5-1zm310-10 4 1-47 151-5-1z"/>
+    </mask>
+    <g id="letters">
+      <!-- Hand-drawn angular letterforms; no font dependency. -->
+      <path d="m51 43 154-8-12 24-112 89 101-9-8 25-150 10 9-25 117-90-110 8z"/>
+      <path d="m222 35 132-7-12 25-95 4-14 31 81-5-12 23-79 6-28 63-30 4z"/>
+      <path d="m383 29 105-7-18 26-81 5-17 25 71 13-8 24-61 52-116 11 21-28 82-6 32-28-70-12-9-19 37-45z"/>
+      <path d="m505 22 26-2 40 96 48-102 28-3-79 159-24 4-40-98-43 95-30 3z"/>
+    </g>
+  </defs>
+  <g transform="translate(23 9) skewX(-9)">
+    <use href="#letters" fill="#54eeed" transform="translate(3 3)" opacity=".9"/>
+    <g mask="url(#cuts)" fill="#f5ed00"><use href="#letters"/></g>
+    <path d="m40 186 330-15-46 8-291 14zm375-6 221-23-65 15-162 13zM185 32l-61 6 11-6 77-6zm322-17 120-9-18 7-109 8z" fill="#f5ed00"/>
+    <path d="m67 104 91-4m190 29 58-4m134-38 45-3" stroke="#07111b" stroke-width="3"/>
+  </g>
+  <g stroke="#6be9e9" stroke-width="1" opacity=".8">
+    <path d="m391 206 17-5h199l15-6h39m-247 10h124m77-10 19-3"/>
+  </g>
+</svg>

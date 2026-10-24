@@ -10,3 +10,12 @@ body[data-page=home]>.nav{display:none}#page-home{padding:100px 8vw 70px;min-hei
 @keyframes menu-panel{from{opacity:0;transform:translateX(-5px)}to{opacity:1;transform:none}}@keyframes menu-logo{0%{opacity:0;transform:skew(-7deg) translateX(-8px)}70%{opacity:1;text-shadow:-3px 0 var(--cyan)}100%{opacity:1;transform:skew(-7deg);text-shadow:3px 2px #e43e57}}
 @media(max-width:760px){.topbar,.topbar.scrolled{padding:20px}.nav,.topbar.scrolled ~ .nav{top:auto;right:0;bottom:0;left:0;background:#07111b;border-top:1px solid var(--line2);padding-bottom:calc(7px + env(safe-area-inset-bottom,0px))}.nav button{font-size:10px;padding:9px 2px;border:0}.nav button.active:after{top:0;left:20%;width:60%}.page{padding:100px 18px 100px}#page-home{padding:100px 28px 70px;min-height:calc(100vh - 65px)}.hero{min-height:650px}.hero .name{font-size:88px;margin-top:35px}.profile-eyebrow{font-size:8px;margin-top:0}.profile-eyebrow span{margin-right:9px}.hero .tagline{font-size:9px;margin-bottom:40px}.profile-visual{right:0;bottom:-20px;width:100px;opacity:.55}.hero .avatar-stage{width:60px;height:60px}.hero .flip-hint{font-size:6px}.game-main-menu{width:min(310px,100%)}.game-main-menu a{font-size:17px;min-height:46px}.phead h2{font-size:32px}body::before{background-position:65% center;opacity:.5}footer{padding-left:28px}.gviewbtn span{display:inline;font-size:10px}.gviewbtn{padding:0 10px}}
 @media(prefers-reduced-motion:reduce){.page.active,.hero .name.reveal{animation:none;opacity:1}.game-main-menu a:hover,.game-main-menu a:focus-visible{transform:none}}
+
+/* Bespoke vector signature, only used by the in-game menu theme. */
+.hero .name{width:min(470px,100%);max-width:none;line-height:0;font-size:inherit;transform:none;font-style:normal;text-shadow:none;margin:10px 0 18px;background:none}
+.hero .name .name-text{display:none}
+.hero .name .nightcity-logo{display:block;width:100%;height:auto;filter:drop-shadow(0 0 13px rgba(245,237,0,.07))}
+.hero .name.reveal{animation:signature-arrive .35s steps(4) both}
+@keyframes signature-arrive{0%{opacity:0;transform:translateX(-9px)}45%{opacity:.7;transform:translateX(3px)}100%{opacity:1;transform:none}}
+@media(max-width:760px){.hero .name{width:min(350px,100%);margin:30px 0 24px}}
+@media(prefers-reduced-motion:reduce){.hero .name.reveal{animation:none}}
