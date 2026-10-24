@@ -9,6 +9,7 @@
 
 import * as L from "./lib.js";
 import * as M from "./media.js";
+import { appearanceDefaults, validateAppearance } from "./appearance.js";
 
 /* ── 常量（与旧后端保持一致，避免前端行为突变）───────────────── */
 const MAX_NAME = 24;
@@ -545,6 +546,30 @@ async function handleAPI(request, env, ctx, url) {
     ).bind(JSON.stringify({ text, updated })).run();
 
     return L.ok({ text, has_content: !!text.trim(), updated });
+  }
+
+  if (p === "/api/appearance" && method === "GET") {
+    const row = await env.DB.prepare("SELECT v FROM config WHERE k = 'appearance'").first();
+    let settings = appearanceDefaults(), updated = "";
+    if (row) {
+      try {
+        const saved = JSON.parse(row.v);
+        settings = validateAppearance(saved.settings);
+        updated = String(saved.updated || "");
+      } catch (_) { /* Invalid saved settings fall back to the classic theme. */ }
+    }
+    return L.ok({ settings, updated });
+  }
+
+  if (p === "/api/admin/appearance" && method === "POST") {
+    if (!(await L.checkToken(env, L.adminTokenOf(request)))) return L.fail("未登录或会话已过期", 401);
+    let settings;
+    try { settings = validateAppearance(await L.readJSON(request, 4096)); }
+    catch (error) { return L.fail(error.tooBig ? "外观设置内容过大" : "外观设置格式错误，请检查主题和颜色", error.tooBig ? 413 : 400); }
+    const updated = L.stamp(L.now(), tz);
+    await env.DB.prepare("INSERT INTO config (k, v) VALUES ('appearance', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v")
+      .bind(JSON.stringify({ settings, updated })).run();
+    return L.ok({ settings, updated });
   }
 
   /* ── 健康检查（前端靠它探测后端在不在）───────────────────── */

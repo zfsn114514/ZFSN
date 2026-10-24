@@ -19,3 +19,5 @@
 *.json text eol=lf
 *.css  text eol=lf
 *.md   text eol=lf
+# SVG cursor resources must be stable across Windows/Linux checkouts.
+*.svg text eol=lf

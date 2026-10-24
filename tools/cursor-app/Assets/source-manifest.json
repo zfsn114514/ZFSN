@@ -1,0 +1,26 @@
+{
+  "arrow": {
+    "source": "assets/cursor/arrow.svg",
+    "sha256": "40fd73c80ca3ad6e9e5d959ce40dda2437f9c6baff1b84845b2b5a881ab4e155",
+    "hotspot": [
+      4,
+      2
+    ],
+    "size": [
+      32,
+      32
+    ]
+  },
+  "point": {
+    "source": "assets/cursor/point.svg",
+    "sha256": "c380304261e16533864b25d2f2b245e8ef1b24a416630986e64a4597c946c8f9",
+    "hotspot": [
+      12,
+      12
+    ],
+    "size": [
+      32,
+      32
+    ]
+  }
+}
