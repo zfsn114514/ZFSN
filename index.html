@@ -95,7 +95,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-<link rel="stylesheet" href="assets/css/app.50df6d20.css">
+<link rel="stylesheet" href="assets/css/app.8baea6bc.css">
 <link rel="stylesheet" href="assets/css/markdown.css">
 </head>
 <!-- data-page 标记当前页，供弹幕层判断"是否只在首页显示"。
@@ -118,7 +118,8 @@
 <button id="danmaku-toggle" title="切换弹幕" aria-label="切换弹幕留言">💬</button>
 
 <div class="topbar">
-  <div class="mark" data-go="home"><span class="dot"></span>ZFSN</div>
+  <div class="mark" data-go="home"><span class="dot"></span><span>ZFSN</span><span class="mark-label">PERSONAL TERMINAL</span></div>
+  <div class="terminal-tag" aria-hidden="true">创作 / 游戏 / 记录</div>
 </div>
 <!-- ── 导航 ──────────────────────────────────────────────────────
      ⚠ 刻意与 .topbar **平级**，不放在它里面。
@@ -138,9 +139,14 @@
     <button data-go="guest"><svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H8l-4 3.5V5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5z"/></svg><span>留言</span></button>
 </nav>
 
+<div class="terminal-rail" aria-hidden="true"><span>ZFSN / PERSONAL ARCHIVE</span><i></i><span>EST. 2026</span></div>
+
 <!-- ══ 首页 ══ -->
 <section class="page active" id="page-home">
   <div class="hero">
+    <div class="profile-header">
+      <div class="profile-eyebrow"><span>01 / IDENTITY</span> 个人终端</div>
+      <div class="profile-visual">
     <div class="avatar-stage reveal d1" id="stage">
       <div class="rings"><div class="ring"></div><div class="ring r2"></div></div>
       <div class="avatar-wrap">
@@ -154,12 +160,16 @@
         </div>
       </div>
     </div>
-    <div class="flip-hint">Click to flip / 点击翻转</div>
+    <div class="flip-hint">IDENTITY CARD / 点击翻转</div>
+      </div>
 
     <h1 class="name reveal d2">ZFSN</h1>
 
     <p class="tagline reveal d3"><span id="typed"></span><span class="caret"></span></p>
 
+      <div class="profile-actions"><a class="terminal-primary" href="#works" data-go="works">浏览作品 <span>↗</span></a><a class="terminal-secondary" href="#guest" data-go="guest">留下讯息 <span>＋</span></a></div>
+    </div>
+    <div class="portal-label"><span>接入节点</span><span>EXTERNAL CONNECTIONS / 04</span></div>
     <div class="links reveal d4">
       <a class="card bili" href="https://space.bilibili.com/1220210222" target="_blank" rel="noopener">
         <span class="c3d" aria-hidden="true"></span>
@@ -240,9 +250,9 @@
 <!-- ══ 作品 ══ -->
 <section class="page" id="page-works">
   <div class="wrap">
-    <div class="phead">
+    <div class="phead" data-index="02">
       <div class="kicker">Gallery</div>
-      <h2>作品展示墙</h2>
+      <h2>作品档案<span class="heading-cursor" aria-hidden="true">_</span></h2>
       <p>二次元插画 / 视觉创作 — 点击任意作品进入详情页</p>
     </div>
 
@@ -258,11 +268,11 @@
       </div>
       <!-- 视图切换：作品墙（看画面）/ 时间线（看发布顺序） -->
       <div class="gview" role="group" aria-label="切换视图">
-        <button type="button" class="gviewbtn on" data-view="wall" aria-pressed="true" title="缩略图墙">
+        <button type="button" class="gviewbtn on" data-view="wall" aria-controls="gallery" aria-pressed="true" title="缩略图墙">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
           <span>作品墙</span>
         </button>
-        <button type="button" class="gviewbtn" data-view="timeline" aria-pressed="false" title="按时间归档">
+        <button type="button" class="gviewbtn" data-view="timeline" aria-controls="gtimeline" aria-pressed="false" title="按时间归档">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v20"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="13" r="2"/><circle cx="12" cy="20" r="2"/></svg>
           <span>时间线</span>
         </button>
@@ -273,7 +283,7 @@
     <div class="gcount" id="gcount" hidden></div>
 
     <div class="gallery" id="gallery"></div>
-    <!-- 时间线视图（与作品墙二选一显示，由 JS 切 .on） -->
+    <!-- 时间线与作品墙互斥，由 JS 设置 hidden 属性。 -->
     <div class="gtimeline" id="gtimeline" hidden></div>
   </div>
 </section>
@@ -297,7 +307,7 @@
 <!-- ══ B站 ══ -->
 <section class="page" id="page-bili">
   <div class="wrap">
-    <div class="phead">
+    <div class="phead" data-index="03">
       <div class="kicker">Bilibili</div>
       <h2>最新投稿</h2>
       <p>来自 B站 的内容更新 — 点击卡片跳转观看</p>
@@ -350,7 +360,7 @@
 <!-- ══ Steam ══ -->
 <section class="page" id="page-steam">
   <div class="wrap">
-    <div class="phead">
+    <div class="phead" data-index="04">
       <div class="kicker">Steam</div>
       <h2>游戏库</h2>
       <p>ZFSN114514 的游戏世界 — 数据来自 Steam 官方 API，含真实游玩时长</p>
@@ -441,7 +451,7 @@
 <!-- ══ 留言 ══ -->
 <section class="page" id="page-guest">
   <div class="wrap">
-    <div class="phead">
+    <div class="phead" data-index="05">
       <div class="kicker">Guestbook</div>
       <h2>留言板</h2>
       <p>说点什么吧 — 留言时会自动记录你的大致所在地，但不保存精确地址</p>
@@ -536,7 +546,7 @@
   <script defer src="assets/vendor/marked-17.0.1.js"></script>
   <script defer src="assets/vendor/dompurify-3.3.3.js"></script>
   <script defer src="assets/js/markdown.js"></script>
-  <script defer src="assets/js/app.7f2cfcaa.js"></script>
+  <script defer src="assets/js/app.022986da.js"></script>
   <script defer src="assets/js/danmaku.49303c11.js"></script>
 
   <!--
