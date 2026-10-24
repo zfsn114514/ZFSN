@@ -49,7 +49,7 @@
 
   /** 用户的开/关偏好（关闭状态记在 localStorage） */
   function wantOn(){
-    return localStorage.getItem("zfsn_danmaku") !== "off";
+    return document.documentElement.dataset.danmaku !== "off" && localStorage.getItem("zfsn_danmaku") !== "off";
   }
 
   /** 是否在首页。data-page 由主脚本的 setActive() 维护；
@@ -78,11 +78,13 @@
       if (running) stop();
       return;
     }
-    if (!wantOn() || running) return;
+    if (!wantOn()) { if(running) stop(); return; }
+    if (running) return;
     if (msgs.length) start();
     else fetchMsgs();
   }
 
+  document.addEventListener("zfsn:appearance", onPageChange);
   new MutationObserver(onPageChange).observe(document.body, {
     attributes: true,
     attributeFilter: ["data-page"]

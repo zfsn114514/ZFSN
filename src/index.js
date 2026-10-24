@@ -565,7 +565,7 @@ async function handleAPI(request, env, ctx, url) {
     if (!(await L.checkToken(env, L.adminTokenOf(request)))) return L.fail("未登录或会话已过期", 401);
     let settings;
     try { settings = validateAppearance(await L.readJSON(request, 4096)); }
-    catch (error) { return L.fail(error.tooBig ? "外观设置内容过大" : "外观设置格式错误，请检查主题和颜色", error.tooBig ? 413 : 400); }
+    catch (error) { return L.fail(error.tooBig ? "外观设置内容过大" : "外观设置格式错误，请检查主题、颜色和站点选项", error.tooBig ? 413 : 400); }
     const updated = L.stamp(L.now(), tz);
     await env.DB.prepare("INSERT INTO config (k, v) VALUES ('appearance', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v")
       .bind(JSON.stringify({ settings, updated })).run();
@@ -759,6 +759,19 @@ async function handleAPI(request, env, ctx, url) {
     ).all();
     const items = (rs.results || []).map(rowToWork);
     return L.ok({ count: items.length, items });
+  }
+
+  if (p === "/api/admin/works/order" && method === "POST") {
+    if (!(await L.checkToken(env, L.adminTokenOf(request)))) return L.fail("未登录或会话已过期", 401);
+    let body;
+    try { body = await L.readJSON(request, 50000); } catch (_) { return L.fail("排序请求格式错误", 400); }
+    const ids = body && body.ids;
+    if (!Array.isArray(ids) || ids.length > 1000 || ids.some(id => typeof id !== 'string' || !/^[a-f0-9]{8,32}$/.test(id)) || new Set(ids).size !== ids.length) return L.fail("排序列表无效", 400);
+    const rows = (await env.DB.prepare("SELECT id FROM works").all()).results || [];
+    const current = new Set(rows.map(row => row.id));
+    if (rows.length !== ids.length || ids.some(id => !current.has(id))) return L.fail("作品列表已变化，请刷新后重新排序", 409);
+    if (ids.length) await env.DB.batch(ids.map((id, index) => env.DB.prepare("UPDATE works SET ord=? WHERE id=?").bind(index, id)));
+    return L.ok({ count: ids.length });
   }
 
   if (p === "/api/works" && method === "POST") {

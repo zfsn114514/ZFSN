@@ -378,24 +378,33 @@
     }).catch(function(){ /* 静默 */ });
   }
 
-  function go(key){
+  async function go(key){
     if (!pages[key]) return;
     if (switching){ pendingPage = key; return; }
     if (key === current) return;
     switching = true;
-    if (reduce || document.documentElement.dataset.motion === "off"){ setActive(key); switching = false; return; }
-    document.body.classList.add("locked");
-    wipe.classList.add("on");
-    setTimeout(function(){
+    var previous = pages[current];
+    var animated = !reduce && document.documentElement.dataset.motion !== "off" && previous && previous.animate;
+    try {
+      document.body.dataset.switching = "true";
+      if (animated) {
+        wipe.classList.add("on");
+        await previous.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translate3d(0,-7px,0)'}],
+          {duration:110,easing:'cubic-bezier(.4,0,1,1)'}).finished.catch(function(){});
+      }
       setActive(key);
+      if (animated && document.documentElement.dataset.motion !== "off") {
+        await pages[key].animate([{opacity:0,transform:'translate3d(0,14px,0)'},{opacity:1,transform:'none'}],
+          {duration:280,easing:'cubic-bezier(.16,1,.3,1)'}).finished.catch(function(){});
+      }
+    } finally {
       wipe.classList.remove("on");
+      delete document.body.dataset.switching;
       document.body.classList.remove("locked");
-      setTimeout(function(){
-        switching = false;
-        var next = pendingPage; pendingPage = null;
-        if (next) go(next);
-      }, 320);
-    }, 340);
+      switching = false;
+      var next = pendingPage; pendingPage = null;
+      if (next && next !== current) go(next);
+    }
   }
 
   navBtns.forEach(function(b){ b.addEventListener("click", function(){ go(b.dataset.go); }); });

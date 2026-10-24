@@ -64,3 +64,5 @@ Thumbs.db
 .tmp-avif/
 .tmp-cursor/
 .tmp-test/
+
+.site-manager/

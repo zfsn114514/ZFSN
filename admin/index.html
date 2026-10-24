@@ -490,8 +490,11 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 <script src="../assets/js/markdown.js"></script>
 <link rel="stylesheet" href="../assets/css/work-editor.css">
 <script defer src="../assets/js/work-editor.js"></script>
+<script src="../assets/js/site-settings-browser.js"></script>
 <script src="../assets/js/appearance.js"></script>
 <link rel="stylesheet" href="../assets/css/appearance-admin.css">
+<link rel="stylesheet" href="../assets/css/admin-studio.css">
+<script src="../assets/js/admin-studio.js"></script>
 </head>
 <body>
 
@@ -501,7 +504,8 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
     <div class="lbadge">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
     </div>
-    <h1>管理员登录</h1>
+    <img class="login-logo" src="../assets/branding/zfsn-nightcity.svg" alt="ZFSN">
+    <h1>登录创作工作台</h1>
     <div class="sub">ZFSN / ADMIN CONSOLE</div>
 
     <div class="lfield">
@@ -527,8 +531,8 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 <!-- ══════ 主界面 ══════ -->
 <div id="app">
   <div class="top">
-    <div class="mark"><span class="dot"></span>ZFSN</div>
-    <span class="tag">Admin</span>
+    <div class="mark"><img src="../assets/branding/zfsn-nightcity.svg" alt="ZFSN"><span>创作工作台</span></div>
+    <span class="tag">STUDIO</span><label class="console-theme">后台配色 <select id="console-theme"><option value="nightcity">夜之城</option><option value="classic">经典红黑</option><option value="cyberpunk">黄青终端</option></select></label>
     <div class="sp"></div>
     <span class="me" id="sessinfo"></span>
     <button class="tb" id="gotosite">查看网站 ↗</button>
@@ -549,7 +553,7 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
       <button data-tab="msg" class="on">留言管理</button>
       <button data-tab="work">作品管理</button>
       <button data-tab="about">关于我</button>
-      <button data-tab="appearance">外观设置</button>
+      <button data-tab="appearance">站点设置</button>
       <button data-tab="inter">作品互动</button>
       <button data-tab="net">部署自检</button>
       <button data-tab="sec">安全设置</button>
@@ -586,9 +590,11 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
         </button>
       </div>
 
+      <section class="draft-shelf"><div><h3>草稿箱</h3><p>自动保存在当前浏览器；未发布到网站。</p></div><div id="work-drafts"></div></section>
+      <div class="work-list-tools"><span>拖拽作品卡片，或使用 ↑ ↓ 调整顺序</span><button class="btn" id="work-order-save" disabled>保存排序</button></div>
       <!-- 添加/编辑表单 -->
       <div class="form hide" id="work-form">
-        <h3 id="work-form-title">添加新作品</h3>
+        <h3 id="work-form-title">添加新作品</h3><div class="draft-tools"><span id="draft-status" role="status">修改后自动保存草稿</span><button type="button" class="btn sm" id="draft-save">保存草稿</button><button type="button" class="btn sm" id="draft-export">导出草稿</button><label class="btn sm">导入草稿<input type="file" id="draft-import" accept="application/json,.json" hidden></label></div>
         <div class="grid2">
           <div class="fld">
             <label>作品标题 *</label>
@@ -675,7 +681,7 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
             </div>
             <div class="drop-bar" id="v-drop-bar"><span id="v-drop-bar-in"></span></div>
           </div>
-          <div class="hint" id="v-hint">视频保存在家里服务器上（不进 git 仓库），由后端经隧道流式播放，支持拖动进度条</div>
+          <div class="hint" id="v-hint">视频通过当前后端保存，支持拖动进度条；上传成功后请发布作品。</div>
         </div>
 
         <div class="fld">
@@ -706,7 +712,7 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
           <input id="w-order" type="number" value="0" placeholder="数字越小越靠前">
         </div>
         <div class="frow">
-          <button class="btn primary" id="w-save">保存</button>
+          <button class="btn primary" id="w-save">发布作品</button>
           <button class="btn" id="w-cancel">取消</button>
           <span class="msg" id="w-msg" style="flex:1;text-align:right"></span>
         </div>
@@ -716,17 +722,32 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
     </div>
 
     <div class="pane" id="pane-appearance">
-      <div class="ph"><div><h2>前台外观</h2><div class="desc">经典红黑样式为默认；在这里选择主题、颜色和动效，无需改代码。</div></div><a class="btn" href="../" target="_blank" rel="noopener">打开前台 ↗</a></div>
+      <div class="ph"><div><h2>站点设置</h2><div class="desc">经典红黑样式为默认；在这里选择主题、颜色和动效，无需改代码。</div></div><a class="btn" href="../" target="_blank" rel="noopener">打开前台 ↗</a></div>
       <div class="appearance-layout">
         <div class="form appearance-controls">
           <h3>界面主题</h3>
           <label class="appearance-option"><input type="radio" name="appearance-theme" value="classic" checked><span class="appearance-swatch classic"></span><span><b>经典红黑</b><small>保留之前的圆角、红色高亮与居中首页</small></span></label>
           <label class="appearance-option"><input type="radio" name="appearance-theme" value="cyberpunk"><span class="appearance-swatch cyberpunk"></span><span><b>赛博朋克终端</b><small>保留之前的切角面板与黄青终端布局</small></span></label>
-          <label class="appearance-option"><input type="radio" name="appearance-theme" value="nightcity"><span class="appearance-swatch nightcity"></span><span><b>2077 游戏主菜单</b><small>纵向菜单、红色细线、青色选中态与城市背景</small></span></label>
+          <label class="appearance-option"><input type="radio" name="appearance-theme" value="nightcity"><span class="appearance-swatch nightcity"></span><span><b>2077 游戏主菜单</b><small>纵向菜单、红色细线、黄色切角选中框与城市背景</small></span></label>
           <div class="fld appearance-color"><label for="appearance-accent">强调色</label><input type="color" id="appearance-accent" value="#ff2d4a"><code id="appearance-accent-value">#ff2d4a</code></div>
           <div class="fld appearance-color"><label for="appearance-background">背景色</label><input type="color" id="appearance-background" value="#07070b"><code id="appearance-background-value">#07070b</code></div>
-          <p class="appearance-hint">当前两款主题适合深色背景，请在右侧检查文字可读性。</p>
+          <p class="appearance-hint">当前三款主题适合深色背景，请在右侧检查文字可读性。</p>
           <label class="appearance-motion"><input type="checkbox" id="appearance-motion" checked> 启用背景与界面动效</label>
+          <div class="settings-divider">首页与品牌</div>
+          <div class="fld"><label for="site-logo-size">Logo 尺寸 <output id="site-logo-value"></output></label><input type="range" id="site-logo-size" min="80" max="720" value="470"></div>
+          <div class="fld"><label for="site-avatar-size">头像尺寸 <output id="site-avatar-value"></output></label><input type="range" id="site-avatar-size" min="64" max="320" value="200"></div>
+          <div class="fld"><label for="site-background-image">背景图片</label><input id="site-background-image" maxlength="800" placeholder="assets/… 或 https://…"><div class="hint">留空使用主题默认背景。</div><label class="btn sm">上传背景图片<input type="file" id="site-background-upload" accept="image/jpeg,image/png,image/webp,image/avif" hidden></label></div>
+          <label class="appearance-motion"><input type="checkbox" id="site-danmaku" checked> 允许首页弹幕（访客仍可自行关闭）</label>
+          <div class="settings-divider">导航文字</div>
+          <div class="grid2 site-menu-fields">
+            <div class="fld"><label for="site-menu-home">首页</label><input id="site-menu-home" maxlength="16" value="首页"></div>
+            <div class="fld"><label for="site-menu-works">作品</label><input id="site-menu-works" maxlength="16" value="作品"></div>
+            <div class="fld"><label for="site-menu-bili">B站</label><input id="site-menu-bili" maxlength="16" value="B站"></div>
+            <div class="fld"><label for="site-menu-steam">游戏</label><input id="site-menu-steam" maxlength="16" value="游戏"></div>
+            <div class="fld"><label for="site-menu-guest">留言</label><input id="site-menu-guest" maxlength="16" value="留言"></div>
+          </div>
+          <button class="btn" type="button" id="site-edit-about">编辑首页自我介绍 ↗</button>
+
           <div class="appearance-actions"><button class="btn primary" id="appearance-save">保存并应用</button><button class="btn" id="appearance-reset">恢复经典默认值</button></div>
           <p id="appearance-status" role="status" class="appearance-hint">正在读取已保存的设置…</p>
         </div>
@@ -1585,6 +1606,7 @@ function uploadFiles(kind, list, ui){
 
 /* ── 多图：缩略图网格（排序 / 设为封面 / 删除）── */
 function renderThumbs(){
+  if (studio) studio.changed();
   var box = $("#w-thumbs"), empty = $("#w-drop-empty");
   if (!box) return;
   if (!IMGS.length){
@@ -1621,6 +1643,7 @@ function renderThumbs(){
 
 /* ── 视频：单个，带播放器预览 ── */
 function renderVideo(){
+  if (studio) studio.changed();
   var prev = $("#v-drop-prev"), empty = $("#v-drop-empty"), v = $("#v-prev");
   if (!prev || !empty) return;
   if (VIDEOP){
@@ -1736,6 +1759,7 @@ function autoVideoCover(videoPath){
 
 /* ── 下载文件：列表 ── */
 function renderFiles(){
+  if (studio) studio.changed();
   var box = $("#f-list"), empty = $("#f-drop-empty");
   if (!box) return;
   if (!FILES.length){
@@ -1970,8 +1994,10 @@ $("#w-desc").addEventListener("input", updateWorkPreview);
 
 
 function openWorkForm(item){
+  if (studio) studio.beforeOpen();
   editingId = item ? item.id : null;
-  $("#work-form-title").textContent = item ? "编辑作品" : "添加新作品";
+  $("#work-form-title").textContent = item && item.id ? "编辑作品" : "添加新作品";
+  $("#w-save").textContent=item && item.id ? "保存修改" : "发布作品";
   $("#w-title").value = item ? (item.title || "") : "";
   $("#w-tag").value = item ? (item.tag || "") : "";
   $("#w-desc").value = item ? (item.desc || "") : "";
@@ -2010,11 +2036,13 @@ function openWorkForm(item){
   $("#w-msg").textContent = "";
   $("#work-form").classList.remove("hide");
   $("#work-form").scrollIntoView({ behavior: "smooth", block: "center" });
+  if(studio) studio.opened();
   setTimeout(function(){ $("#w-title").focus(); }, 260);
 }
 
 $("#add-work").addEventListener("click", function(){ openWorkForm(null); });
 $("#w-cancel").addEventListener("click", function(){
+  if(studio) studio.saveDraft();
   $("#work-form").classList.add("hide");
   editingId = null;
   IMGS = []; VIDEOP = ""; VIDEO_COVER = ""; FILES = [];
@@ -2045,6 +2073,7 @@ $("#w-save").addEventListener("click", function(){
     ? api("/api/works/" + editingId, { method: "PUT", body: JSON.stringify(body) })
     : api("/api/works", { method: "POST", body: JSON.stringify(body) });
   req.then(function(){
+    if(studio) studio.published(editingId);
     toast(editingId ? "作品已更新" : "作品已添加", "ok");
     $("#work-form").classList.add("hide");
     editingId = null;
@@ -2056,7 +2085,7 @@ $("#w-save").addEventListener("click", function(){
     if (/登录|会话/.test(e.message)) backToLogin();
   }).then(function(){
     btn.disabled = false;
-    btn.textContent = "保存";
+    btn.textContent = editingId ? "保存修改" : "发布作品";
   });
 });
 
@@ -2322,14 +2351,20 @@ var appearanceFrame = $("#appearance-preview");
 function appearanceValues(){
   return { theme: document.querySelector('input[name="appearance-theme"]:checked').value,
     accent: $("#appearance-accent").value, background: $("#appearance-background").value,
-    motion: $("#appearance-motion").checked };
+    motion: $("#appearance-motion").checked,
+    logoSize: Number($("#site-logo-size").value), avatarSize: Number($("#site-avatar-size").value),
+    backgroundImage: $("#site-background-image").value.trim(), danmaku: $("#site-danmaku").checked,
+    menu: Object.fromEntries(["home","works","bili","steam","guest"].map(function(key){return [key,$("#site-menu-"+key).value];})) };
 }
 function previewAppearance(){
   var settings = appearanceValues();
+  $("#site-logo-value").textContent=settings.logoSize+"px";$("#site-avatar-value").textContent=settings.avatarSize+"px";
   $("#appearance-accent-value").textContent = settings.accent;
   $("#appearance-background-value").textContent = settings.background;
   if (appearanceFrame.dataset.ready === "true") {
-    appearanceFrame.contentWindow.postMessage({ type: "zfsn:appearance-preview", settings: settings }, new URL(appearanceFrame.src, location.href).origin);
+    var previewSettings=Object.assign({},settings);
+    if(/^\/?(?:api\/)?media\//.test(settings.backgroundImage)) previewSettings.backgroundImage=mUrl(settings.backgroundImage);
+    appearanceFrame.contentWindow.postMessage({ type: "zfsn:appearance-preview", settings: previewSettings }, new URL(appearanceFrame.src, location.href).origin);
   }
 }
 function fillAppearance(value){
@@ -2338,10 +2373,13 @@ function fillAppearance(value){
   $("#appearance-accent").value = settings.accent;
   $("#appearance-background").value = settings.background;
   $("#appearance-motion").checked = settings.motion;
+  $("#site-logo-size").value=settings.logoSize; $("#site-avatar-size").value=settings.avatarSize;
+  $("#site-background-image").value=settings.backgroundImage;$("#site-danmaku").checked=settings.danmaku;
+  Object.keys(settings.menu).forEach(function(key){$("#site-menu-"+key).value=settings.menu[key];});
   previewAppearance();
 }
 function loadAppearanceSettings(){
-  if (appearanceFrame.getAttribute("src") === "about:blank") appearanceFrame.src = "../?appearance-preview=1#works";
+  if (appearanceFrame.getAttribute("src") === "about:blank") appearanceFrame.src = "../?appearance-preview=1#home";
   if (appearanceLoaded || appearanceLoading) return appearanceLoading;
   appearanceLoading = api("/api/appearance").then(function(data){
     if (!appearanceDirty) fillAppearance(data.settings);
@@ -2356,10 +2394,10 @@ appearanceFrame.addEventListener("load", function(){
 });
 $(".tabs button[data-tab=appearance]").addEventListener("click", loadAppearanceSettings);
 $$("input[name=appearance-theme]").forEach(function(radio){ radio.addEventListener("change", function(){
-  appearanceDirty = true; fillAppearance(ZFSNAppearance.defaults(radio.value));
+  appearanceDirty = true; fillAppearance(Object.assign(appearanceValues(), ZFSNAppearance.defaults(radio.value), ZFSNSiteSettings.normalizeSite(appearanceValues())));
   $("#appearance-status").textContent = "预览已更新；点击保存后才会应用到网站。";
 }); });
-["#appearance-accent", "#appearance-background", "#appearance-motion"].forEach(function(selector){ $(selector).addEventListener("input", function(){ appearanceDirty = true; previewAppearance(); }); });
+["#appearance-accent", "#appearance-background", "#appearance-motion", "#site-logo-size", "#site-avatar-size", "#site-background-image", "#site-danmaku", "#site-menu-home", "#site-menu-works", "#site-menu-bili", "#site-menu-steam", "#site-menu-guest"].forEach(function(selector){ $(selector).addEventListener("input", function(){ appearanceDirty = true; previewAppearance(); }); });
 $("#appearance-reset").addEventListener("click", function(){
   appearanceDirty = true; fillAppearance(ZFSNAppearance.defaults("classic"));
   $("#appearance-status").textContent = "已恢复经典默认值，请点击保存并应用。";
@@ -2374,6 +2412,18 @@ $("#appearance-save").addEventListener("click", function(){
 });
 window.addEventListener("beforeunload", function(event){ if (appearanceDirty) { event.preventDefault(); event.returnValue = ""; } });
 
+$("#site-background-upload").addEventListener("change",function(){
+  var file=this.files[0];if(!file)return;this.value="";
+  $("#appearance-status").textContent="背景正在上传…";
+  uploadFiles("image",[file],{}).then(function(data){if(!data.files||!data.files.length)throw new Error("背景上传失败");$("#site-background-image").value=data.files[0].path;appearanceDirty=true;previewAppearance();$("#appearance-status").textContent="背景已上传，请保存并应用。";}).catch(function(error){$("#appearance-status").textContent=error.message;});
+});
+$("#site-edit-about").addEventListener("click",function(){$('.tabs button[data-tab=about]').click();});
+var studio=ZFSNAdminStudio({
+  api:api, upload:function(file){return uploadFiles("image",[file],{});}, url:mUrl, open:openWorkForm, refresh:loadWorks, toast:toast,
+  read:function(){return {id:editingId,title:$("#w-title").value,tag:$("#w-tag").value,desc:$("#w-desc").value,images:IMGS.slice(),video:VIDEOP,cover:IMGS[0]||VIDEO_COVER||"",files:FILES.slice(),link:$("#w-link").value,order:Number($("#w-order").value)||0};},
+  setImages:function(images){IMGS=images;renderThumbs();},
+  namespace:function(){return API_BASE||location.origin;}
+});
 function refreshAll(){
   loadStats().catch(function(){});
   loadMessages();

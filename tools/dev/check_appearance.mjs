@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../../src/index.js';
@@ -42,9 +43,20 @@ test('public appearance reading, authenticated updates, validation and restorati
   assert.deepEqual((await (await get()).json()).settings, appearanceDefaults());
   const settings = { theme: 'cyberpunk', accent: '#ABCDEF', background: '#010203', motion: false };
   assert.equal((await save(settings, 'test-session')).status, 200);
-  assert.deepEqual((await (await get()).json()).settings, { ...settings, accent: '#abcdef' });
+  assert.deepEqual((await (await get()).json()).settings, validateAppearance(settings));
   assert.equal((await save(appearanceDefaults('nightcity'), 'test-session')).status, 200);
   assert.equal((await (await get()).json()).settings.theme, 'nightcity');
   assert.equal((await save(appearanceDefaults(), 'test-session')).status, 200);
   assert.deepEqual((await (await get()).json()).settings, appearanceDefaults());
+});
+
+test('site settings roundtrip and reject unsafe or out-of-range values', () => {
+  const settings = { ...appearanceDefaults('nightcity'), logoSize: 620, avatarSize: 280, backgroundImage: 'assets/avatar.jpg', danmaku: false, menu: { home: '入口', works: '作品档案', bili: '投稿', steam: '游戏库', guest: '通讯' } };
+  assert.deepEqual(validateAppearance(settings), settings);
+  for (const patch of [{logoSize:721},{avatarSize:1},{danmaku:'true'},{backgroundImage:'javascript:alert(1)'},{backgroundImage:'https://x/evil")'},{menu:{home:'<script>'}}]) assert.throws(()=>validateAppearance({...settings,...patch}));
+});
+
+test('browser and Worker use identical site setting validation',()=>{
+ const source=readFileSync(new URL('../../src/site-settings.js',import.meta.url),'utf8').replace('export const siteDefaults','const siteDefaults').replace('export function normalizeSite','function normalizeSite');
+ assert.equal(readFileSync(new URL('../../assets/js/site-settings-browser.js',import.meta.url),'utf8'),'(function(){\n'+source+'\nwindow.ZFSNSiteSettings={normalizeSite,siteDefaults};\n})();\n');
 });

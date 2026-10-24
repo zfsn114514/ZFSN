@@ -50,3 +50,6 @@ tools/orig-images/
 # 光标方案：二进制产物由 gen_cursors.py 生成，不入库
 tools/cursor-scheme/zfsn/
 tools/cursor-scheme/preview*.png
+
+# Local maintenance logs
+.site-manager/

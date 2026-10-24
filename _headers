@@ -90,7 +90,7 @@
 #   浏览器每次都回源问一句，没变就收 304（只有几百字节），
 #   比原来的「175 KB HTML 每次全量下载」已经好太多。
 
-# ── 植物大战僵尸（/pvz/）──────────────────────────────────────
+# ── 植物大战老马（/pvz/）──────────────────────────────────────
 #
 # wasm 的 Content-Type 必须是 application/wasm，否则
 # WebAssembly.instantiateStreaming 会直接抛 MIME type error。
@@ -158,10 +158,10 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/assets/js/app.b47e164a.js
+/assets/js/app.6f7c58cb.js
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/js/danmaku.49303c11.js
+/assets/js/danmaku.de1add44.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/css/app.2f8bb160.css

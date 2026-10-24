@@ -1,8 +1,10 @@
+import { siteDefaults, normalizeSite } from './site-settings.js';
 export function appearanceDefaults(theme = 'classic') {
-  if (theme === 'nightcity') return { theme, accent: '#ff4d5c', background: '#070d16', motion: true };
+  const base = { ...siteDefaults, menu: { ...siteDefaults.menu } };
+  if (theme === 'nightcity') return { ...base, theme, accent: '#ff4d5c', background: '#070d16', motion: true };
   return theme === 'cyberpunk'
-    ? { theme, accent: '#f3e600', background: '#080c12', motion: true }
-    : { theme: 'classic', accent: '#ff2d4a', background: '#07070b', motion: true };
+    ? { ...base, theme, accent: '#f3e600', background: '#080c12', motion: true }
+    : { ...base, theme: 'classic', accent: '#ff2d4a', background: '#07070b', motion: true };
 }
 
 export function validateAppearance(value) {
@@ -11,5 +13,5 @@ export function validateAppearance(value) {
       typeof value.motion !== 'boolean') {
     throw new Error('请选择有效主题、六位颜色值和动效开关');
   }
-  return { theme: value.theme, accent: value.accent.toLowerCase(), background: value.background.toLowerCase(), motion: value.motion };
+  return { theme: value.theme, accent: value.accent.toLowerCase(), background: value.background.toLowerCase(), motion: value.motion, ...normalizeSite(value, true) };
 }
