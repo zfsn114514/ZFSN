@@ -8,7 +8,7 @@
 2. 双击 `ZFSN.Cursor.exe`，点击「启动光标与拖尾」。
 3. 可选择是否替换正常箭头／链接手型、是否在全屏应用中暂停拖尾、是否显示同款跟随光晕，并调整特效强度。
 4. 「隐藏到托盘」会保持运行；双击托盘图标重新打开设置。
-5. 关闭设置窗口或点击托盘「退出并恢复光标」会停止程序并重新加载原来的系统光标方案。
+5. 默认关闭窗口会隐藏到托盘；点击「退出并恢复」或托盘菜单「退出并恢复光标」才会停止程序并恢复系统光标。可关闭「关闭窗口时隐藏到托盘」来恢复关闭即退出的行为。
 6. 若程序被强制结束后光标没有恢复，运行包内 `restore.bat`，或 `ZFSN.Cursor.exe --restore`。
 
 ### 从 GitHub 获取编译包
@@ -25,6 +25,18 @@ Artifacts 下载通常需要登录 GitHub。构建包不提交到 Git 历史，�
 ```text
 dotnet publish ZFSN.Cursor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o dist/win-x64
 ```
+
+## 控制终端与常用设置
+
+暗红面板、黄色标题、切角按钮与网站的 2077 游戏菜单主题呼应。按钮支持键盘焦点，窗口支持 DPI 缩放和滚动。
+
+- **登录 Windows 后自动启动**：默认关闭。勾选后写入当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，无需管理员权限；登录后自动启用光标并隐藏到托盘。取消勾选会删除该项。
+- 请先把程序解压到固定目录再启用自启动；移动 EXE 后，需要取消再重新勾选。Windows 任务管理器也可单独禁用启动项。
+- **手动打开时自动启用光标**：与 Windows 自启动分开设置，默认关闭。
+- **关闭到托盘**：默认开启；最小化也会隐藏到托盘。双击托盘图标打开窗口，托盘提供启动／暂停和退出。
+- **即时调整与保存**：指针替换、全屏暂停、光晕、强度即时生效；设置保存在 `%LOCALAPPDATA%\ZFSN\Cursor\settings.json`，下次打开恢复。
+- **恢复特效默认值**：恢复箭头、光晕、全屏暂停和 100% 强度，不更改自启动选项。
+- **打开设置目录**：可自行备份或删除配置文件。删除后下次启动使用默认值。
 
 ## 与网页的一致性
 

@@ -10,3 +10,18 @@ var scaled = new TrailModel(7); scaled.Move(0, 0, 2); scaled.Move(100, 100, 2); 
 var slow = new TrailModel(1); var fast = new TrailModel(1); slow.Move(0, 0); slow.Move(10, 10); fast.Move(0, 0); fast.Move(10, 10);
 for (int i = 0; i < 15; i++) slow.Step(1d / 30); for (int i = 0; i < 30; i++) fast.Step(1d / 60);
 Check(Math.Abs(slow.Particles[0].Life - fast.Particles[0].Life) < 1e-10, "fade lifetime independent of frame rate");
+
+string settingsFolder = Path.Combine(Path.GetTempPath(), "zfsn-settings-" + Guid.NewGuid());
+try
+{
+    Check(!AppSettings.Load(settingsFolder).StartEffects, "missing settings keep automatic effects opt-in");
+    var preferences = new AppSettings { Intensity = 42, ShowHalo = false, CloseToTray = false, StartEffects = true };
+    preferences.Save(settingsFolder);
+    var restored = AppSettings.Load(settingsFolder);
+    Check(restored.Intensity == 42 && !restored.ShowHalo && !restored.CloseToTray && restored.StartEffects, "settings survive save and reload");
+    File.WriteAllText(Path.Combine(settingsFolder, "settings.json"), "{\"Intensity\":999}");
+    Check(AppSettings.Load(settingsFolder).Intensity == 100, "out-of-range intensity clamped before UI initialization");
+    File.WriteAllText(Path.Combine(settingsFolder, "settings.json"), "broken json");
+    Check(AppSettings.Load(settingsFolder).Intensity == 100, "corrupt settings safely fall back to defaults");
+}
+finally { if (Directory.Exists(settingsFolder)) Directory.Delete(settingsFolder, true); }
