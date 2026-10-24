@@ -14,7 +14,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zfsn")
 os.makedirs(OUT, exist_ok=True)
 
 RED = (255, 51, 74, 255)          # #ff334a，比原 #ff2d4a 更亮更饱和
-RED_SOFT = (255, 51, 74, 155)     # 填充提到 ~60%（原 60/255≈23%，几乎看不见）
+RED_SOFT = (255, 51, 74, 45)      # 中空填充 ~18%，对齐网页 .12~.14
 DARK = (45, 4, 14, 255)           # 深色描边，保证浅色桌面也看得见
 WHITE = (255, 255, 255, 255)
 
@@ -27,24 +27,6 @@ def canvas():
     return Image.new("RGBA", (CV, CV), (0, 0, 0, 0))
 
 
-def glow_from(draw_fn, blur=3, merge=2, color=RED):
-    """draw_fn(d) 画发光体；返回发光层。
-
-    ⚠ 只模糊 alpha 通道：PIL 的 GaussianBlur 会独立模糊 RGB，
-    而透明区的 RGB 是 (0,0,0)，混进来会把红色发光拉成黑雾。
-    曾因此整套光标"发暗、看不清"—— 可见像素里纯黑低透明度像素
-    占满前列，正红一个都排不上。
-    """
-    lay = Image.new("RGBA", (CV, CV), (0, 0, 0, 0))
-    d = ImageDraw.Draw(lay)
-    draw_fn(d)
-    alpha = lay.getchannel("A").filter(ImageFilter.GaussianBlur(blur * S))
-    base = Image.new("RGBA", (CV, CV), color[:3] + (0,))
-    base.putalpha(alpha)
-    out = base
-    for _ in range(merge - 1):
-        out = Image.alpha_composite(out, base)
-    return out
 
 
 def finish(img):
@@ -57,7 +39,7 @@ def scaled(pts):
 
 # ────────────────────────── 各光标绘制 ──────────────────────────
 
-def arrow_shape(d, ox=0, oy=0, fill=RED_SOFT, stroke=RED, w=2.3, dark=True):
+def arrow_shape(d, ox=0, oy=0, fill=RED_SOFT, stroke=RED, w=2.0, dark=True):
     """站点同款三角箭头，顶点 (4,2.5)"""
     pts = scaled([(4 + ox, 2.5 + oy), (22.5 + ox, 11.5 + oy), (13 + ox, 20.5 + oy)])
     if dark:
@@ -70,7 +52,6 @@ def arrow_shape(d, ox=0, oy=0, fill=RED_SOFT, stroke=RED, w=2.3, dark=True):
 def draw_arrow(img, **kw):
     lay = canvas()
     arrow_shape(ImageDraw.Draw(lay), **kw)
-    img.alpha_composite(glow_from(lambda d: arrow_shape(d, fill=None, w=2.3), blur=3))
     img.alpha_composite(lay)
 
 
@@ -107,8 +88,6 @@ def draw_ibeam(img):
     dl.line([(x, 6 * S), (x, 26 * S)], fill=RED, width=w)
     for yy in (6 * S, 26 * S):
         dl.line([(x - 2.6 * S, yy), (x + 2.6 * S, yy)], fill=RED, width=int(1.5 * S))
-    img.alpha_composite(glow_from(lambda dd: dd.line(
-        [(x, 6 * S), (x, 26 * S)], fill=RED, width=w)))
 
 
 def draw_link(img):
@@ -128,7 +107,6 @@ def draw_link(img):
     # 深色外衬（浅色桌面也看得见）
     ring(d, DARK, sw + 1.3 * S)
     # 发光
-    img.alpha_composite(glow_from(lambda dd: ring(dd, RED, sw), blur=3))
     # 主环
     ring(d, RED, sw)
     # 中心实心点
@@ -153,9 +131,6 @@ def draw_precision(img):
 
     for a, b, cc, dd in segs:
         d.line([(a, b), (cc, dd)], fill=DARK, width=int(w + 1.3 * S))
-    img.alpha_composite(glow_from(
-        lambda gd: [gd.line([(a, b), (cc, dd)], fill=RED, width=int(w))
-                    for a, b, cc, dd in segs], blur=3))
     for a, b, cc, dd in segs:
         d.line([(a, b), (cc, dd)], fill=RED, width=int(w))
     # 末端小刻度，增强 HUD 感（同样对称）
@@ -203,7 +178,6 @@ def _double_arrow(d, ang_deg, color_body=RED):
 def draw_resize(img, ang):
     lay = canvas()
     _double_arrow(ImageDraw.Draw(lay), ang)
-    img.alpha_composite(glow_from(lambda d: _double_arrow(d, ang), blur=3))
     img.alpha_composite(lay)
 
 
@@ -235,14 +209,6 @@ def draw_move(img):
         for sgn in (1, -1):
             tip = rot(sgn * L, 0)
             dl.polygon([tip, rot(sgn * (L - hh), -hw), rot(sgn * (L - hh), hw)], fill=RED)
-    img.alpha_composite(glow_from(lambda dd: [dd.polygon(
-        [(c + (sgn * 12 * S) * math.cos(math.radians(a)) - (0) * math.sin(math.radians(a)),
-          c + (sgn * 12 * S) * math.sin(math.radians(a)) + 0 * math.cos(math.radians(a))),
-         (c + (sgn * (12 * S - 4.0 * S)) * math.cos(math.radians(a)) - (-4.6 * S) * math.sin(math.radians(a)),
-          c + (sgn * (12 * S - 4.0 * S)) * math.sin(math.radians(a)) + (-4.6 * S) * math.cos(math.radians(a))),
-         (c + (sgn * (12 * S - 4.0 * S)) * math.cos(math.radians(a)) - (4.6 * S) * math.sin(math.radians(a)),
-          c + (sgn * (12 * S - 4.0 * S)) * math.sin(math.radians(a)) + (4.6 * S) * math.cos(math.radians(a)))],
-        fill=RED) for a in (0, 90, 45, 135) for sgn in (1, -1)], blur=3))
     img.alpha_composite(lay)
     d2 = ImageDraw.Draw(img)
     d2.ellipse([c - 2.2 * S, c - 2.2 * S, c + 2.2 * S, c + 2.2 * S], fill=DARK)
@@ -297,8 +263,6 @@ def draw_pen(img):
     # 笔尖白点（热点提示）
     d.ellipse(scaled([(N[0] - 1.5, N[1] - 1.5), (N[0] + 1.5, N[1] + 1.5)]), fill=WHITE)
     # 发光
-    img.alpha_composite(glow_from(
-        lambda gd: gd.polygon(scaled(outer), fill=RED), blur=3))
 
 
 def draw_uparrow(img):
@@ -323,16 +287,10 @@ def draw_busy_frame(img, t):
         y = c + r * math.sin(ph)
         # 尾迹淡出
         k = 1.0 - i / 8.0
-        a = int(255 * (0.25 + 0.75 * k))
+        a = int(255 * (0.45 + 0.55 * k))
         col = (255, 45, 74, a)
         rr = (2.5 - 0.9 * i / 8.0) * S
         d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=col)
-    img.alpha_composite(glow_from(lambda dd: [dd.ellipse(
-        [c + r * math.cos((t * 2 * math.pi) + i * (2 * math.pi / 8)) - 2.5 * S,
-         c + r * math.sin((t * 2 * math.pi) + i * (2 * math.pi / 8)) - 2.5 * S,
-         c + r * math.cos((t * 2 * math.pi) + i * (2 * math.pi / 8)) + 2.5 * S,
-         c + r * math.sin((t * 2 * math.pi) + i * (2 * math.pi / 8)) + 2.5 * S],
-        fill=RED) for i in range(8)], blur=3))
     d2 = ImageDraw.Draw(img)
     d2.ellipse([c - 1.4 * S, c - 1.4 * S, c + 1.4 * S, c + 1.4 * S], fill=WHITE)
 
@@ -349,7 +307,7 @@ def draw_appstart_frame(img, t):
         x = c + r * math.cos(ph)
         y = c + r * math.sin(ph)
         k = 1.0 - i / 6.0
-        a = int(255 * (0.2 + 0.8 * k))
+        a = int(255 * (0.45 + 0.55 * k))
         rr = (1.9 - 0.7 * i / 6.0) * S
         d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=(255, 45, 74, a))
 
