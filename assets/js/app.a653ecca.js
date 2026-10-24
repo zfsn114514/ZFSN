@@ -1059,7 +1059,7 @@
         '<div class="gmeta">' +
           badgeHtml(w) +
           '<div class="gt">' + esc(w.title) + '</div>' +
-          (w.desc ? '<div class="gs">' + esc(w.desc) + '</div>' : '') +
+          (w.desc ? '<div class="gs">' + esc(WorkMarkdown.summary(w.desc)) + '</div>' : '') +
         '</div>';
 
       // 渐进加载：先上 SVG 渐变占位，真图在后台预载完再淡入
@@ -1352,7 +1352,7 @@
         '<div class="wd-textonly">' +
           '<div class="wt-k">' + (w.tag ? esc(w.tag) : '文字作品') + '</div>' +
           '<h2 class="wt-t">' + esc(w.title) + '</h2>' +
-          (w.desc ? '<div class="wt-b">' + esc(w.desc) + '</div>' : '') +
+          (w.desc ? '<div class="wt-b markdown-body">' + WorkMarkdown.render(w.desc) + '</div>' : '') +
         '</div>';
     }
 
@@ -1391,7 +1391,7 @@
           '<div class="wd-meta">' +
             (w.time ? '<span class="gitem-x"><span class="loc">' + geoIcon() + esc(w.time) + '</span></span>' : '') +
           '</div>' +
-          (textOnly ? '' : (w.desc ? '<div class="wd-desc">' + esc(w.desc) + '</div>' : '')) +
+          (textOnly ? '' : (w.desc ? '<div class="wd-desc markdown-body">' + WorkMarkdown.render(w.desc) + '</div>' : '')) +
           '<div class="wd-act">' +
             '<button class="wd-like" id="wd-like" data-like="' + w.id + '">' +
               ICON_HEART + '<span id="wd-like-n">' + (w.likes || 0) + '</span> 点赞</button>' +

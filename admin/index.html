@@ -484,6 +484,10 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
   .form{padding:19px 17px}
 }
 </style>
+<link rel="stylesheet" href="../assets/css/markdown.css">
+<script src="../assets/vendor/marked-17.0.1.js"></script>
+<script src="../assets/vendor/dompurify-3.3.3.js"></script>
+<script src="../assets/js/markdown.js"></script>
 </head>
 <body>
 
@@ -496,6 +500,9 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
     <h1>管理员登录</h1>
     <div class="sub">ZFSN / ADMIN CONSOLE</div>
 
+    <div class="lfield">
+      <input id="username" name="username" type="text" placeholder="请输入管理员用户名" aria-label="用户名" autocomplete="username" autocapitalize="none" spellcheck="false">
+    </div>
     <div class="lfield">
       <input id="pwd" type="password" placeholder="请输入管理员密码" autocomplete="current-password" spellcheck="false">
       <button class="eye" id="eye" type="button" aria-label="显示密码">
@@ -587,8 +594,12 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
           </div>
         </div>
         <div class="fld">
-          <label>简介</label>
-          <textarea id="w-desc" rows="2" maxlength="300" placeholder="一句话描述这个作品"></textarea>
+          <label for="w-desc">作品正文（Markdown）</label>
+          <textarea id="w-desc" rows="12" maxlength="50000" placeholder="支持 # 标题、**加粗**、列表、引用、代码块和表格；最多 50000 字符"></textarea>
+          <p>支持粘贴 ChatGPT 的 Markdown 文本。列表卡片显示摘要，作品详情显示完整正文。</p>
+          <button type="button" class="tb" id="w-insert-card">＋ 插入信息卡片</button>
+          <p>卡片写法：单独一行写 <code>:::card 卡片标题</code>，接着写 Markdown 内容，最后单独一行写 <code>:::</code>。卡片内可使用列表、链接和代码块。</p>
+          <details open><summary>正文预览</summary><div id="w-preview" class="markdown-body" aria-live="polite"></div></details>
         </div>
         <div class="fld">
           <label>作品图片（可多张）</label>
@@ -1017,7 +1028,7 @@ function grad(i){
 
 /* ══════ 登录 ══════ */
 
-var pwdInput = $("#pwd"), lerr = $("#lerr"), lbtn = $("#lbtn");
+var usernameInput = $("#username"), pwdInput = $("#pwd"), lerr = $("#lerr"), lbtn = $("#lbtn");
 
 $("#eye").addEventListener("click", function(){
   var on = pwdInput.type === "password";
@@ -1026,12 +1037,15 @@ $("#eye").addEventListener("click", function(){
 });
 
 function doLogin(){
+  if (lbtn.disabled) return;
+  var username = usernameInput.value;
   var p = pwdInput.value;
+  if (!username){ lerr.textContent = "请输入用户名"; usernameInput.focus(); return; }
   if (!p){ lerr.textContent = "请输入密码"; pwdInput.focus(); return; }
   lbtn.disabled = true;
   lbtn.textContent = "验证中…";
   lerr.textContent = "";
-  api("/api/admin/login", { method: "POST", body: JSON.stringify({ password: p }) })
+  api("/api/admin/login", { method: "POST", body: JSON.stringify({ username: username, password: p }) })
     .then(function(d){
       localStorage.setItem(TOKEN_KEY, d.token);
       enterApp();
@@ -1047,6 +1061,7 @@ function doLogin(){
 }
 
 lbtn.addEventListener("click", doLogin);
+usernameInput.addEventListener("keydown", function(e){ if (e.key === "Enter") doLogin(); });
 pwdInput.addEventListener("keydown", function(e){ if (e.key === "Enter") doLogin(); });
 
 function enterApp(){
@@ -1937,12 +1952,31 @@ function normPath(p){
   return s;
 }
 
+function updateWorkPreview(){
+  if (window.WorkMarkdown) $("#w-preview").innerHTML = WorkMarkdown.render($("#w-desc").value);
+}
+$("#w-desc").addEventListener("input", updateWorkPreview);
+$("#w-insert-card").addEventListener("click", function(){
+  var input = $("#w-desc");
+  var start = input.selectionStart, end = input.selectionEnd;
+  var content = input.value.slice(start, end) || "在这里填写卡片内容，支持 **加粗**、列表和链接。";
+  var card = "\n\n:::card 卡片标题\n" + content + "\n:::\n\n";
+  if (input.value.length - (end - start) + card.length > input.maxLength){
+    alert("正文最多 50000 字符，请缩短内容后再插入卡片。");
+    return;
+  }
+  input.setRangeText(card, start, end, "end");
+  input.focus();
+  updateWorkPreview();
+});
+
 function openWorkForm(item){
   editingId = item ? item.id : null;
   $("#work-form-title").textContent = item ? "编辑作品" : "添加新作品";
   $("#w-title").value = item ? (item.title || "") : "";
   $("#w-tag").value = item ? (item.tag || "") : "";
   $("#w-desc").value = item ? (item.desc || "") : "";
+  updateWorkPreview();
 
   // 回填媒体
   var hasImages = !!(item && item.images && item.images.length);
@@ -2053,7 +2087,7 @@ function loadWorks(){
               (w.tag ? '<span class="loc">' + esc(w.tag) + "</span>" : "") +
               '<span class="when">' + esc(w.time || "") + " · 权重 " + (w.order || 0) + "</span>" +
             "</header>" +
-            (w.desc ? '<div class="body">' + esc(w.desc) + "</div>" : "") +
+            (w.desc ? '<div class="body">' + esc(WorkMarkdown.summary(w.desc)) + "</div>" : "") +
             '<div class="meta">' +
               (nImg ? '<span class="tag">' + nImg + " 张图</span>" : "") +
               (w.video ? '<span class="tag">含视频</span>' : "") +
