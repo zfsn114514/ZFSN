@@ -16,6 +16,7 @@
 用法：
     python build_xbox_covers.py
 """
+import argparse
 import json
 import os
 import re
@@ -117,6 +118,9 @@ def score(name, product):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="更新 Xbox 封面；默认只补缺失，--force 重新抓取所有封面")
+    parser.add_argument("--force", action="store_true")
+    args = parser.parse_args()
     here = site_root()
     data_path = os.path.join(here, "xbox_games.json")
     out_dir = os.path.join(here, "assets", "xbox")
@@ -130,7 +134,14 @@ def main():
     print("待处理 {} 款游戏\n".format(len(games)))
 
     ok = 0
+    reused = 0
+    failed = 0
     for i, g in enumerate(games, 1):
+        cover = g.get("cover") or ""
+        local = os.path.abspath(os.path.join(here, cover.replace("/", os.sep)))
+        if not args.force and cover.startswith("assets/xbox/") and os.path.isfile(local) and os.path.getsize(local) > 0:
+            reused += 1
+            continue
         appid = g.get("appid") or ("xbox-%d" % i)
         name = g.get("name") or ""
         # 搜索时去掉平台后缀，命中率更高
@@ -141,10 +152,12 @@ def main():
             prods = search(q)
         except Exception as e:
             print("       搜索失败: {}".format(str(e)[:70]))
+            failed += 1
             continue
 
         if not prods:
             print("       无结果")
+            failed += 1
             continue
 
         prods.sort(key=lambda p: -score(q, p))
@@ -153,6 +166,7 @@ def main():
         url, purpose = pick_image(chosen)
         if not url:
             print("       最匹配: {} -> 无图片".format(title))
+            failed += 1
             continue
 
         # 微软返回的 Uri 是协议相对地址（//store-images...），补上 https:
@@ -166,10 +180,12 @@ def main():
             blob = http_get(url, timeout=25)
         except Exception as e:
             print("       下载失败: {}".format(str(e)[:70]))
+            failed += 1
             continue
 
         if len(blob) < 1500:
             print("       图片过小({} 字节)，跳过".format(len(blob)))
+            failed += 1
             continue
 
         ext = ".jpg"
@@ -188,13 +204,18 @@ def main():
             rel, title, purpose, round(len(blob) / 1024)))
         time.sleep(0.4)
 
-    data["coverCount"] = ok
+    data["coverCount"] = sum(1 for g in games if g.get("cover"))
     data["coversUpdated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    with open(data_path, "w", encoding="utf-8") as f:
+    tmp_path = data_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+    os.replace(tmp_path, data_path)
+    print("复用已有封面 {} 张".format(reused))
     print("\n成功获取 {}/{} 张封面 -> {}".format(ok, len(games), data_path))
+
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

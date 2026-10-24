@@ -19,3 +19,8 @@
 .markdown-body .information-card-content > :first-child{margin-top:0}
 .markdown-body .information-card-content > :last-child{margin-bottom:0}
 @media(max-width:600px){.markdown-body .information-card{padding:14px;border-radius:10px}}
+
+.markdown-body .information-card-tip{border-color:rgba(90,202,159,.4);background:rgba(90,202,159,.06)}.markdown-body .information-card-tip .information-card-title{color:#85daba}
+.markdown-body .information-card-warning{border-color:rgba(240,183,82,.45);background:rgba(240,183,82,.06)}.markdown-body .information-card-warning .information-card-title{color:#edc47e}
+.markdown-body .information-card-download,.markdown-body .information-card-links{border-color:rgba(102,163,217,.4);background:rgba(102,163,217,.06)}.markdown-body .information-card-download .information-card-title,.markdown-body .information-card-links .information-card-title{color:#98c8ef}
+.markdown-body .information-card-specs,.markdown-body .information-card-code{border-color:rgba(175,148,230,.4);background:rgba(175,148,230,.06)}

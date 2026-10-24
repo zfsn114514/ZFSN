@@ -488,6 +488,8 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 <script src="../assets/vendor/marked-17.0.1.js"></script>
 <script src="../assets/vendor/dompurify-3.3.3.js"></script>
 <script src="../assets/js/markdown.js"></script>
+<link rel="stylesheet" href="../assets/css/work-editor.css">
+<script defer src="../assets/js/work-editor.js"></script>
 </head>
 <body>
 
@@ -595,12 +597,35 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
           </div>
         </div>
         <div class="fld">
-          <label for="w-desc">作品正文（Markdown）</label>
-          <textarea id="w-desc" rows="12" maxlength="50000" placeholder="支持 # 标题、**加粗**、列表、引用、代码块和表格；最多 50000 字符"></textarea>
-          <p>支持粘贴 ChatGPT 的 Markdown 文本。列表卡片显示摘要，作品详情显示完整正文。</p>
-          <button type="button" class="tb" id="w-insert-card">＋ 插入信息卡片</button>
-          <p>卡片写法：单独一行写 <code>:::card 卡片标题</code>，接着写 Markdown 内容，最后单独一行写 <code>:::</code>。卡片内可使用列表、链接和代码块。</p>
-          <details open><summary>正文预览</summary><div id="w-preview" class="markdown-body" aria-live="polite"></div></details>
+          <div class="editor-heading"><label for="w-desc">作品正文</label><span>Markdown 编辑器</span></div>
+          <div class="work-editor" id="work-editor" data-mode="split">
+            <div class="editor-bar">
+              <div class="editor-formats" aria-label="排版工具">
+                <button type="button" data-format="heading" title="插入二级标题">H2</button>
+                <button type="button" data-format="bold" title="加粗"><b>B</b></button>
+                <button type="button" data-format="italic" title="斜体"><i>I</i></button>
+                <button type="button" data-format="list" title="列表">≡ 列表</button>
+                <button type="button" data-format="quote" title="引用">❝ 引用</button>
+                <button type="button" data-format="link" title="链接">↗ 链接</button>
+                <button type="button" data-format="code" title="代码块">&lt;/&gt;</button>
+                <button type="button" data-format="table" title="表格">▦ 表格</button>
+              </div>
+              <div class="editor-modes" aria-label="编辑模式">
+                <button type="button" data-mode="write" aria-pressed="false">编辑</button>
+                <button type="button" data-mode="split" aria-pressed="true">对照</button>
+                <button type="button" data-mode="preview" aria-pressed="false">预览</button>
+              </div>
+            </div>
+            <div class="editor-cards">
+              <div class="editor-card-heading"><div><strong>信息卡片</strong><span>点击即插入，选中文字可直接放进卡片</span></div><button type="button" id="w-insert-card">＋ 添加卡片</button></div>
+              <div class="editor-templates" id="w-card-templates" aria-label="卡片模板"></div>
+            </div>
+            <div class="editor-panes">
+              <div class="editor-source"><span class="editor-pane-label">正文</span><textarea id="w-desc" rows="14" maxlength="50000" placeholder="写下作品的故事，或粘贴 Markdown 内容…"></textarea></div>
+              <div class="editor-preview"><span class="editor-pane-label">实时预览</span><div id="w-preview" class="markdown-body"></div></div>
+            </div>
+            <div class="editor-footer"><span id="w-editor-status" role="status">支持 Markdown · 卡片可在正文中自由组合</span><span id="w-word-count">0 / 50000</span></div>
+          </div>
         </div>
         <div class="fld">
           <label>作品图片（可多张）</label>
@@ -1920,19 +1945,7 @@ function updateWorkPreview(){
   if (window.WorkMarkdown) $("#w-preview").innerHTML = WorkMarkdown.render($("#w-desc").value);
 }
 $("#w-desc").addEventListener("input", updateWorkPreview);
-$("#w-insert-card").addEventListener("click", function(){
-  var input = $("#w-desc");
-  var start = input.selectionStart, end = input.selectionEnd;
-  var content = input.value.slice(start, end) || "在这里填写卡片内容，支持 **加粗**、列表和链接。";
-  var card = "\n\n:::card 卡片标题\n" + content + "\n:::\n\n";
-  if (input.value.length - (end - start) + card.length > input.maxLength){
-    alert("正文最多 50000 字符，请缩短内容后再插入卡片。");
-    return;
-  }
-  input.setRangeText(card, start, end, "end");
-  input.focus();
-  updateWorkPreview();
-});
+
 
 function openWorkForm(item){
   editingId = item ? item.id : null;
@@ -1940,7 +1953,7 @@ function openWorkForm(item){
   $("#w-title").value = item ? (item.title || "") : "";
   $("#w-tag").value = item ? (item.tag || "") : "";
   $("#w-desc").value = item ? (item.desc || "") : "";
-  updateWorkPreview();
+  $("#w-desc").dispatchEvent(new Event("input"));
 
   // 回填媒体
   var hasImages = !!(item && item.images && item.images.length);
