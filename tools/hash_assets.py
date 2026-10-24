@@ -17,7 +17,7 @@
 ━━ 做法 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. 读 assets/js/*.js（以及列表里的 CSS），算 SHA-256
 2. 产出 app.<hash8>.js 副本
-3. **回写 index.html 里的引用**
+3. **回写首页与管理后台里的引用**
 4. 更新 `_headers` 里的长缓存规则（用新的哈希文件名）
 5. 删掉上一轮生成的旧哈希文件（避免仓库里堆历史版本）
 
@@ -46,13 +46,17 @@ import common  # noqa: E402
 #   拆出去是为了让 HTML 变小 —— 它每次都要协商缓存（max-age=0），
 #   而 CSS 加了内容哈希后可以 immutable 长缓存，改文案/作品时不用重下样式。
 ASSETS = [
-    "assets/js/app.js",
-    "assets/js/danmaku.js",
-    "assets/css/app.css",
+    "assets/js/app.js", "assets/js/danmaku.js", "assets/js/appearance.js",
+    "assets/js/site-settings-browser.js", "assets/js/visitor-theme.js",
+    "assets/js/markdown.js", "assets/js/work-editor.js", "assets/js/admin-studio.js",
+    "assets/css/app.css", "assets/css/markdown.css", "assets/css/cyberpunk.css",
+    "assets/css/nightcity.css", "assets/css/deepdive.css", "assets/css/site-experience.css",
+    "assets/css/guestbook-themes.css", "assets/css/visitor-theme.css",
+    "assets/css/work-editor.css", "assets/css/appearance-admin.css", "assets/css/admin-studio.css",
 ]
 
 # 会被回写的 HTML
-HTML_FILES = ["index.html"]
+HTML_FILES = ["index.html", "admin/index.html"]
 
 HASH_LEN = 8
 
@@ -100,6 +104,7 @@ def main():
 
     # ── 回写 HTML ──
     changes = []
+    stale_html = []
     for html in HTML_FILES:
         hp = os.path.join(root, html)
         if not os.path.exists(hp):
@@ -114,16 +119,17 @@ def main():
             stem, ext = os.path.splitext(fn)
             pat = re.compile(
                 r'(?P<pre>(?:src|href)\s*=\s*["\'])' +
-                re.escape(d + "/") + re.escape(stem) +
+                r"(?P<root>(?:\.\./|\./)*)" + re.escape(d + "/") + re.escape(stem) +
                 r'(?:\.[0-9a-f]{%d})?' % HASH_LEN +
                 re.escape(ext) +
                 r'(?P<post>["\'])'
             )
-            new_text, n = pat.subn(lambda m: m.group("pre") + newrel + m.group("post"), text)
-            if n:
+            new_text, n = pat.subn(lambda m: m.group("pre") + m.group("root") + newrel + m.group("post"), text)
+            if n and new_text != text:
                 changes.append((html, rel, newrel, n))
                 text = new_text
         if text != orig:
+            stale_html.append(html)
             if not args.dry_run and not args.check:
                 with open(hp, "w", encoding="utf-8", newline="") as f:
                     f.write(text)
@@ -137,10 +143,12 @@ def main():
 
     # ── 校验模式就此结束 ──
     if args.check:
-        ok = True
+        ok = not stale_html
+        for html in stale_html:
+            print("✗ HTML 资源引用过期：%s" % html)
         for rel, newrel, h in plan:
             fp = os.path.join(root, newrel)
-            if not os.path.exists(fp):
+            if not os.path.exists(fp) or sha8(fp) != h:
                 print("✗ 期望的文件不存在：%s" % newrel)
                 ok = False
         print()
@@ -178,7 +186,8 @@ def main():
             continue
         for fn in os.listdir(d):
             m = HASHED_RE.match(fn)
-            if m and fn not in keep:
+            managed = {hashed_name(p[0])[1] for p in plan if os.path.dirname(os.path.join(root, p[0])) == d}
+            if m and m.group("stem") in managed and fn not in keep:
                 os.remove(os.path.join(d, fn))
                 removed.append(os.path.join(os.path.relpath(d, root), fn).replace(os.sep, "/"))
     if removed:

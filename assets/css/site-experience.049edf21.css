@@ -1,0 +1,22 @@
+/* Shared presentation settings, after all three theme stylesheets. */
+.hero .name{font-size:min(13vw,calc(var(--site-logo-size,470px)*.247));max-width:100%}
+html[data-theme=nightcity] .hero .name{width:min(var(--site-logo-size,470px),100%);font-size:inherit}
+.hero .avatar-stage{width:var(--site-avatar-size,200px);height:var(--site-avatar-size,200px);max-width:100%}
+html[data-theme=nightcity] .profile-visual{width:max(220px,var(--site-avatar-size,200px));max-width:320px}
+html[data-custom-background=on] body::before{background-image:linear-gradient(90deg,rgba(7,13,22,.92),rgba(7,13,22,.35)),var(--site-background-image);background-size:cover;background-position:center;opacity:.85}
+html .page.active{animation:none}
+html #wipe{background:transparent;opacity:0;pointer-events:none!important;transition:opacity .12s ease;overflow:hidden}
+html #wipe.on{opacity:1}
+html #wipe .sweep{top:0;left:0;height:2px;width:100%;background:linear-gradient(90deg,transparent,var(--c1,var(--red)),#75eeec,transparent);box-shadow:0 0 18px rgba(117,238,236,.35);transform-origin:left;opacity:0}
+html #wipe.on .sweep{animation:interface-scan .4s cubic-bezier(.16,1,.3,1) both}
+body[data-switching=true] .page{will-change:transform,opacity}
+@keyframes interface-scan{0%{opacity:0;transform:translateY(70px) scaleX(.15)}30%{opacity:.8}100%{opacity:0;transform:translateY(45vh) scaleX(1)}}
+@media(max-width:760px){.hero .avatar-stage{width:min(var(--site-avatar-size,200px),50vw);height:min(var(--site-avatar-size,200px),50vw)}html[data-theme=nightcity] .hero .name{width:min(var(--site-logo-size,470px),calc(100% + 20px))}}
+@media(prefers-reduced-motion:reduce){html #wipe{display:none}}
+html[data-motion=off] #wipe{display:none}
+html[data-danmaku=off] #danmaku-layer,html[data-danmaku=off] #danmaku-toggle{display:none!important}
+/* Contain decorative overhangs without creating a horizontal scroll area. */
+#page-home{overflow-x:clip}
+
+.deepdive-logo{display:none}
+html[data-theme=deepdive] .hero .name{width:min(var(--site-logo-size,470px),100%);font-size:inherit}

@@ -18,6 +18,16 @@
     if(window.ZFSNSiteSettings) Object.assign(result, window.ZFSNSiteSettings.normalizeSite(value || {}));
     return result;
   }
+  function syncBrand(){
+    var theme = document.documentElement.dataset.theme || 'classic';
+    var active = theme === 'nightcity' ? document.getElementById('nightcity-theme') : theme === 'deepdive' ? document.getElementById('deepdive-theme') : null;
+    var ready = !active || !!active.sheet;
+    document.querySelectorAll('.deepdive-logo').forEach(function(logo){logo.hidden = !ready || theme !== 'deepdive';});
+    document.querySelectorAll('.nightcity-logo').forEach(function(logo){logo.hidden = !ready || theme !== 'nightcity';});
+    document.querySelectorAll('.name-text').forEach(function(label){label.hidden = ready && (theme === 'deepdive' || theme === 'nightcity');});
+    if (active && !ready) active.addEventListener('load', syncBrand, {once:true});
+  }
+  document.addEventListener('DOMContentLoaded',syncBrand);
   function apply(value) {
     var settings = normalize(value);
     var root = document.documentElement;
@@ -46,6 +56,7 @@
       var key = label.parentElement.dataset.go;
       if (settings.menu && settings.menu[key]) label.textContent = settings.menu[key];
     });
+    syncBrand();
     document.dispatchEvent(new CustomEvent('zfsn:appearance', { detail: settings }));
   }
   var preferenceKey = 'zfsn_visitor_theme_v1';
