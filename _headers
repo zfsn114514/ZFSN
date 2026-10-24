@@ -161,6 +161,15 @@
 /assets/js/app.a84a1bf0.js
   Cache-Control: public, max-age=31536000, immutable
 
+/assets/js/guest-media.4168334e.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/guest-media.c4f8d2a0.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/guestbook-themes.462c020c.css
+  Cache-Control: public, max-age=31536000, immutable
+
 /assets/js/danmaku.de1add44.js
   Cache-Control: public, max-age=31536000, immutable
 

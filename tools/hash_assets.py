@@ -47,6 +47,9 @@ import common  # noqa: E402
 #   而 CSS 加了内容哈希后可以 immutable 长缓存，改文案/作品时不用重下样式。
 ASSETS = [
     "assets/js/app.js",
+    "assets/js/guest-media.js",
+    "assets/css/guest-media.css",
+    "assets/css/guestbook-themes.css",
     "assets/js/danmaku.js",
     "assets/css/app.css",
 ]
