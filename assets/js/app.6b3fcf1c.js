@@ -1059,7 +1059,7 @@
         '<div class="gmeta">' +
           badgeHtml(w) +
           '<div class="gt">' + esc(w.title) + '</div>' +
-          (w.desc ? '<div class="gs">' + esc(w.desc) + '</div>' : '') +
+          (w.desc ? '<div class="gs">' + esc(WorkMarkdown.summary(w.desc)) + '</div>' : '') +
         '</div>';
 
       // 渐进加载：先上 SVG 渐变占位，真图在后台预载完再淡入
@@ -1352,7 +1352,7 @@
         '<div class="wd-textonly">' +
           '<div class="wt-k">' + (w.tag ? esc(w.tag) : '文字作品') + '</div>' +
           '<h2 class="wt-t">' + esc(w.title) + '</h2>' +
-          (w.desc ? '<div class="wt-b">' + esc(w.desc) + '</div>' : '') +
+          (w.desc ? '<div class="wt-b markdown-body">' + WorkMarkdown.render(w.desc) + '</div>' : '') +
         '</div>';
     }
 
@@ -1391,7 +1391,7 @@
           '<div class="wd-meta">' +
             (w.time ? '<span class="gitem-x"><span class="loc">' + geoIcon() + esc(w.time) + '</span></span>' : '') +
           '</div>' +
-          (textOnly ? '' : (w.desc ? '<div class="wd-desc">' + esc(w.desc) + '</div>' : '')) +
+          (textOnly ? '' : (w.desc ? '<div class="wd-desc markdown-body">' + WorkMarkdown.render(w.desc) + '</div>' : '')) +
           '<div class="wd-act">' +
             '<button class="wd-like" id="wd-like" data-like="' + w.id + '">' +
               ICON_HEART + '<span id="wd-like-n">' + (w.likes || 0) + '</span> 点赞</button>' +
@@ -2225,34 +2225,16 @@
   var HTTPS_API_PORT = 3443;
 
 
-  /* ★ 2026-10-05 收敛为**只有一个候选：同源**。
-   *
-   * 站点已迁到 Cloudflare Workers —— 页面与 /api/* 出自同一个 Worker，
-   * /api/health 实测返回 {"ok":true,"runtime":"cloudflare-workers"}。
-   * 所以不再需要「探测一串候选、再挑最快那个」的整套机制。
-   *
-   * 原来那份候选列表（隧道 / :3443 / :3000 / localhost）在迁移后全是死路，
-   * 实测：https://api.zfsnnb.dpdns.org → 530（隧道未连接）
-   *       http://127.0.0.1:3000       → 502（旧后端已停，计划任务已禁用）
-   * 而每个死候选都要探满 probe() 的 3500ms 超时才落败。
-   * 也就是说同源万一真出问题，用户要多等好几秒才看到错误提示，
-   * 而那些候选**永远**不可能成功 —— 降级方案已经不存在了。
-   *
-   * 刻意保留函数名与「返回数组」的结构：detectAPI() / raceAll() /
-   * sessionStorage 缓存那一整套逻辑因此原样继续工作，一行都不用改。
-   * 以后若真要加回退（比如另有一套独立部署的后端），往这个数组里 push 即可。
-   *
-   * file:// 直接双击打开时没有同源概念，返回空数组 —— detectAPI 会
-   * 判定全败并渲染错误提示，那本来就是合理的（本地文件无法调线上接口）。 */
+  /* 线上使用同源；localhost 静态预览可连接线上 Cloudflare Worker。 */
   function apiCandidates(){
-    var list = [];
     var proto = location.protocol;
-    if (proto === "http:" || proto === "https:") list.push("");   // 同源
-
-    // 去重，保持顺序
-    var seen = {}, out = [];
-    list.forEach(function(u){ if (!(u in seen)){ seen[u] = 1; out.push(u); } });
-    return out;
+    if (proto !== "http:" && proto !== "https:") return [];
+    var list = [""];
+    // A local Worker wins; static previews fall back to the deployed Worker.
+    if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname || "")) {
+      list.push("https://www.zfsnnb.dpdns.org");
+    }
+    return list;
   }
 
   function probe(base){
@@ -2286,7 +2268,7 @@
 
     // 缓存值必须仍在当前候选列表里才可信 —— 否则说明用户换了访问方式
     var bases = apiCandidates();
-    var cacheValid = (cached !== null && bases.indexOf(cached) >= 0);
+    var cacheValid = (cached !== null && cached === bases[0]);
 
     /* 并发探测所有候选，但**不等全部返回**：
        一旦"优先级最高的那个成功候选"确定，就立刻收工。
@@ -2543,15 +2525,11 @@
     var isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || "");
 
     if (isLocal){
-      /* 本地调试：页面由本地静态服务器提供，同源 /api/* 必然 404。
-       * 这种情况要么用 wrangler dev（它会连 Worker 逻辑），
-       * 要么在测试脚本里自己 mock 接口 —— 不需要启动任何后端。 */
-      lines.push('当前是<b style="color:#cfe3f5">本地调试</b>环境，页面的 <code style="color:#cfe3f5">/api/*</code> ' +
-        '没有真实后端。');
-      lines.push('正确做法：用 <code style="color:#cfe3f5">npx wrangler dev</code> 起本地 Worker，' +
-        '或在测试脚本里 mock 接口。<b style="color:#ff8a9c">不需要</b>启动 ' +
-        '<code style="color:#ff8a9c">D:\\ZFSN-server\\server.js</code> —— ' +
-        '那套旧后端已不再被本站使用。');
+      lines.push('本地预览会优先连接本地 Worker；本地没有接口时，连接 ' +
+        '<code>https://www.zfsnnb.dpdns.org</code> 的 Cloudflare 后端。');
+      lines.push('请确认线上 Worker 已更新并允许 localhost / 127.0.0.1 跨域访问，' +
+        '再检查浏览器网络面板中的 <code>/api/health</code>。也可使用 ' +
+        '<code>npm run dev</code> 启动隔离的本地 Worker。');
     } else if (proto === "https:"){
       lines.push('本站的页面与接口<b style="color:#cfe3f5">同源</b>（都由 Cloudflare Workers 提供），' +
         '正常情况下不会出现这个提示。');

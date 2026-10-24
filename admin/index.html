@@ -484,6 +484,10 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
   .form{padding:19px 17px}
 }
 </style>
+<link rel="stylesheet" href="../assets/css/markdown.css">
+<script src="../assets/vendor/marked-17.0.1.js"></script>
+<script src="../assets/vendor/dompurify-3.3.3.js"></script>
+<script src="../assets/js/markdown.js"></script>
 </head>
 <body>
 
@@ -497,6 +501,9 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
     <div class="sub">ZFSN / ADMIN CONSOLE</div>
 
     <div class="lfield">
+      <input id="username" name="username" type="text" placeholder="请输入管理员用户名" aria-label="用户名" autocomplete="username" autocapitalize="none" spellcheck="false">
+    </div>
+    <div class="lfield">
       <input id="pwd" type="password" placeholder="请输入管理员密码" autocomplete="current-password" spellcheck="false">
       <button class="eye" id="eye" type="button" aria-label="显示密码">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -508,6 +515,7 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
     <div class="lfoot">
       仅限站长本人访问 · 登录状态保持 12 小时<br>
       <code id="apihint"></code>
+      <div id="local-online-warning" hidden style="color:#ff9bad">本地页面连接线上接口时，发布、编辑和删除会修改线上数据。</div>
     </div>
   </div>
 </div>
@@ -587,8 +595,12 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
           </div>
         </div>
         <div class="fld">
-          <label>简介</label>
-          <textarea id="w-desc" rows="2" maxlength="300" placeholder="一句话描述这个作品"></textarea>
+          <label for="w-desc">作品正文（Markdown）</label>
+          <textarea id="w-desc" rows="12" maxlength="50000" placeholder="支持 # 标题、**加粗**、列表、引用、代码块和表格；最多 50000 字符"></textarea>
+          <p>支持粘贴 ChatGPT 的 Markdown 文本。列表卡片显示摘要，作品详情显示完整正文。</p>
+          <button type="button" class="tb" id="w-insert-card">＋ 插入信息卡片</button>
+          <p>卡片写法：单独一行写 <code>:::card 卡片标题</code>，接着写 Markdown 内容，最后单独一行写 <code>:::</code>。卡片内可使用列表、链接和代码块。</p>
+          <details open><summary>正文预览</summary><div id="w-preview" class="markdown-body" aria-live="polite"></div></details>
         </div>
         <div class="fld">
           <label>作品图片（可多张）</label>
@@ -796,17 +808,12 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 var $ = function(s){ return document.querySelector(s); };
 var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
 
-/* ── 后端地址探测：多候选并发探测，取优先级最高的那个成功地址 ──
-   ⚠ https 页面不能请求 http 接口（浏览器按混合内容直接拦掉，
-     请求根本发不出去），所以候选地址的协议必须跟页面一致。
-     例外：http://localhost / http://127.0.0.1 属可信来源，https 下也可用。
-   ★ 线上方案：静态页在 Cloudflare Workers，接口经 Cloudflare 隧道暴露为
-     https://api.zfsnnb.dpdns.org。管理页现在也能从公网 https 访问 ——
-     比走明文 http://域名:3000 更安全（请求全程加密）。 */
+/* 线上使用同源接口；localhost 静态预览优先本地 Worker，再回退到线上 Worker。 */
 var API_BASE = "";
+$("#local-online-warning").hidden = !/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname || "");
 var API_READY = null;
 
-/* 与 D:\ZFSN-server\server.js 的 PORT / HTTPS_PORT 默认值保持一致 */
+/* 以下旧端口和隧道常量仅用于历史网络诊断，不参与接口地址选择。 */
 var HTTP_API_PORT = 3000;
 var HTTPS_API_PORT = 3443;
 
@@ -824,49 +831,15 @@ function portOf(loc){
 }
 
 function apiCandidates(){
-  var list = [];
-  var host = location.hostname;
-  var proto = location.protocol;
-  var isWeb = (proto === "http:" || proto === "https:");
-  var isHttps = (proto === "https:");
-
-  /* 页面是不是 Cloudflare 静态托管（Workers）？同源 /api/* 必然 404，
-     所以隧道要排在同源前面，否则每次都要白探一轮。 */
-  var isCFHost = /^www\.zfsnnb\.dpdns\.org$/i.test(host || "") &&
-                 (location.port === "" || location.port === "443");
-
-  // ① 同源 —— **线上方案**。
-  //    站点现在由 Cloudflare Worker 提供，页面和 /api/* 出自同一个服务，
-  //    所以无条件排在最前。
-  //    （迁移前 CF 只托管静态资源，同源 /api 必然 404，才需要特判跳过。）
-  if (isWeb) list.push("");
-
-  // ② Cloudflare 隧道 —— 降级为回退方案（家里旧后端还开着时能用）
-  if (isHttps) list.push(TUNNEL_API);
-
-  // ③（已并入 ①）CF 托管下的同源不再单独登记 —— Worker 自带 /api/*。
-
-  // ④ 当前主机名的后端端口 —— 覆盖"页面在 IIS:88、后端在 3000/3443"的场景。
-  //    若页面端口本来就等于后端端口，说明 ① 的同源候选已经覆盖它。
-  //    ⚠ CF 托管下跳过：CF 免费版不代理 :3443，连接会一直挂到超时。
-  var samePort = isWeb && (portOf(location) === String(isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
-  if (host && !samePort && !isCFHost){
-    list.push((isHttps ? "https://" : "http://") + host + ":" +
-              (isHttps ? HTTPS_API_PORT : HTTP_API_PORT));
+    var proto = location.protocol;
+    if (proto !== "http:" && proto !== "https:") return [];
+    var list = [""];
+    // A local Worker wins; static previews fall back to the deployed Worker.
+    if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname || "")) {
+      list.push("https://www.zfsnnb.dpdns.org");
+    }
+    return list;
   }
-
-  // ⑤ 本机兜底：页面在 file:// 时用得上
-  if (isHttps){
-    list.push("https://localhost:" + HTTPS_API_PORT);
-    list.push("https://127.0.0.1:" + HTTPS_API_PORT);
-  }
-  list.push("http://localhost:" + HTTP_API_PORT);
-  list.push("http://127.0.0.1:" + HTTP_API_PORT);
-
-  var seen = {}, out = [];
-  list.forEach(function(u){ if (!(u in seen)){ seen[u] = 1; out.push(u); } });
-  return out;
-}
 
 function probe(base){
   return new Promise(function(resolve){
@@ -939,7 +912,7 @@ function api(path, opts){
   opts.headers = h;
   return detectAPI().then(function(base){
     if (base === null){
-      throw new Error("后端服务未启动（请在 D:\\ZFSN-server 运行 node server.js）");
+      throw new Error("无法连接 Cloudflare 后端，请检查网络和线上 Worker 的本地跨域配置");
     }
     return fetch(base + path, opts);
   }).then(function(r){
@@ -1017,7 +990,7 @@ function grad(i){
 
 /* ══════ 登录 ══════ */
 
-var pwdInput = $("#pwd"), lerr = $("#lerr"), lbtn = $("#lbtn");
+var usernameInput = $("#username"), pwdInput = $("#pwd"), lerr = $("#lerr"), lbtn = $("#lbtn");
 
 $("#eye").addEventListener("click", function(){
   var on = pwdInput.type === "password";
@@ -1026,12 +999,15 @@ $("#eye").addEventListener("click", function(){
 });
 
 function doLogin(){
+  if (lbtn.disabled) return;
+  var username = usernameInput.value;
   var p = pwdInput.value;
+  if (!username){ lerr.textContent = "请输入用户名"; usernameInput.focus(); return; }
   if (!p){ lerr.textContent = "请输入密码"; pwdInput.focus(); return; }
   lbtn.disabled = true;
   lbtn.textContent = "验证中…";
   lerr.textContent = "";
-  api("/api/admin/login", { method: "POST", body: JSON.stringify({ password: p }) })
+  api("/api/admin/login", { method: "POST", body: JSON.stringify({ username: username, password: p }) })
     .then(function(d){
       localStorage.setItem(TOKEN_KEY, d.token);
       enterApp();
@@ -1047,6 +1023,7 @@ function doLogin(){
 }
 
 lbtn.addEventListener("click", doLogin);
+usernameInput.addEventListener("keydown", function(e){ if (e.key === "Enter") doLogin(); });
 pwdInput.addEventListener("keydown", function(e){ if (e.key === "Enter") doLogin(); });
 
 function enterApp(){
@@ -1525,7 +1502,7 @@ function uploadFiles(kind, list, ui){
   // 那会破坏 multipart 的 boundary。这里自己带 Token。
   var t = localStorage.getItem(TOKEN_KEY);
   return detectAPI().then(function(base){
-    if (base === null) throw new Error("后端服务未启动（请在 D:\\ZFSN-server 运行 node server.js）");
+    if (base === null) throw new Error("无法连接 Cloudflare 后端，请检查网络和线上 Worker 的本地跨域配置");
     return new Promise(function(resolve, reject){
       var xhr = new XMLHttpRequest();
       // kind 也放在 query 上：后端在读请求体之前就要知道按哪个额度收数据
@@ -1937,12 +1914,31 @@ function normPath(p){
   return s;
 }
 
+function updateWorkPreview(){
+  if (window.WorkMarkdown) $("#w-preview").innerHTML = WorkMarkdown.render($("#w-desc").value);
+}
+$("#w-desc").addEventListener("input", updateWorkPreview);
+$("#w-insert-card").addEventListener("click", function(){
+  var input = $("#w-desc");
+  var start = input.selectionStart, end = input.selectionEnd;
+  var content = input.value.slice(start, end) || "在这里填写卡片内容，支持 **加粗**、列表和链接。";
+  var card = "\n\n:::card 卡片标题\n" + content + "\n:::\n\n";
+  if (input.value.length - (end - start) + card.length > input.maxLength){
+    alert("正文最多 50000 字符，请缩短内容后再插入卡片。");
+    return;
+  }
+  input.setRangeText(card, start, end, "end");
+  input.focus();
+  updateWorkPreview();
+});
+
 function openWorkForm(item){
   editingId = item ? item.id : null;
   $("#work-form-title").textContent = item ? "编辑作品" : "添加新作品";
   $("#w-title").value = item ? (item.title || "") : "";
   $("#w-tag").value = item ? (item.tag || "") : "";
   $("#w-desc").value = item ? (item.desc || "") : "";
+  updateWorkPreview();
 
   // 回填媒体
   var hasImages = !!(item && item.images && item.images.length);
@@ -2053,7 +2049,7 @@ function loadWorks(){
               (w.tag ? '<span class="loc">' + esc(w.tag) + "</span>" : "") +
               '<span class="when">' + esc(w.time || "") + " · 权重 " + (w.order || 0) + "</span>" +
             "</header>" +
-            (w.desc ? '<div class="body">' + esc(w.desc) + "</div>" : "") +
+            (w.desc ? '<div class="body">' + esc(WorkMarkdown.summary(w.desc)) + "</div>" : "") +
             '<div class="meta">' +
               (nImg ? '<span class="tag">' + nImg + " 张图</span>" : "") +
               (w.video ? '<span class="tag">含视频</span>' : "") +

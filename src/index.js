@@ -141,7 +141,7 @@ function rowToWork(r) {
 const CANON_HOST = "www.zfsnnb.dpdns.org";
 const WORKERS_HOST = "zfsn.zfsn114514.workers.dev";
 
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const p = url.pathname;
@@ -758,13 +758,13 @@ async function handleAPI(request, env, ctx, url) {
       "INSERT INTO works (id, title, descr, link, cover, tag, images, video, files, ord, ts, time) " +
       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).bind(
-      id, title, L.clean(body.desc, 300), L.clean(body.link, 500), cover,
+      id, title, L.clean(body.desc, 50000), L.clean(body.link, 500), cover,
       L.clean(body.tag, 24), JSON.stringify(images), video, JSON.stringify(files),
       Number(body.order) || 0, ts, L.stamp(ts, tz)
     ).run();
 
     return L.ok({ item: rowToWork({
-      id, title, descr: L.clean(body.desc, 300), link: L.clean(body.link, 500),
+      id, title, descr: L.clean(body.desc, 50000), link: L.clean(body.link, 500),
       cover, tag: L.clean(body.tag, 24), images: JSON.stringify(images), video,
       files: JSON.stringify(files), ord: Number(body.order) || 0, ts,
       time: L.stamp(ts, tz), like_count: 0, comment_count: 0
@@ -954,7 +954,7 @@ async function handleAPI(request, env, ctx, url) {
     try { body = await L.readJSON(request); } catch (_) { return L.fail("请求体格式错误"); }
 
     const title = body.title !== undefined ? L.clean(body.title, 60) : row.title;
-    const descr = body.desc !== undefined ? L.clean(body.desc, 300) : row.descr;
+    const descr = body.desc !== undefined ? L.clean(body.desc, 50000) : row.descr;
     const link = body.link !== undefined ? L.clean(body.link, 500) : row.link;
     const tag = body.tag !== undefined ? L.clean(body.tag, 24) : row.tag;
     const ord = body.order !== undefined ? (Number(body.order) || 0) : Number(row.ord) || 0;
@@ -1021,6 +1021,10 @@ async function handleAPI(request, env, ctx, url) {
       return L.fail("尝试次数过多，请稍后再试", 429);
     }
 
+    if (!body || body.username !== "ZFSN") {
+      return L.fail("用户名或密码错误", 401);
+    }
+
     let rec = await L.getPasswordRecord(env);
     if (!rec) {
       // 库里还没有密码记录（比如还没灌种子数据）——用默认值初始化一次
@@ -1035,7 +1039,7 @@ async function handleAPI(request, env, ctx, url) {
       // 轮数超上限之类的配置问题不是"密码错"，得给出能照着做的提示
       return L.fail("密码校验配置异常：" + ((e && e.message) || e), 500);
     }
-    if (!pwdOK) return L.fail("密码错误", 401);
+    if (!pwdOK) return L.fail("用户名或密码错误", 401);
 
     // 登录成功：把这几次失败计数清掉，免得正常登录后立刻被锁
     await env.DB.prepare("DELETE FROM rate WHERE k = ?").bind("login:" + ip).run();
@@ -1227,3 +1231,41 @@ async function doUpload(request, env, kind, form, tz) {
     name: first.name
   });
 }
+
+
+/* Local static previews may use the deployed API with explicit token auth.
+ * Restrict browser access to loopback origins; never enable cookie credentials.
+ */
+export default {
+  async fetch(request, env, ctx) {
+    const path = new URL(request.url).pathname;
+    const isAPI = path.startsWith("/api/") || path.startsWith("/media/");
+    const origin = request.headers.get("Origin");
+    let allowed = false;
+    if (origin) {
+      try {
+        const url = new URL(origin);
+        allowed = origin === url.origin &&
+          (url.protocol === "http:" || url.protocol === "https:") &&
+          ["localhost", "127.0.0.1", "[::1]", CANON_HOST].includes(url.hostname);
+      } catch (_) { /* An opaque or invalid origin is not a local web preview. */ }
+    }
+    if (!isAPI) return worker.fetch(request, env, ctx);
+    let response;
+    if (request.method === "OPTIONS") {
+      response = new Response(null, { status: allowed ? 204 : 403 });
+    } else {
+      response = await worker.fetch(request, env, ctx);
+    }
+    const headers = new Headers(response.headers);
+    headers.append("Vary", "Origin");
+    if (allowed) {
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS");
+      headers.set("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token, Range");
+      headers.set("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Disposition");
+      headers.set("Access-Control-Max-Age", "600");
+    }
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+};
