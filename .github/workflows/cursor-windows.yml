@@ -21,6 +21,14 @@ jobs:
         run: python tools/cursor-app/verify_assets.py
       - name: Test trail model
         run: dotnet run --project tools/cursor-app/Tests/TrailTests.csproj
+      - name: Render and check custom Windows UI
+        run: dotnet run --project tools/cursor-app/UiTests/CursorUiTests.csproj -- tools/cursor-app/ui-previews
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ZFSN-Cursor-UI-previews
+          path: tools/cursor-app/ui-previews/
+          if-no-files-found: ignore
       - name: Publish portable Windows app
         run: dotnet publish tools/cursor-app/ZFSN.Cursor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o tools/cursor-app/dist/win-x64
       - name: Include instructions and restore helper
