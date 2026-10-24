@@ -1234,7 +1234,7 @@ async function doUpload(request, env, kind, form, tz) {
 
 
 /* Local static previews may use the deployed API with explicit token auth.
- * Restrict browser access to loopback origins; never enable cookie credentials.
+ * Restrict browser access to loopback and the configured IIS origin; never enable cookie credentials.
  */
 export default {
   async fetch(request, env, ctx) {
@@ -1247,7 +1247,8 @@ export default {
         const url = new URL(origin);
         allowed = origin === url.origin &&
           (url.protocol === "http:" || url.protocol === "https:") &&
-          ["localhost", "127.0.0.1", "[::1]", CANON_HOST].includes(url.hostname);
+          (["localhost", "127.0.0.1", "[::1]", CANON_HOST].includes(url.hostname) ||
+           origin === "http://192.168.0.100:88");
       } catch (_) { /* An opaque or invalid origin is not a local web preview. */ }
     }
     if (!isAPI) return worker.fetch(request, env, ctx);

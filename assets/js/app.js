@@ -2231,7 +2231,8 @@
     if (proto !== "http:" && proto !== "https:") return [];
     var list = [""];
     // A local Worker wins; static previews fall back to the deployed Worker.
-    if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname || "")) {
+    if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname || "") ||
+        location.origin === "http://192.168.0.100:88") {
       list.push("https://www.zfsnnb.dpdns.org");
     }
     return list;
@@ -2522,12 +2523,12 @@
   function backendHelp(){
     var lines = [];
     var proto = location.protocol;
-    var isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || "");
+    var isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname || "") || location.origin === "http://192.168.0.100:88";
 
     if (isLocal){
       lines.push('本地预览会优先连接本地 Worker；本地没有接口时，连接 ' +
         '<code>https://www.zfsnnb.dpdns.org</code> 的 Cloudflare 后端。');
-      lines.push('请确认线上 Worker 已更新并允许 localhost / 127.0.0.1 跨域访问，' +
+      lines.push('请确认线上 Worker 已更新并允许 localhost、127.0.0.1 和当前 IIS 地址的跨域访问，' +
         '再检查浏览器网络面板中的 <code>/api/health</code>。也可使用 ' +
         '<code>npm run dev</code> 启动隔离的本地 Worker。');
     } else if (proto === "https:"){
