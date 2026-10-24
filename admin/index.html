@@ -1470,9 +1470,10 @@ var FILES = [];       // [{ name, path, size, sizeText }]
 
 /** 把后端相对路径拼成后台页可直接预览的地址 */
 function mUrl(rel){
-  if (!rel) return "";
-  if (/^(https?:|data:|\/)/.test(rel)) return rel;
-  return (API_BASE ? API_BASE : "") + "/" + rel;
+  var path = String(rel || "").trim().replace(/\\/g, "/");
+  if (!path) return "";
+  if (/^(https?:|data:|blob:|\/\/)/i.test(path)) return path;
+  return (API_BASE || "") + "/" + path.replace(/^\/+/, "");
 }
 
 function fmtSize(n){

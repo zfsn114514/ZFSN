@@ -598,6 +598,8 @@
     var m = src.match(/[\\/]ZFSNwebsite[\\/](.+)$/i);
     if (m) src = m[1].replace(/\\/g, "/");
     if (!src) return placeholder(i || 0);
+    // KV images belong to the API host, not the local IIS static directory.
+    if (/^\/?(?:media\/|api\/media\/)/i.test(src)) return mediaUrl(src);
     return src;
   }
 
@@ -689,17 +691,15 @@
     }
   };
 
-  /* 媒体地址（视频 / 下载文件）——
-     这类文件**不在 git 仓库里**（几十 MB 的视频塞进仓库会拖慢每次构建），
-     它们存在家里服务器上，由后端经 Cloudflare 隧道流式提供。
-     所以这里必须拼到后端主机（API_BASE）上，而不是站点相对路径。
-     图片则相反：走站点相对路径 → 命中 Cloudflare 上的仓库副本，最快。 */
+  /** Resolve Worker/KV media paths against the selected API origin.
+   * API responses may contain root-relative, relative or already absolute URLs.
+   */
   function mediaUrl(rel){
     var s = String(rel || "").trim().replace(/\\/g, "/");
     if (!s) return "";
-    if (/^(https?:|data:|\/)/.test(s)) return s;
-    var b = (typeof API_BASE === "string" && API_BASE) ? API_BASE : "";
-    return b + "/" + s;
+    if (/^(https?:|data:|blob:|\/\/)/i.test(s)) return s;
+    var base = typeof API_BASE === "string" ? API_BASE : "";
+    return base + "/" + s.replace(/^\/+/, "");
   }
 
   /** 下载地址：走 /api/download/:workId/:idx，能保留原始文件名 */
@@ -1923,7 +1923,7 @@
   function makeVCard(v, i){
     var a = document.createElement("a");
     a.className = "vcard reveal";
-    a.style.animationDelay = (i * .04) + "s";
+    a.style.animationDelay = (Math.min(i % V_BATCH, 5) * .03) + "s";
     a.href = v.bvid ? ("https://www.bilibili.com/video/" + v.bvid)
                     : "https://space.bilibili.com/1220210222";
     a.target = "_blank"; a.rel = "noopener";
@@ -2015,15 +2015,14 @@
   // 触底加载更多
   if (vgrid){
     var vSentinel = document.createElement("div");
-    vSentinel.style.cssText = "grid-column:1/-1;height:1px";
+    vSentinel.style.cssText = "grid-column:1/-1;height:1px;overflow-anchor:none";
     vgrid.parentNode.appendChild(vSentinel);
     if ("IntersectionObserver" in window){
       new IntersectionObserver(function(es){
         es.forEach(function(e){
-          if (e.isIntersecting && vShown < VID_VIEW.length){
+          if (current === "bili" && e.isIntersecting && vShown < VID_VIEW.length){
+            // Append below the viewport without moving the reader to the sentinel.
             appendVideos();
-            // 追加后重新观察（保持触发能力）
-            vSentinel.scrollIntoView({ block: "nearest" });
           }
         });
       }, { rootMargin: "400px" }).observe(vSentinel);
@@ -2357,13 +2356,6 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
   }
 
-  /** 后端相对路径 → 完整 URL。
-   * 留言/作品图都存相对路径（"/api/media/messages/abc/0.jpg"），
-   * 在同源（API_BASE=""）和隧道（API_BASE="https://api..."）下都需要拼前缀。
-   * 调用点（makeMsgItem）只在 detectAPI() 解决之后才跑，所以 API_BASE 已就绪。 */
-  function mediaUrl(rel){
-    return (API_BASE || "") + rel;
-  }
 
   function makeMsgItem(m){
     var d = document.createElement("div");
