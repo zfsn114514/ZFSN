@@ -141,7 +141,7 @@ function rowToWork(r) {
 const CANON_HOST = "www.zfsnnb.dpdns.org";
 const WORKERS_HOST = "zfsn.zfsn114514.workers.dev";
 
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const p = url.pathname;
@@ -1231,3 +1231,41 @@ async function doUpload(request, env, kind, form, tz) {
     name: first.name
   });
 }
+
+
+/* Local static previews may use the deployed API with explicit token auth.
+ * Restrict browser access to loopback origins; never enable cookie credentials.
+ */
+export default {
+  async fetch(request, env, ctx) {
+    const path = new URL(request.url).pathname;
+    const isAPI = path.startsWith("/api/") || path.startsWith("/media/");
+    const origin = request.headers.get("Origin");
+    let allowed = false;
+    if (origin) {
+      try {
+        const url = new URL(origin);
+        allowed = origin === url.origin &&
+          (url.protocol === "http:" || url.protocol === "https:") &&
+          ["localhost", "127.0.0.1", "[::1]", CANON_HOST].includes(url.hostname);
+      } catch (_) { /* An opaque or invalid origin is not a local web preview. */ }
+    }
+    if (!isAPI) return worker.fetch(request, env, ctx);
+    let response;
+    if (request.method === "OPTIONS") {
+      response = new Response(null, { status: allowed ? 204 : 403 });
+    } else {
+      response = await worker.fetch(request, env, ctx);
+    }
+    const headers = new Headers(response.headers);
+    headers.append("Vary", "Origin");
+    if (allowed) {
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS");
+      headers.set("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token, Range");
+      headers.set("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Disposition");
+      headers.set("Access-Control-Max-Age", "600");
+    }
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+};
