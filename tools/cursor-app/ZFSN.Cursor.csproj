@@ -9,11 +9,14 @@
     <AssemblyName>ZFSN.Cursor</AssemblyName>
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="Tests/**/*.cs" />
+    <Compile Remove="Tests/**/*.cs;UiTests/**/*.cs" />
     <EmbeddedResource Include="Assets/*.cur" />
+    <EmbeddedResource Include="Assets/wordmark.png" />
+    <EmbeddedResource Include="Assets/arrow.png" />
     <EmbeddedResource Include="Assets/app.ico" />
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo"><_Parameter1>CursorUiTests</_Parameter1></AssemblyAttribute>
   </ItemGroup>
 </Project>

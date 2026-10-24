@@ -28,7 +28,11 @@ dotnet publish ZFSN.Cursor.csproj -c Release -r win-x64 --self-contained true -p
 
 ## 控制终端与常用设置
 
-暗红面板、黄色标题、切角按钮与网站的 2077 游戏菜单主题呼应。按钮支持键盘焦点，窗口支持 DPI 缩放和滚动。
+1.2 版采用左右分栏的现代控制台：左侧为网站同款定制 ZFSN 标志、效果示意与页签，右侧分为视觉设置和启动设置；状态和主按钮固定在底部。
+
+开关、强度滑块、按钮、托盘菜单和窗口标题栏均自绘；没有原生复选框、TrackBar 或滚动条。设置分两页完整显示，窗口支持拖动和边缘缩放。开关有过渡动画，滑块支持拖动、滚轮、方向键及 Home/End。所有主要操作保留 Tab 键焦点。
+
+效果示意使用同款箭头资源，响应指针、光晕和强度设置；实际桌面拖尾算法保持不变。
 
 - **登录 Windows 后自动启动**：默认关闭。勾选后写入当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，无需管理员权限；登录后自动启用光标并隐藏到托盘。取消勾选会删除该项。
 - 请先把程序解压到固定目录再启用自启动；移动 EXE 后，需要取消再重新勾选。Windows 任务管理器也可单独禁用启动项。
@@ -55,7 +59,7 @@ dotnet publish ZFSN.Cursor.csproj -c Release -r win-x64 --self-contained true -p
 
 ## 验证范围
 
-已在 Linux 云端完成 Windows x64 交叉编译、资源结构校验、粒子算法测试。
+已在 Linux 云端完成 Windows x64 交叉编译、资源结构校验、粒子算法和设置读写测试。GitHub Windows 构建另外执行 WinForms 控件绘制、页签切换、开关及滑块交互检查，并输出 visual/system/compact 三张真实控件渲染图（UI-previews 构建产物）。
 **云端没有 Windows 桌面，不能替代对实际透明合成、点击穿透、系统光标切换和多屏 DPI 的 Windows 实机验证。**
 
 ```text
