@@ -8,7 +8,7 @@ site = here.parents[1]
 manifest = json.loads((here / 'Assets/source-manifest.json').read_text())
 for name, hotspot in [('arrow', (4, 2)), ('point', (12, 12))]:
     entry = manifest[name]
-    assert hashlib.sha256((site / entry['source']).read_bytes()).hexdigest() == entry['sha256'], 'site SVG changed; re-rasterize ' + name
+    assert hashlib.sha256((site / entry['source']).read_bytes().replace(b'\r\n', b'\n')).hexdigest() == entry['sha256'], 'site SVG changed; re-rasterize ' + name
     raw = (here / 'Assets' / (name + '.cur')).read_bytes()
     reserved, kind, count = struct.unpack_from('<HHH', raw)
     assert (reserved, kind, count) == (0, 2, 1)

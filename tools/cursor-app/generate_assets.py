@@ -37,7 +37,7 @@ def main():
         assert image.size == (32, 32)
         data = cursor_bytes(image, hotspot)
         (HERE / 'Assets' / (name + '.cur')).write_bytes(data)
-        manifest[name] = {'source': str(source.relative_to(SITE)), 'sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'hotspot': list(hotspot), 'size': [32, 32]}
+        manifest[name] = {'source': str(source.relative_to(SITE)), 'sha256': hashlib.sha256(source.read_bytes().replace(b'\r\n', b'\n')).hexdigest(), 'hotspot': list(hotspot), 'size': [32, 32]}
     Image.open(HERE / 'Assets/arrow.png').save(HERE / 'Assets/app.ico', format='ICO', sizes=[(32, 32)])
     (HERE / 'Assets/source-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     print('CUR assets generated from site rasterizations; hotspots 4,2 and 12,12.')
