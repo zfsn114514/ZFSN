@@ -14,6 +14,8 @@ for (const file of sources) {
     const fn = source.slice(start, end);
     for (const [href, expected] of [
       ['http://localhost:5500', ['', 'https://www.zfsnnb.dpdns.org']],
+      ['http://192.168.0.100:88', ['', 'https://www.zfsnnb.dpdns.org']],
+      ['http://192.168.0.100:89', ['']],
       ['http://127.0.0.1:8080', ['', 'https://www.zfsnnb.dpdns.org']],
       ['http://[::1]:8787', ['', 'https://www.zfsnnb.dpdns.org']],
       ['https://localhost:443', ['', 'https://www.zfsnnb.dpdns.org']],
@@ -27,7 +29,7 @@ for (const file of sources) {
   });
 }
 
-for (const origin of ['http://localhost:5500', 'http://127.0.0.1:8080', 'http://[::1]:8787', 'https://www.zfsnnb.dpdns.org']) {
+for (const origin of ['http://192.168.0.100:88', 'http://localhost:5500', 'http://127.0.0.1:8080', 'http://[::1]:8787', 'https://www.zfsnnb.dpdns.org']) {
   test(`CORS supports health, admin preflight and errors from ${origin}`, async () => {
     const url = 'https://www.zfsnnb.dpdns.org/api/health';
     const health = await worker.fetch(new Request(url, { headers: { Origin: origin } }), {}, {});
@@ -46,7 +48,7 @@ for (const origin of ['http://localhost:5500', 'http://127.0.0.1:8080', 'http://
     assert.match(error.headers.get('Vary'), /Origin/);
   });
 }
-for (const origin of ['https://evil.example', 'http://localhost.evil.example', 'null', 'file://', 'http://192.168.1.2:5500']) {
+for (const origin of ['https://evil.example', 'http://localhost.evil.example', 'null', 'file://', 'http://192.168.1.2:5500', 'http://192.168.0.100:89', 'https://192.168.0.100:88', 'http://192.168.0.100.evil.example:88']) {
   test(`CORS does not grant access to ${origin}`, async () => {
     const response = await worker.fetch(new Request('https://www.zfsnnb.dpdns.org/api/health', { method: 'OPTIONS', headers: { Origin: origin } }), {}, {});
     assert.equal(response.status, 403);

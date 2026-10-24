@@ -327,7 +327,7 @@ npx wrangler d1 execute zfsn-db --remote --file=./schema/0002_analytics.sql
 ## 本地静态预览连接 Cloudflare 后端
 
 用静态服务器打开仓库目录，例如 `python -m http.server 5500`，然后访问
-`http://localhost:5500/`（后台为 `/admin/`）。也支持 `127.0.0.1` 和 IPv6 回环地址。
+`http://localhost:5500/`（后台为 `/admin/`）。也支持 `127.0.0.1` 和 IPv6 回环地址，以及 IIS 局域网地址 `http://192.168.0.100:88`。
 前后台先探测同源 `/api/health`：如果本地运行 Wrangler，就使用本地数据库；
 如果只是静态预览，同源接口不存在，则连接 `https://www.zfsnnb.dpdns.org` 的线上接口。
 前端地址选择和 Worker 跨域配置必须一起部署后才生效。
@@ -337,8 +337,8 @@ npx wrangler d1 execute zfsn-db --remote --file=./schema/0002_analytics.sql
 本地页面连接线上接口时，发布、编辑、上传、删除都作用于线上 D1/KV 数据。
 本地后台的登录提示区会明确提醒这一点。需要隔离数据时请使用本地 `wrangler dev`。
 
-不要双击 HTML 文件使用 `file://`，也不要用局域网 IP 代替回环地址；
-这些来源未开放跨域访问。排查时查看浏览器网络面板的 `/api/health` 和 OPTIONS 请求，
+不要双击 HTML 文件使用 `file://`。局域网仅开放 `http://192.168.0.100:88`
+这一准确来源；其他 IP、端口或协议需要同步更新前后台候选列表与 Worker CORS 白名单。排查时查看浏览器网络面板的 `/api/health` 和 OPTIONS 请求，
 而不是启动已停用的旧 Node 后端或 Cloudflare 隧道。
 
 回归检查：`node --test tools/dev/check_local_backend.mjs`。
