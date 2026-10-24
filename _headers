@@ -138,6 +138,16 @@
 
 
 
+# Platform data changes in place; revalidate each request.
+/steam_games.json
+  Cache-Control: no-cache, max-age=0, must-revalidate
+/steam_family.json
+  Cache-Control: no-cache, max-age=0, must-revalidate
+/bili_videos.json
+  Cache-Control: no-cache, max-age=0, must-revalidate
+/xbox_games.json
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
 # ── 哈希化的静态资源（由 tools/hash_assets.py 自动生成）──────────
 #
 # 文件名里带内容哈希，所以内容一变文件名就变 —— 可以放心缓存很久。
@@ -148,11 +158,11 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/assets/js/app.1aea7b8e.js
+/assets/js/app.7f2cfcaa.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/danmaku.49303c11.js
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/app.4b323538.css
+/assets/css/app.50df6d20.css
   Cache-Control: public, max-age=31536000, immutable

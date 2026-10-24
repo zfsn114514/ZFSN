@@ -2068,3 +2068,5 @@ body:not([data-page="home"]) #danmaku-toggle{display:none}
       .glist .gitem.clamped){cursor:var(--cur) !important}
   :is(.wd-like:disabled,.btn.primary:disabled){cursor:not-allowed !important}
 }
+
+.data-refresh{display:inline-flex;align-items:center;gap:6px;margin:10px 0;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:rgba(128,128,160,.08);color:var(--muted);font:inherit;font-size:11px;cursor:pointer}.data-refresh:hover{color:var(--text);border-color:var(--red-soft)}.data-refresh:disabled{opacity:.5;cursor:wait}

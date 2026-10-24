@@ -37,20 +37,27 @@
 //   tools/.cache/bili_raw_pages.json  各页原始响应（留档，便于排查）
 //   tools/.cache/bili_list.json       { total, pages, videos:[{bvid,aid,title,cover,pub,ts,length,duration,views,danmaku,reply,desc}] }
 
-const { spawn } = require("child_process");
-const http = require("http");
-const fs = require("fs");
-const path = require("path");
+import { spawn } from "node:child_process";
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MID = 1220210222;
-const CHROME = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+const CHROME = process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const PORT = 9336;
-const HERE = __dirname;
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CACHE = path.join(HERE, ".cache");
 const PROFILE = path.join(CACHE, "chrome-cdp");
 const PAGE_URL = `https://space.bilibili.com/${MID}/video`;
 const OUT_LIST = path.join(CACHE, "bili_list.json");
 const OUT_RAW = path.join(CACHE, "bili_raw_pages.json");
+
+let activeChrome, activeWebSocket;
+function cleanup(){
+  try { if (activeWebSocket) activeWebSocket.close(); } catch (_) {}
+  try { if (activeChrome) activeChrome.kill(); } catch (_) {}
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -160,10 +167,12 @@ async function waitFor(fn, timeout, step = 800) {
 }
 
 async function main() {
+  if (typeof WebSocket === "undefined") throw new Error("请安装 Node.js 22 或更新版本（需要内置 WebSocket）。");
+  if (!fs.existsSync(CHROME)) throw new Error("未找到 Chrome，请安装 Chrome 或设置 CHROME_PATH。查找路径: " + CHROME);
   fs.mkdirSync(CACHE, { recursive: true });
   fs.mkdirSync(PROFILE, { recursive: true });
 
-  const chrome = spawn(CHROME, [
+  const chrome = activeChrome = spawn(CHROME, [
     "--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
     "--no-first-run", "--no-default-browser-check", "--disable-extensions",
     "--disable-background-networking",
@@ -179,7 +188,7 @@ async function main() {
   }
   if (!targets || !targets.length) throw new Error("Chrome 调试端口未就绪");
   const page = targets.find((t) => t.type === "page") || targets[0];
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  const ws = activeWebSocket = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = () => rej(new Error("WebSocket 连接失败")); });
   const cdp = new CDP(ws);
   await cdp.send("Page.enable");
@@ -297,7 +306,11 @@ async function main() {
     source: `chrome-cdp: space.bilibili.com/${MID}/video`,
     videos,
   };
-  fs.writeFileSync(OUT_LIST, JSON.stringify(out, null, 2), "utf8");
+  if (!videos.length || (best.total && videos.length < best.total)) {
+    throw new Error(`只抓到 ${videos.length}/${best.total || "未知"} 条，未覆盖旧列表，请稍后重试。`);
+  }
+  fs.writeFileSync(OUT_LIST + ".tmp", JSON.stringify(out, null, 2), "utf8");
+  fs.renameSync(OUT_LIST + ".tmp", OUT_LIST);
 
   console.log("\n" + "=".repeat(60));
   console.log(`共抓取 ${videos.length} 条（页面声称 ${best.total} 条）`);
@@ -311,4 +324,4 @@ async function main() {
   try { chrome.kill(); } catch (e) {}
 }
 
-main().catch((e) => { console.error("失败: " + e.message); process.exit(1); });
+main().catch((e) => { console.error("失败: " + e.message); process.exitCode = 1; }).finally(cleanup);

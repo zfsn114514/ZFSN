@@ -1,122 +1,54 @@
 @echo off
-chcp 936 >nul
+chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
-
-echo ============================================
-echo   ZFSN ÍøÕ¾Êı¾İ¸üĞÂ
-echo ============================================
+:menu
+cls
+echo ==================================================
+echo   ZFSN æ•°æ®æ›´æ–°ä¸­å¿ƒ
+echo ==================================================
 echo.
-
-REM == ÕÒ Python ==
-REM ÓÅÏÈÓÃÕıÊ½°²×°µÄ Python£¨Ä£¿é×îÈ«£©£¬
-REM ÕÒ²»µ½²ÅÍË»Ø ComfyUI ×Ô´øµÄÇ¶ÈëÊ½°æ±¾¡£
-set PY=
-if exist "%LOCALAPPDATA%\Programs\Python\Python314\python.exe" set PY=%LOCALAPPDATA%\Programs\Python\Python314\python.exe
-if not defined PY if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" set PY=%LOCALAPPDATA%\Programs\Python\Python313\python.exe
-if not defined PY if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set PY=%LOCALAPPDATA%\Programs\Python\Python312\python.exe
-if not defined PY if exist "C:\ComfyUI\python_embeded\python.exe" set PY=C:\ComfyUI\python_embeded\python.exe
-if not defined PY (
-  where python >nul 2>nul && set PY=python
-)
-if not defined PY (
-  echo [´íÎó] ÕÒ²»µ½ Python¡£ÇëÏÈ°²×° Python 3¡£
-  echo.
-  pause
-  exit /b 1
-)
-echo Ê¹ÓÃ Python: %PY%
+echo   1. Steam è‡ªæœ‰æ¸¸æˆä¸æ—¶é•¿ï¼ˆå¿«é€Ÿï¼‰
+echo   2. Steam å®¶åº­å…±äº«ï¼ˆé¦–æ¬¡è¾ƒæ…¢ï¼‰
+echo   3. Bç«™å¿«é€Ÿæ›´æ–°ï¼ˆæŠ“æ–°æŠ•ç¨¿ï¼Œå¤ç”¨æ—§äº’åŠ¨æ•°æ®ï¼‰
+echo   4. Bç«™å®Œæ•´æ›´æ–°ï¼ˆåˆ·æ–°å…¨éƒ¨èµã€å¸ã€æ”¶è—ï¼‰
+echo   5. Xbox è¡¥å……ç¼ºå¤±å°é¢
+echo   6. Xbox é‡æ–°æŠ“å–å…¨éƒ¨å°é¢
+echo   7. å…¨éƒ¨æ›´æ–°
+echo   0. é€€å‡º
 echo.
-
-REM == ÕÒ Node ==
-REM [3/5] µÄ BÕ¾ Í¶¸åÁĞ±íÒª¿¿ Node Çı¶¯ÎŞÍ· Chrome£¬Ã»ÓĞ Node ¾ÍÌø¹ı¸Ã²½¡£
-set NODE=
-if exist "%ProgramFiles%\nodejs\node.exe" set NODE=%ProgramFiles%\nodejs\node.exe
-if not defined NODE if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" set NODE=%LOCALAPPDATA%\Programs\nodejs\node.exe
-if not defined NODE (
-  where node >nul 2>nul
-  if not errorlevel 1 set NODE=node
-)
-if defined NODE (echo Ê¹ÓÃ Node: %NODE%) else (echo [ÌáÊ¾] Ã»ÕÒµ½ Node.js£¬BÕ¾ Í¶¸åÁĞ±í²½Öè½«±»Ìø¹ı)
-echo.
-
-REM ¹Øµô Python µÄ stdout »º³å£¬·ñÔòÈÕÖ¾ÒªµÈ½Å±¾ÅÜÍê²ÅÒ»´ÎĞÔ³öÏÖ
-set PYTHONUNBUFFERED=1
-REM ÖĞÎÄÊä³öÍ³Ò»°´ GBK£¬Óë±¾ÎÄ¼ş±àÂëºÍ chcp 936 ±£³ÖÒ»ÖÂ
-set PYTHONIOENCODING=gbk
-
-echo --------------------------------------------
-echo [1/5] Steam ÓÎÏ·¿â£¨×Ô¼ºÓµÓĞ£¬Ğè API Key£©
-echo --------------------------------------------
-echo ÌáÊ¾£ºÕâÒ»²½ĞèÒªÓĞĞ§µÄ Steam API Key¡£
-echo       Èô Key Ê§Ğ§£¬±¾²½Öè»á±¨´í²¢**±£Áô¾ÉÊı¾İ**£¬Õ¾µã²»ÊÜÓ°Ïì¡£
-echo       ÖØĞÂÉêÇë£ºhttps://steamcommunity.com/dev/apikey
-echo.
-"%PY%" build_steam_owned.py
-echo.
-
-echo --------------------------------------------
-echo [2/5] Steam ¼ÒÍ¥¹²ÏíÓÎÏ·£¨Ğè API Key£©
-echo --------------------------------------------
-echo ËµÃ÷£º¶Á³ö±¾»ú Steam µÄ¼ÒÍ¥×é³ÉÔ±£¬Öğ¸ö²éËûÃÇµÄÍêÕûÓÎÏ·¿âÈ¡²¢¼¯£¬
-echo       ÔÙ¼õÈ¥×Ô¼ºÓµÓĞµÄ = ¼ÒÍ¥¹²ÏíÓÎÏ·£¨º¬**Ã»ÏÂÔØ¹ı**µÄÄÇĞ©£©¡£
-echo       ĞèÒªÃ¿Î»³ÉÔ±µÄ¡¸ÓÎÏ·ÏêÇé¡¹ÒşË½ÉèÎª¹«¿ª¡£
-echo       Ê×´ÎÔËĞĞÒª²é 300+ ¸öÉÌµê½Ó¿Ú£¨Ô¼ 10 ·ÖÖÓ£©£¬Ö®ºóÓĞ»º´æºÜ¿ì¡£
-echo       ±ØĞëÅÜÔÚ [1/5] Ö®ºó -- ËüÒª¶Á steam_games.json ×ö²î¼¯¡£
-echo.
-"%PY%" build_steam_family.py
-echo.
-
-echo --------------------------------------------
-echo [3/5] BÕ¾ Í¶¸åÁĞ±í£¨ÎŞÍ· Chrome ×¥È¡£©
-echo --------------------------------------------
-echo ËµÃ÷£ºBÕ¾ µÄÍ¶¸åÁĞ±í½Ó¿Ú /x/space/wbi/arc/search ¶Ô±¾»ú IP ÊÇ
-echo       **IP ¼¶·ç¿Ø·â½û**£¨HTTP 412£©¡£Êµ²â»» UA¡¢²¹ dm_img_* ·ç¿Ø²ÎÊı¡¢
-echo       Ë¢ĞÂ buvid cookie¡¢»»¾É°æ½Ó¿Ú¡¢»» APP ¶Ë½Ó¿Ú -- È«²¿ÎŞĞ§¡£
-echo       ËùÒÔ±¾²½Öè¸ÄÓÃ**ÕæÊµ Chrome** äÖÈ¾¿Õ¼äÒ³£¬ÔÙ°ÑÒ³Ãæ×Ô¼º·¢³öµÄ
-echo       ½Ó¿ÚÏìÓ¦¹³ÏÂÀ´£¬´Ó¶øÄÃµ½**È«²¿Í¶¸å**£¨º¬·­Ò³£©¡£
-echo.
-echo       ×¢Òâ£º·ç¿ØÊÇ¡¸¸ÅÂÊĞÔ·ÅĞĞ¡¹£¬½Å±¾»á×Ô¶¯ÖØÊÔÈô¸ÉÂÖ£¬Í¨³£ 1~3 ·ÖÖÓ¡£
-echo             ĞèÒª±¾»ú×°ÁË Chrome Óë Node.js¡£
-echo.
-if not defined NODE (
-  echo [Ìø¹ı] Ã»ÕÒµ½ Node.js£¬ÎŞ·¨×¥È«Á¿Í¶¸åÁĞ±í¡£
-  echo        ÏÂÒ»²½»áÍË»ØÓÃ¡¸ÏÖÓĞ bili_videos.json ÀïµÄÁĞ±í¡¹¼ÌĞø²¹Êı¾İ£¬
-  echo        Õ¾µã²»ÊÜÓ°Ïì£¬Ö»ÊÇÄÃ²»µ½ĞÂÍ¶¸å¡£
-  echo        Ïë×¥È«Á¿ÇëÏÈ°²×° Node.js£º https://nodejs.org/
-) else (
-  "%NODE%" fetch_bili_list_cdp.js
-)
-echo.
-
-echo --------------------------------------------
-echo [4/5] BÕ¾ ÏêÇé + ·âÃæ + ÕËºÅĞÅÏ¢
-echo --------------------------------------------
-echo ËµÃ÷£º¶ÁÉÏÒ»²½µÄÍ¶¸åÁĞ±í£¬ÖğÌõ²¹Æë µãÔŞ/Í¶±Ò/ÊÕ²Ø/·ÖÇø£¬
-echo       ²¢°Ñ·âÃæÏÂÔØµ½ assets/bili/£¨BÕ¾ CDN ÓĞ·ÀµÁÁ´£¬±ØĞë±¾µØ»¯£©¡£
-echo       108 Ìõ´óÔ¼ 5 ·ÖÖÓ¡£
-echo       êÇ³Æ/Ç©Ãû/µÈ¼¶×ß m.bilibili.com µÄ SSR Êı¾İ£¨acc/info ³£Äê±»·ç¿Ø£©¡£
-echo       ÉÏÒ»²½Ê§°ÜÊ±±¾²½Öè»áÓÃÏÖÓĞÁĞ±í¶µµ×£¬¾ÉÊı¾İ²»»á±»¸²¸Ç¡£
-echo.
-"%PY%" build_bili_full.py
-echo.
-
-echo --------------------------------------------
-echo [5/5] ×¥È¡ Xbox ÓÎÏ··âÃæ£¨Î¢Èí¹Ù·½ÉÌµê£©
-echo --------------------------------------------
-echo ÌáÊ¾£ºXbox ÓÎÍæÊ±³¤/³É¾ÍÎŞ·¨Í¨¹ı½Ó¿Ú»ñÈ¡£¬
-echo       ÇëÊÖ¶¯¸üĞÂ xbox_games.json ºóÔËĞĞ±¾²½Öè²¹·âÃæ¡£
-echo.
-"%PY%" build_xbox_covers.py
-echo.
-
-echo ============================================
-echo   È«²¿Íê³É
-echo ============================================
-echo.
-echo ÍøÕ¾»áÁ¢¿ÌÉúĞ§£¬Ë¢ĞÂä¯ÀÀÆ÷¼´¿É¿´µ½ĞÂÊı¾İ¡£
-echo.
-echo Ïëµ¥¶ÀÖØÅÜÄ³Ò»²½£¿Ö±½ÓÔÚ tools Ä¿Â¼Ö´ĞĞ¶ÔÓ¦µÄ .py ¼´¿É£¬
-echo ¸÷½Å±¾»¥²»Ó°Ïì¡£Ïê¼û tools\README.md
-echo.
+echo   æ›´æ–°åªå†™å…¥æœ¬åœ°ï¼Œçº¿ä¸Šä»éœ€æäº¤å¹¶æ¨é€åˆ° GitHubã€‚
+choice /c 12345670 /n /m "è¯·é€‰æ‹©: "
+if errorlevel 8 exit /b 0
+if errorlevel 7 goto all
+if errorlevel 6 goto xbox_full
+if errorlevel 5 goto xbox
+if errorlevel 4 goto bili_full
+if errorlevel 3 goto bili
+if errorlevel 2 goto family
+if errorlevel 1 goto steam
+goto menu
+:steam
+call run_update.bat steam
+goto result
+:family
+call run_update.bat steam-family
+goto result
+:bili
+call run_update.bat bili
+goto result
+:bili_full
+call run_update.bat bili-full
+goto result
+:xbox
+call run_update.bat xbox
+goto result
+:xbox_full
+call run_update.bat xbox-full
+goto result
+:all
+call run_update.bat all
+:result
+if errorlevel 1 echo [å¤±è´¥] æœ¬æ¬¡æ›´æ–°æœªå…¨éƒ¨å®Œæˆï¼Œè¯·æŸ¥çœ‹é”™è¯¯ä¿¡æ¯ã€‚
 pause
+goto menu

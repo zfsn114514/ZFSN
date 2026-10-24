@@ -27,6 +27,8 @@ import urllib.request
 import urllib.error
 import http.cookiejar
 
+import common
+
 try:
     sys.stdout.reconfigure(line_buffering=True)
 except Exception:
@@ -37,7 +39,7 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SITE = os.path.dirname(HERE)
+SITE = common.site_root()
 CACHE = os.path.join(HERE, ".cache")
 LIST_JSON = os.path.join(CACHE, "bili_list.json")
 OUT = os.path.join(SITE, "bili_videos.json")
@@ -370,11 +372,14 @@ def main():
             item["tname"] = TID_NAME.get(item["typeid"], "")
 
         old = old_by_id.get(item["bvid"]) or {}
+        # Retain previous interaction counts if a detail request is rate-limited.
+        for key in ("like", "coin", "favorite", "share"):
+            item[key] = num(old.get(key))
 
         # ── 增量复用 ──
         if reuse and old.get("like") is not None and old.get("coin") is not None and old.get("favorite") is not None \
-                and (old.get("like") or old.get("coin") or old.get("favorite") or old.get("share")):
-            for k in ("like", "coin", "favorite", "share", "views", "danmaku", "reply"):
+                and old.get("bvid"):
+            for k in ("like", "coin", "favorite", "share"):
                 item[k] = num(old.get(k))
             if old.get("tname"):
                 item["tname"] = old["tname"]

@@ -11,6 +11,10 @@
   var $  = function(s){ return document.querySelector(s); };
   var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
 
+  function fetchSiteData(file){
+    return fetch(file + "?_=" + Date.now(), { cache: "no-store" });
+  }
+
   /* ═══ 粒子网络 ═══ */
   var cv = $("#bg"), ctx = cv.getContext("2d");
   var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -320,6 +324,8 @@
     // 切到作品页时刷新一次 —— 保证后台新加的作品马上可见，
     // 也顺带同步最新的点赞/评论数。
     if (key === "works" && window.__zfsnLoadGallery) window.__zfsnLoadGallery();
+    if (key === "steam"){ loadSteamData(); loadXboxData(); }
+    if (key === "bili") loadBiliData();
     // 切到留言页时补判折叠 ——
     // ⚠ 留言数据在页面启动时就加载好了，但那一刻 #guest 还是 display:none，
     //   markClamped 里的测量值全是 0（scrollHeight/clientHeight 都为 0），
@@ -1779,7 +1785,7 @@
        只挂一个右上角「家庭」角标标明来源。
      ─────────────────────────────────────────────── */
   function loadFamily(){
-    return fetch("steam_family.json")
+    return fetchSiteData("steam_family.json")
       .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function(d){ return (d && d.games && d.games.length) ? d : null; })
       .catch(function(){ return null; });   // 没有这个文件就当作没有家庭共享
@@ -1834,7 +1840,10 @@
       : "暂无时长数据";
   }
 
-  fetch("steam_games.json")
+  var loadSteamDataPending;
+  function loadSteamData(){
+    if (loadSteamDataPending) return loadSteamDataPending;
+    loadSteamDataPending = fetchSiteData("steam_games.json")
     .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function(d){
       var data = (d && d.games && d.games.length) ? d : FALLBACK;
@@ -1846,7 +1855,11 @@
       renderGames(FALLBACK.games);
       renderStats(FALLBACK);
       scount.textContent = "\u964d\u7ea7\u6570\u636e";
-    });
+    }).finally(function(){ loadSteamDataPending = null; });
+    return loadSteamDataPending;
+  }
+
+  loadSteamData();
 
   /* ═══ B站数据 ═══
      数据结构（由 tools/build_bili.py 生成）：
@@ -2051,7 +2064,10 @@
     });
   }
 
-  fetch("bili_videos.json")
+  var loadBiliDataPending;
+  function loadBiliData(){
+    if (loadBiliDataPending) return loadBiliDataPending;
+    loadBiliDataPending = fetchSiteData("bili_videos.json")
     .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function(d){
       var list = (d && d.videos && d.videos.length) ? d.videos : VFALLBACK;
@@ -2059,14 +2075,18 @@
       renderVideos(list);
       if (bcount){
         var s = "UID " + (d.mid || 1220210222) + " · " + list.length + " 条投稿";
-        if (d.updated) s += " · 更新于 " + d.updated.slice(0, 10);
+        if (d.updated) s += " · 更新于 " + d.updated;
         bcount.textContent = s;
       }
     })
     .catch(function(e){
       if (bcount) bcount.textContent = "数据加载失败，请稍后重试";
       renderVideos(VFALLBACK);
-    });
+    }).finally(function(){ loadBiliDataPending = null; });
+    return loadBiliDataPending;
+  }
+
+  loadBiliData();
 
   /* ═══ Xbox 数据 ═══ */
   var xgrid = $("#xgrid"), xcount = $("#xbox-count");
@@ -2156,10 +2176,37 @@
     });
   }
 
-  fetch("xbox_games.json")
+  var loadXboxDataPending;
+  function loadXboxData(){
+    if (loadXboxDataPending) return loadXboxDataPending;
+    loadXboxDataPending = fetchSiteData("xbox_games.json")
     .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(renderXbox)
-    .catch(function(){ renderXbox(XFALLBACK); });
+    .catch(function(){ renderXbox(XFALLBACK); }).finally(function(){ loadXboxDataPending = null; });
+    return loadXboxDataPending;
+  }
+
+  loadXboxData();
+
+  function addDataRefresh(label, loader){
+    if (!label) return;
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "data-refresh";
+    button.textContent = "↻ 刷新数据";
+    button.addEventListener("click", function(){
+      button.disabled = true;
+      button.textContent = "读取中…";
+      Promise.resolve(loader()).finally(function(){
+        button.disabled = false;
+        button.textContent = "↻ 刷新数据";
+      });
+    });
+    label.insertAdjacentElement("afterend", button);
+  }
+  addDataRefresh(scount, loadSteamData);
+  addDataRefresh(bcount, loadBiliData);
+  addDataRefresh(xcount, loadXboxData);
 
   /* ═══ 留言板 ═══ */
   var glist = $("#glist"), gcount = $("#g-count"), gmine = $("#g-mine");

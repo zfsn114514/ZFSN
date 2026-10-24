@@ -3,7 +3,49 @@
 网站上的数据（Steam 游戏、B站 投稿、Xbox 封面）都由这里的脚本抓取，
 生成站点根目录下的 `.json` 文件，前端直接读取。
 
-**日常只需要双击 `更新数据.bat`**，其余脚本不用手动跑。
+**双击 `更新数据.bat` 打开更新菜单，或使用下面的分平台 BAT。**
+
+## 更新入口（新版）
+
+双击 `更新数据.bat` 可打开菜单，也可以直接使用独立入口：
+
+| BAT 文件 | 用途 |
+| --- | --- |
+| `更新Steam.bat` | 只更新自有游戏与游玩时长，不跑家庭共享 |
+| `更新Steam家庭共享.bat` | 单独更新家庭共享，首次商店校验较慢 |
+| `更新B站.bat` | 抓取最新投稿列表，只补新视频详情，复用旧赞/币/收藏 |
+| `更新B站完整数据.bat` | 抓取投稿列表并刷新全部视频互动数据，耗时更长 |
+| `更新Xbox.bat` | 只补缺失封面；已有本地封面直接复用 |
+
+Steam 需要有效的 `tools/config.json` 或 `STEAM_API_KEY`。B站需要 **Node.js 22+ 和 Chrome**，
+Chrome 不在默认目录时可用 `CHROME_PATH` 指定可执行文件。Python 需要 3.9+。
+Xbox 此处只是封面工具，不能自动同步新游戏、时长和成就；这些仍需更新 `xbox_games.json`。
+
+每步会显示实际站点目录和写入文件，失败即停止，不再把“保留旧数据”当作成功。
+B站抓取仍受平台风控影响，快速模式不保证立即完成；完整列表未抓齐时不会覆盖旧列表。
+快速模式的旧赞/币/收藏属于缓存值，要更新这些数值请用完整模式。
+
+**更新后页面没变化时：**
+
+1. 检查工具显示的站点目录是否就是 IIS 的物理目录；可通过 `SITE_ROOT` 指定输出目录。
+2. 本地页面点击各平台的“刷新数据”，或者重新打开对应标签；JSON 会绕过浏览器缓存。
+3. 本地 JSON 与 Cloudflare D1 是不同数据源。这些平台列表读的是静态 JSON，不会因为后台登录而自动同步。
+4. 线上网站需检查并提交对应 JSON 和新增封面，然后推送 GitHub、等待 Cloudflare 部署；运行 BAT 本身不发布。
+5. 失败时先看错误，Steam 缺 Key、B站风控或 Chrome 未安装都不会被刷新按钮修复。
+
+命令行入口（在项目目录）：
+
+```bash
+python tools/update_data.py steam
+python tools/update_data.py bili
+python tools/update_data.py bili-full
+python tools/update_data.py xbox
+python tools/update_data.py all --plan  # 只查看执行计划，不联网、不改数据
+```
+
+---
+
+
 
 ---
 

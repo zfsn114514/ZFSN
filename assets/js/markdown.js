@@ -6,20 +6,21 @@
   parser.use({ extensions: [{
     name: 'informationCard',
     level: 'block',
-    start: function (source) { return source.match(/^:::card(?:[ \t]|\r?$)/m)?.index; },
+    start: function (source) { return source.match(/^:::card(?:\[[a-z]+\])?(?:[ \t]|\r?$)/m)?.index; },
     tokenizer: function (source) {
-      var match = /^:::card(?:[ \t]+([^\r\n]*))?[ \t]*\r?\n([\s\S]*?)^:::[ \t]*(?:\r?\n|$)/m.exec(source);
+      var match = /^:::card(?:\[([a-z]+)\])?(?:[ \t]+([^\r\n]*))?[ \t]*\r?\n([\s\S]*?)^:::[ \t]*(?:\r?\n|$)/m.exec(source);
       if (!match || match.index !== 0) return;
       return {
-        type: 'informationCard', raw: match[0], title: match[1] || '信息',
-        tokens: this.lexer.blockTokens(match[2])
+        type: 'informationCard', raw: match[0], title: match[2] || '信息',
+        variant: ['info', 'tip', 'warning', 'download', 'specs', 'steps', 'code', 'links'].includes(match[1]) ? match[1] : 'info',
+        tokens: this.lexer.blockTokens(match[3])
       };
     },
     renderer: function (token) {
       var title = token.title.replace(/[&<>"']/g, function (character) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
       });
-      return '<section class="information-card"><div class="information-card-title">' + title +
+      return '<section class="information-card information-card-' + token.variant + '"><div class="information-card-title">' + title +
         '</div><div class="information-card-content">' + this.parser.parse(token.tokens) + '</div></section>\n';
     }
   }] });

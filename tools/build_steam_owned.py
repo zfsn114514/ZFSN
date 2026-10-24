@@ -97,11 +97,11 @@ def main():
         print("  ✗ 没有配置 Steam API Key。")
         print("    请编辑 tools/config.json → steam.api_key")
         print("    或设置环境变量 STEAM_API_KEY")
-        return
+        return 1
     if not steamid:
         print()
         print("  ✗ 没有配置 steamid。请编辑 tools/config.json → steam.steamid")
-        return
+        return 1
 
     # ── 1. 玩家信息 ────────────────────────────────
     common.step(1, 3, "获取玩家信息")
@@ -160,7 +160,7 @@ def main():
         print("     2. Steam 个人资料 → 隐私设置 → 「游戏详情」不是「公开」")
         print()
         print("  steam_games.json **未被改动**，站点数据保持原样。")
-        return
+        return 1
 
     games.sort(key=lambda x: -x["minutes"])
     if max_games and len(games) > max_games:
@@ -218,4 +218,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
