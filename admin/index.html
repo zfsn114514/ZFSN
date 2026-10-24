@@ -490,6 +490,8 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
 <script src="../assets/js/markdown.js"></script>
 <link rel="stylesheet" href="../assets/css/work-editor.css">
 <script defer src="../assets/js/work-editor.js"></script>
+<script src="../assets/js/appearance.js"></script>
+<link rel="stylesheet" href="../assets/css/appearance-admin.css">
 </head>
 <body>
 
@@ -517,7 +519,7 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
     <div class="lfoot">
       仅限站长本人访问 · 登录状态保持 12 小时<br>
       <code id="apihint"></code>
-      <div id="local-online-warning" hidden style="color:#ff9bad">本地页面连接线上接口时，发布、编辑和删除会修改线上数据。</div>
+      <div id="local-online-warning" hidden style="color:#ff9bad">本地页面连接线上接口时，作品和外观设置的修改会直接影响线上网站。</div>
     </div>
   </div>
 </div>
@@ -547,6 +549,7 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
       <button data-tab="msg" class="on">留言管理</button>
       <button data-tab="work">作品管理</button>
       <button data-tab="about">关于我</button>
+      <button data-tab="appearance">外观设置</button>
       <button data-tab="inter">作品互动</button>
       <button data-tab="net">部署自检</button>
       <button data-tab="sec">安全设置</button>
@@ -710,6 +713,24 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
       </div>
 
       <div class="items" id="wlist"><div class="sk"></div><div class="sk"></div></div>
+    </div>
+
+    <div class="pane" id="pane-appearance">
+      <div class="ph"><div><h2>前台外观</h2><div class="desc">经典红黑样式为默认；在这里选择主题、颜色和动效，无需改代码。</div></div><a class="btn" href="../" target="_blank" rel="noopener">打开前台 ↗</a></div>
+      <div class="appearance-layout">
+        <div class="form appearance-controls">
+          <h3>界面主题</h3>
+          <label class="appearance-option"><input type="radio" name="appearance-theme" value="classic" checked><span class="appearance-swatch classic"></span><span><b>经典红黑</b><small>保留之前的圆角、红色高亮与居中首页</small></span></label>
+          <label class="appearance-option"><input type="radio" name="appearance-theme" value="cyberpunk"><span class="appearance-swatch cyberpunk"></span><span><b>赛博朋克</b><small>切角面板、黄青高亮与终端布局</small></span></label>
+          <div class="fld appearance-color"><label for="appearance-accent">强调色</label><input type="color" id="appearance-accent" value="#ff2d4a"><code id="appearance-accent-value">#ff2d4a</code></div>
+          <div class="fld appearance-color"><label for="appearance-background">背景色</label><input type="color" id="appearance-background" value="#07070b"><code id="appearance-background-value">#07070b</code></div>
+          <p class="appearance-hint">当前两款主题适合深色背景，请在右侧检查文字可读性。</p>
+          <label class="appearance-motion"><input type="checkbox" id="appearance-motion" checked> 启用背景与界面动效</label>
+          <div class="appearance-actions"><button class="btn primary" id="appearance-save">保存并应用</button><button class="btn" id="appearance-reset">恢复经典默认值</button></div>
+          <p id="appearance-status" role="status" class="appearance-hint">正在读取已保存的设置…</p>
+        </div>
+        <div class="appearance-preview"><div><strong>实时预览</strong><span>未保存的修改仅作用于下方预览</span></div><iframe id="appearance-preview" title="前台外观实时预览" src="about:blank"></iframe></div>
+      </div>
     </div>
 
     <!-- ── 关于我（首页自我介绍） ── -->
@@ -2293,6 +2314,64 @@ if ($("#a-text")){
     if (ABOUT_DIRTY){ e.preventDefault(); e.returnValue = ""; return ""; }
   });
 }
+
+/* Appearance is stored in D1 and previewed without changing public settings. */
+var appearanceDirty = false, appearanceLoaded = false, appearanceLoading = null;
+var appearanceFrame = $("#appearance-preview");
+function appearanceValues(){
+  return { theme: document.querySelector('input[name="appearance-theme"]:checked').value,
+    accent: $("#appearance-accent").value, background: $("#appearance-background").value,
+    motion: $("#appearance-motion").checked };
+}
+function previewAppearance(){
+  var settings = appearanceValues();
+  $("#appearance-accent-value").textContent = settings.accent;
+  $("#appearance-background-value").textContent = settings.background;
+  if (appearanceFrame.dataset.ready === "true") {
+    appearanceFrame.contentWindow.postMessage({ type: "zfsn:appearance-preview", settings: settings }, new URL(appearanceFrame.src, location.href).origin);
+  }
+}
+function fillAppearance(value){
+  var settings = ZFSNAppearance.normalize(value);
+  document.querySelector('input[name="appearance-theme"][value="' + settings.theme + '"]').checked = true;
+  $("#appearance-accent").value = settings.accent;
+  $("#appearance-background").value = settings.background;
+  $("#appearance-motion").checked = settings.motion;
+  previewAppearance();
+}
+function loadAppearanceSettings(){
+  if (appearanceFrame.getAttribute("src") === "about:blank") appearanceFrame.src = "../?appearance-preview=1#works";
+  if (appearanceLoaded || appearanceLoading) return appearanceLoading;
+  appearanceLoading = api("/api/appearance").then(function(data){
+    if (!appearanceDirty) fillAppearance(data.settings);
+    appearanceLoaded = true;
+    $("#appearance-status").textContent = data.updated ? "上次保存：" + data.updated : "尚未保存设置，前台默认使用经典红黑样式。";
+  }).catch(function(error){ $("#appearance-status").textContent = "读取失败：" + error.message; })
+    .finally(function(){ appearanceLoading = null; });
+  return appearanceLoading;
+}
+appearanceFrame.addEventListener("load", function(){
+  if (appearanceFrame.getAttribute("src") !== "about:blank") { appearanceFrame.dataset.ready = "true"; previewAppearance(); }
+});
+$(".tabs button[data-tab=appearance]").addEventListener("click", loadAppearanceSettings);
+$$("input[name=appearance-theme]").forEach(function(radio){ radio.addEventListener("change", function(){
+  appearanceDirty = true; fillAppearance(ZFSNAppearance.defaults(radio.value));
+  $("#appearance-status").textContent = "预览已更新；点击保存后才会应用到网站。";
+}); });
+["#appearance-accent", "#appearance-background", "#appearance-motion"].forEach(function(selector){ $(selector).addEventListener("input", function(){ appearanceDirty = true; previewAppearance(); }); });
+$("#appearance-reset").addEventListener("click", function(){
+  appearanceDirty = true; fillAppearance(ZFSNAppearance.defaults("classic"));
+  $("#appearance-status").textContent = "已恢复经典默认值，请点击保存并应用。";
+});
+$("#appearance-save").addEventListener("click", function(){
+  var button = this; button.disabled = true;
+  api("/api/admin/appearance", { method: "POST", body: JSON.stringify(appearanceValues()) }).then(function(data){
+    appearanceDirty = false; appearanceLoaded = true; fillAppearance(data.settings);
+    $("#appearance-status").textContent = "已保存。刷新前台或切回前台标签页即可生效。";
+  }).catch(function(error){ $("#appearance-status").textContent = "保存失败：" + error.message; })
+    .finally(function(){ button.disabled = false; });
+});
+window.addEventListener("beforeunload", function(event){ if (appearanceDirty) { event.preventDefault(); event.returnValue = ""; } });
 
 function refreshAll(){
   loadStats().catch(function(){});

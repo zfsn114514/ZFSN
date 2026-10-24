@@ -342,3 +342,17 @@ npx wrangler d1 execute zfsn-db --remote --file=./schema/0002_analytics.sql
 而不是启动已停用的旧 Node 后端或 Cloudflare 隧道。
 
 回归检查：`node --test tools/dev/check_local_backend.mjs`。
+
+
+## 后台外观设置
+
+前台默认恢复经典红黑圆角样式，时间线与作品墙互斥的修复仍然保留。
+在管理后台打开「外观设置」，可选择经典／赛博朋克主题、强调色、背景色和动效开关。
+右侧预览不会修改公开配置，只有「保存并应用」才写入当前连接的 D1 数据库。
+「恢复经典默认值」也需要点击保存才会生效。前台刷新或重新切回标签页时读取新设置。
+
+配置保存在已有 `config` 表的 `appearance` 键，不需要新增数据库迁移。
+读取接口 `/api/appearance` 公开，写入 `/api/admin/appearance` 需要管理员会话。
+仅接受预设主题、六位颜色值和布尔开关，不执行管理员提供的任意 CSS 或脚本。
+IIS 本地静态后台若连接线上 Cloudflare API，保存外观也会影响线上网站；
+运行本地 Wrangler 则使用隔离的本地设置。
