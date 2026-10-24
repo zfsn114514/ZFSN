@@ -105,6 +105,7 @@ def main():
   8  保存平台数据与封面（本地提交）
   9  发布已保存提交到 GitHub main
   S  查看 Git 状态与本地提交
+  D  检查本地文件与 IIS 返回内容是否一致
   L  打开本地 IIS 网站
   0  退出
 ╚═════════════════════════════════╝
@@ -120,6 +121,7 @@ def main():
             elif choice == 'S':
                 manager.git('status', '--short', '--branch')
                 manager.git('--no-pager', 'log', '--oneline', '-8')
+            elif choice == 'D': manager.run([sys.executable, str(manager.root / 'tools' / 'check_local_site.py')])
             elif choice == 'L': webbrowser.open('http://localhost:88/')
             else: print('请选择菜单中已有的选项。')
         except (RuntimeError, OSError, subprocess.CalledProcessError) as error:

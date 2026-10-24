@@ -158,20 +158,65 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/assets/js/app.a84a1bf0.js
-  Cache-Control: public, max-age=31536000, immutable
-
 /assets/js/guest-media.4168334e.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/css/guest-media.c4f8d2a0.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/guestbook-themes.462c020c.css
+/assets/js/app.a84a1bf0.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/danmaku.de1add44.js
   Cache-Control: public, max-age=31536000, immutable
 
+/assets/js/appearance.c3fb6b36.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/js/site-settings-browser.c033daa5.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/js/visitor-theme.28875866.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/js/markdown.42400e06.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/js/work-editor.2d6d9f95.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/js/admin-studio.5db594fe.js
+  Cache-Control: public, max-age=31536000, immutable
+
 /assets/css/app.2f8bb160.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/markdown.32a99c4e.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/cyberpunk.d5599c4b.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/nightcity.48b281c3.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/deepdive.5c260820.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/site-experience.049edf21.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/guestbook-themes.462c020c.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/visitor-theme.a16ce5e2.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/work-editor.f25be757.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/appearance-admin.8f659c7e.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/admin-studio.3908d4c5.css
   Cache-Control: public, max-age=31536000, immutable
