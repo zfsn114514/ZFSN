@@ -19,3 +19,30 @@ body[data-page=home]>.nav{display:none}#page-home{padding:100px 8vw 70px;min-hei
 @keyframes signature-arrive{0%{opacity:0;transform:translateX(-9px)}45%{opacity:.7;transform:translateX(3px)}100%{opacity:1;transform:none}}
 @media(max-width:760px){.hero .name{width:min(350px,100%);margin:30px 0 24px}}
 @media(prefers-reduced-motion:reduce){.hero .name.reveal{animation:none}}
+
+/* Recorded game-menu reference: translucent red column and yellow cut-corner focus. */
+#page-home{padding-top:80px}
+#page-home .hero::before{content:'';position:absolute;z-index:-1;top:-80px;bottom:-70px;left:-24px;width:min(440px,calc(100% + 48px));border-left:1px solid #e5bb37;background:linear-gradient(90deg,rgba(150,24,32,.44),rgba(77,13,25,.62) 72%,rgba(59,17,28,.35));box-shadow:-4px 0 14px rgba(241,196,40,.1);pointer-events:none}
+#page-home .hero{isolation:isolate;min-height:760px}
+.profile-eyebrow{display:none}
+.hero .name{width:min(470px,calc(100% + 30px));margin:0 0 0 -25px}
+.game-menu-edition{display:flex;flex-direction:column;width:min(360px,100%);align-items:center;margin:0 0 32px}
+.game-menu-edition span{align-self:flex-end;color:#64c9de;font:10px Consolas,monospace;letter-spacing:.44em;margin:0 5px 14px}
+.game-menu-edition strong{color:#d9e0df;font-size:clamp(25px,3vw,38px);font-weight:800;letter-spacing:.22em;font-style:italic;transform:skew(-7deg);text-shadow:2px 0 rgba(124,222,234,.3)}
+.hero .tagline{margin:0 0 20px;color:#d47a7f;font-size:10px;min-height:14px}
+.game-main-menu{gap:4px;width:min(360px,100%)}
+.game-main-menu a{min-height:44px;padding:9px 15px;color:#fa665f;font-size:21px;letter-spacing:.02em;border:0;background:transparent;transition:color .08s,background .08s;isolation:isolate}
+.game-main-menu a::before{inset:0;width:auto;height:auto;background:#b84d46;opacity:0;clip-path:polygon(0 0,100% 0,100% calc(100% - 11px),calc(100% - 11px) 100%,0 100%,0 1px,1px 1px,1px calc(100% - 1px),calc(100% - 12px) calc(100% - 1px),calc(100% - 1px) calc(100% - 12px),calc(100% - 1px) 1px,0 1px);pointer-events:none}
+.game-main-menu small{font-size:6px;letter-spacing:.03em;max-width:38px;line-height:1.25;opacity:0;overflow-wrap:anywhere}
+.game-main-menu a::after{content:'';position:absolute;right:14px;width:25px;height:18px;background:repeating-linear-gradient(0deg,currentColor 0 1px,transparent 1px 3px);clip-path:polygon(0 0,100% 0,100% 30%,60% 30%,60% 60%,100% 60%,100% 100%,0 100%,0 65%,35% 65%,35% 35%,0 35%);opacity:0;pointer-events:none}
+.game-main-menu a:hover,.game-main-menu a:focus-visible{color:#f4dd52;background:rgba(30,9,15,.36);transform:none;box-shadow:none}
+.game-main-menu a:hover::before,.game-main-menu a:focus-visible::before{inset:0;width:auto;background:#f4dd52;opacity:1;animation:menu-lock .12s steps(2) both}
+.game-main-menu a:hover::after,.game-main-menu a:focus-visible::after{opacity:.8}
+.game-main-menu a:active{background:rgba(244,221,82,.16)}
+.game-menu-hint{border-color:rgba(242,103,92,.25);color:#d9847c;margin-top:28px;font-size:8px}
+.hero .home-about{max-width:360px;background:transparent;border-color:rgba(242,103,92,.25);margin-top:24px;font-size:11px}
+.profile-visual{bottom:40px}
+@keyframes menu-lock{from{opacity:.3;transform:translateX(-3px)}to{opacity:1;transform:none}}
+@media(min-width:1100px){#page-home{padding-left:9vw}.hero .home-about{position:absolute;right:0;bottom:10px;width:300px;background:rgba(5,15,23,.65);padding:16px;border-top:1px solid rgba(100,201,222,.3)}.profile-visual{bottom:240px}}
+@media(max-width:760px){#page-home{padding:70px 36px 90px}.hero .name{margin:0 0 5px -20px;width:calc(100% + 30px)}#page-home .hero::before{top:-70px;bottom:-90px;left:-14px;width:calc(100% + 28px)}.game-menu-edition{margin-bottom:28px}.game-menu-edition span{font-size:8px}.game-menu-edition strong{font-size:28px}.game-main-menu a{font-size:20px;min-height:43px}.hero .tagline{font-size:8px;margin-bottom:18px}.profile-visual{display:none}.hero .home-about{padding:16px 0}.hero{min-height:700px}}
+@media(prefers-reduced-motion:reduce){.game-main-menu a:hover::before,.game-main-menu a:focus-visible::before{animation:none}}
