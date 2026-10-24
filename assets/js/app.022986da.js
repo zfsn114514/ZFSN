@@ -386,12 +386,16 @@
       setActive(key);
       wipe.classList.remove("on");
       document.body.classList.remove("locked");
-      setTimeout(function(){ switching = false; }, 320);
-    }, 340);
+      setTimeout(function(){ switching = false; }, 180);
+    }, 120);
   }
 
   navBtns.forEach(function(b){ b.addEventListener("click", function(){ go(b.dataset.go); }); });
   $(".topbar .mark").addEventListener("click", function(){ go("home"); });
+
+  $$(".profile-actions a[data-go]").forEach(function(link){
+    link.addEventListener("click", function(e){ e.preventDefault(); go(link.dataset.go); });
+  });
 
   // 首页三平台概览卡 → 点击跳转到对应页面
   $$(".hs-card").forEach(function(c){
