@@ -125,3 +125,15 @@ internal sealed class TrayRenderer : ToolStripProfessionalRenderer
     protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e){e.TextColor=e.Item.Selected?Palette.Yellow:Palette.Text;base.OnRenderItemText(e);}
     protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e){using var p=new Pen(Palette.Line);e.Graphics.DrawRectangle(p,0,0,e.ToolStrip.Width-1,e.ToolStrip.Height-1);}
 }
+
+internal sealed class SurfaceLayout : TableLayoutPanel
+{
+    public SurfaceLayout(){DoubleBuffered=true;SetStyle(ControlStyles.ResizeRedraw,true);}
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;e.Graphics.Clear(Parent?.BackColor??Palette.Background);
+        using var shape=Palette.Round(new RectangleF(1,1,Width-3,Height-3),10*DeviceDpi/96f);
+        using var surface=new SolidBrush(Palette.Panel);e.Graphics.FillPath(surface,shape);
+        using var border=new Pen(Palette.Line);e.Graphics.DrawPath(border,shape);
+    }
+}

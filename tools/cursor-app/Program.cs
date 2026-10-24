@@ -79,11 +79,15 @@ internal sealed class SettingsWindow : Form
         replace=Option(visual,1,"ReplaceCursor","网站同款指针","箭头与链接圆环，使用网站原始图形。",settings.ReplaceCursor);
         halo=Option(visual,2,"ShowHalo","跟随光晕","柔和的红色光晕，随鼠标移动。",settings.ShowHalo);
         pause=Option(visual,3,"PauseFullscreen","全屏时暂停特效","游戏或视频全屏时，暂时隐藏拖尾与光晕。",settings.PauseFullscreen);
-        var strength=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,BackColor=Palette.Panel,Padding=new Padding(16,8,16,8),Margin=new Padding(0,4,0,12)};
+        var strength=new SurfaceLayout {Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,BackColor=Palette.Panel,Padding=new Padding(16,8,16,8),Margin=new Padding(0,4,0,12)};
         strength.RowStyles.Add(new RowStyle(SizeType.Absolute,27));strength.RowStyles.Add(new RowStyle(SizeType.Percent,100));strength.RowStyles.Add(new RowStyle(SizeType.Absolute,20));
-        intensityLabel=new Label {Dock=DockStyle.Fill,ForeColor=Palette.Text,TextAlign=ContentAlignment.MiddleLeft};strength.Controls.Add(intensityLabel,0,0);
+        var strengthTitle=new Panel {Dock=DockStyle.Fill,BackColor=Palette.Panel};
+        intensityLabel=new Label {Dock=DockStyle.Right,Width=80,ForeColor=Palette.Cyan,TextAlign=ContentAlignment.MiddleRight};
+        strengthTitle.Controls.Add(new Label {Text="拖尾强度",Dock=DockStyle.Fill,ForeColor=Palette.Text,TextAlign=ContentAlignment.MiddleLeft});strengthTitle.Controls.Add(intensityLabel);strength.Controls.Add(strengthTitle,0,0);
         intensity=new IntensitySlider {Name="Intensity",Value=settings.Intensity,Dock=DockStyle.Fill};strength.Controls.Add(intensity,0,1);
-        strength.Controls.Add(new Label {Text="轻盈                                            鲜明",ForeColor=Palette.Muted,Font=new Font(Font.FontFamily,8),Dock=DockStyle.Fill},0,2);visual.Controls.Add(strength,0,4);
+        var endpoints=new Panel {Dock=DockStyle.Fill,BackColor=Palette.Panel};
+        endpoints.Controls.Add(new Label {Text="轻盈",ForeColor=Palette.Muted,Font=new Font(Font.FontFamily,8),Dock=DockStyle.Left,Width=80});
+        endpoints.Controls.Add(new Label {Text="鲜明",ForeColor=Palette.Muted,Font=new Font(Font.FontFamily,8),Dock=DockStyle.Right,Width=80,TextAlign=ContentAlignment.TopRight});strength.Controls.Add(endpoints,0,2);visual.Controls.Add(strength,0,4);
         var defaults=new MenuButton {Text="↺  恢复特效默认值",Dock=DockStyle.Left,Width=190};defaults.Click+=(_,_)=>{replace.Checked=true;halo.Checked=true;pause.Checked=true;intensity.Value=100;};visual.Controls.Add(defaults,0,5);
         bool registered=false;try {registered=StartupRegistration.Enabled;}catch{}
         startup=Option(system,1,"WindowsStartup","开机自启动","登录 Windows 后启用光标，并安静留在托盘。",registered);
@@ -114,7 +118,7 @@ internal sealed class SettingsWindow : Form
         overlay.Failed += error => { Stop(); status.Text = "特效已停止：" + error.Message; Open(); };
         ready = true; Changed(false); status.Text = "待机 / READY\n设置自动保存；可在托盘中随时暂停或退出。";
         FormClosing += (_, e) => { if (!exiting && e.CloseReason == CloseReason.UserClosing && closeToTray.Checked) { e.Cancel = true; Hide(); } else Stop(); };
-        Shown += (_, _) => { if (startupLaunch || settings.StartEffects) Toggle(); if (startupLaunch && running) Hide(); };
+        Shown += (_, _) => { toggle.Focus(); if (startupLaunch || settings.StartEffects) Toggle(); if (startupLaunch && running) Hide(); };
         Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); };
     }
     void Changed(bool save = true)
@@ -122,7 +126,7 @@ internal sealed class SettingsWindow : Form
         overlay.ShowHalo = settings.ShowHalo = halo.Checked; overlay.PauseFullscreen = settings.PauseFullscreen = pause.Checked;
         settings.ReplaceCursor = replace.Checked; settings.StartEffects = launch.Checked; settings.CloseToTray = closeToTray.Checked;
         settings.Intensity = intensity.Value; overlay.Intensity = intensity.Value / 100f;
-        preview.Strength=overlay.Intensity;preview.Halo=halo.Checked;preview.WebCursor=replace.Checked;preview.Invalidate(); intensityLabel.Text = $"拖尾强度                                      {intensity.Value}%";
+        preview.Strength=overlay.Intensity;preview.Halo=halo.Checked;preview.WebCursor=replace.Checked;preview.Invalidate(); intensityLabel.Text = $"{intensity.Value}%";
         if (save && ready) try { settings.Save(); } catch (Exception e) { status.Text = "设置保存失败：" + e.Message; }
     }
     void Open() { Show(); WindowState = FormWindowState.Normal; Activate(); }
