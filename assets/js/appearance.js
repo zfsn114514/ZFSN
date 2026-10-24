@@ -3,6 +3,7 @@
   'use strict';
   var isPreview = new URLSearchParams(location.search).get('appearance-preview') === '1';
   function defaults(theme) {
+    if (theme === 'nightcity') return { theme: theme, accent: '#ff4d5c', background: '#070d16', motion: true };
     return theme === 'cyberpunk'
       ? { theme: 'cyberpunk', accent: '#f3e600', background: '#080c12', motion: true }
       : { theme: 'classic', accent: '#ff2d4a', background: '#07070b', motion: true };
@@ -20,6 +21,8 @@
     var stylesheet = document.getElementById('cyberpunk-theme');
     if (!stylesheet) return;
     stylesheet.media = settings.theme === 'cyberpunk' ? 'all' : 'not all';
+    var gameStylesheet = document.getElementById('nightcity-theme');
+    if (gameStylesheet) gameStylesheet.media = settings.theme === 'nightcity' ? 'all' : 'not all';
     root.dataset.theme = settings.theme;
     root.dataset.motion = settings.motion ? 'on' : 'off';
     root.style.setProperty('--bg', settings.background);

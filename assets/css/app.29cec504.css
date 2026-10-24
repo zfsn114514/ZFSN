@@ -2080,3 +2080,5 @@ html[data-motion=off] .glow,html[data-motion=off] canvas#bg,html[data-motion=off
 
 html[data-motion=off]{scroll-behavior:auto}
 html[data-motion=off] .card .c3d{transform:none!important}
+
+.game-main-menu{display:none}

@@ -356,3 +356,9 @@ npx wrangler d1 execute zfsn-db --remote --file=./schema/0002_analytics.sql
 仅接受预设主题、六位颜色值和布尔开关，不执行管理员提供的任意 CSS 或脚本。
 IIS 本地静态后台若连接线上 Cloudflare API，保存外观也会影响线上网站；
 运行本地 Wrangler 则使用隔离的本地设置。
+
+
+外观设置新增「2077 游戏主菜单」选项（`nightcity`）：纵向主菜单、游戏式红／青选择态、城市背景和键盘导航。
+这是独立主题，不覆盖经典红黑或之前的赛博朋克终端主题。默认仍为经典红黑。
+Windows 桌面同款光标软件的使用与构建说明见 `tools/cursor-app/README.md`；它不属于网站 Worker，
+不在网页中下载或自动运行。

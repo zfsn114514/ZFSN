@@ -1,0 +1,36 @@
+name: Build Windows cursor app
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/cursor-app/**'
+      - 'assets/cursor/*.svg'
+      - '.github/workflows/cursor-windows.yml'
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify cursor assets
+        run: python tools/cursor-app/verify_assets.py
+      - name: Test trail model
+        run: dotnet run --project tools/cursor-app/Tests/TrailTests.csproj
+      - name: Publish portable Windows app
+        run: dotnet publish tools/cursor-app/ZFSN.Cursor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o tools/cursor-app/dist/win-x64
+      - name: Include instructions and restore helper
+        shell: pwsh
+        run: |
+          Copy-Item tools/cursor-app/README.md tools/cursor-app/dist/win-x64/
+          Copy-Item tools/cursor-app/restore.bat tools/cursor-app/dist/win-x64/
+          Remove-Item tools/cursor-app/dist/win-x64/*.pdb -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZFSN-Cursor-win-x64
+          path: tools/cursor-app/dist/win-x64/
+          retention-days: 30

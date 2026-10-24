@@ -24,6 +24,7 @@ function database() {
 test('appearance defaults to the original theme and accepts only safe typed settings', () => {
   assert.equal(appearanceDefaults().theme, 'classic');
   assert.equal(appearanceDefaults().accent, '#ff2d4a');
+  assert.equal(validateAppearance(appearanceDefaults('nightcity')).theme, 'nightcity');
   for (const value of [null, {}, { theme: 'custom-css', accent: '#fff000', background: '#000000', motion: true }, { theme: 'classic', accent: 'red;display:none', background: '#000000', motion: true }, { theme: 'classic', accent: '#ffffff', background: '#000000', motion: 'true' }]) {
     assert.throws(() => validateAppearance(value));
   }
@@ -42,6 +43,8 @@ test('public appearance reading, authenticated updates, validation and restorati
   const settings = { theme: 'cyberpunk', accent: '#ABCDEF', background: '#010203', motion: false };
   assert.equal((await save(settings, 'test-session')).status, 200);
   assert.deepEqual((await (await get()).json()).settings, { ...settings, accent: '#abcdef' });
+  assert.equal((await save(appearanceDefaults('nightcity'), 'test-session')).status, 200);
+  assert.equal((await (await get()).json()).settings.theme, 'nightcity');
   assert.equal((await save(appearanceDefaults(), 'test-session')).status, 200);
   assert.deepEqual((await (await get()).json()).settings, appearanceDefaults());
 });

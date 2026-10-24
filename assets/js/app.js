@@ -310,6 +310,7 @@
   var navBtns = $$(".nav button");
   var current = "home";
   var switching = false;
+  var pendingPage = null;
 
   function setActive(key){
     $$(".page").forEach(function(p){ p.classList.remove("active"); });
@@ -378,7 +379,9 @@
   }
 
   function go(key){
-    if (switching || key === current || !pages[key]) return;
+    if (!pages[key]) return;
+    if (switching){ pendingPage = key; return; }
+    if (key === current) return;
     switching = true;
     if (reduce || document.documentElement.dataset.motion === "off"){ setActive(key); switching = false; return; }
     document.body.classList.add("locked");
@@ -387,17 +390,28 @@
       setActive(key);
       wipe.classList.remove("on");
       document.body.classList.remove("locked");
-      setTimeout(function(){ switching = false; }, 320);
+      setTimeout(function(){
+        switching = false;
+        var next = pendingPage; pendingPage = null;
+        if (next) go(next);
+      }, 320);
     }, 340);
   }
 
   navBtns.forEach(function(b){ b.addEventListener("click", function(){ go(b.dataset.go); }); });
   $(".topbar .mark").addEventListener("click", function(){ go("home"); });
 
-  $$(".profile-actions a[data-go]").forEach(function(link){
+  $$(".profile-actions a[data-go], .game-main-menu a[data-go]").forEach(function(link){
     link.addEventListener("click", function(e){ e.preventDefault(); go(link.dataset.go); });
   });
 
+  $(".game-main-menu").addEventListener("keydown", function(event){
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    var links = $$(".game-main-menu a");
+    var index = links.indexOf(document.activeElement);
+    links[(index + (event.key === "ArrowDown" ? 1 : -1) + links.length) % links.length].focus();
+  });
   // 首页三平台概览卡 → 点击跳转到对应页面
   $$(".hs-card").forEach(function(c){
     c.addEventListener("click", function(){ go(c.dataset.go); });
