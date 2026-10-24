@@ -2494,20 +2494,39 @@
     card.__clampChecked = true;
     if (body.scrollHeight > body.clientHeight + 4){
       card.classList.add("clamped");
-      card.addEventListener("click", function(){
-        card.classList.toggle("open");
-      });
+
     } else {
       card.classList.remove("clamped", "open");
     }
   }
 
   /** 切到留言页时重新判定全部卡片的折叠状态（见 markClamped 注释第 2 条）。 */
-  window.__zfsnRemarkClamped = function(){
+  window.__zfsnRemarkClamped = function(force){
     if (!glist) return;
     var cards = glist.querySelectorAll(".gitem");
-    for (var i = 0; i < cards.length; i++) markClamped(cards[i]);
+    for (var i = 0; i < cards.length; i++) {
+      var wasOpen = cards[i].classList.contains("open");
+      if (force) { cards[i].__clampChecked = false; cards[i].classList.remove("open"); }
+      markClamped(cards[i]);
+      if (force && wasOpen && cards[i].classList.contains("clamped")) cards[i].classList.add("open");
+    }
   };
+  // One delegated listener survives repeated theme/layout measurements.
+  glist.addEventListener("click", function(event){
+    if (event.target.closest("a,button,audio,video,input,.msg-imgs")) return;
+    var card = event.target.closest(".gitem.clamped");
+    if (card) card.classList.toggle("open");
+  });
+  function refreshGuestLayout(){ requestAnimationFrame(function(){ window.__zfsnRemarkClamped(true); }); }
+  document.addEventListener("zfsn:appearance", refreshGuestLayout);
+  document.querySelectorAll('link[id$="-theme"]').forEach(function(link){link.addEventListener("load",refreshGuestLayout);});
+  if (window.ResizeObserver) {
+    var guestWidth = 0;
+    new ResizeObserver(function(entries){
+      var width = entries[0].contentRect.width;
+      if (width !== guestWidth) { guestWidth = width; refreshGuestLayout(); }
+    }).observe(glist);
+  }
 
   /* ── 渲染策略：grid 网格，DOM 顺序即时间顺序 ──────────────
      留言列表是 grid（见 app.css 的 .glist），列数由 CSS 决定，

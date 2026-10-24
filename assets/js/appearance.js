@@ -3,6 +3,7 @@
   'use strict';
   var isPreview = new URLSearchParams(location.search).get('appearance-preview') === '1';
   function themeDefaults(theme) {
+    if (theme === 'deepdive') return { theme: theme, accent: '#ff6a63', background: '#100b10', motion: true };
     if (theme === 'nightcity') return { theme: theme, accent: '#ff4d5c', background: '#070d16', motion: true };
     return theme === 'cyberpunk'
       ? { theme: 'cyberpunk', accent: '#f3e600', background: '#080c12', motion: true }
@@ -25,6 +26,8 @@
     stylesheet.media = settings.theme === 'cyberpunk' ? 'all' : 'not all';
     var gameStylesheet = document.getElementById('nightcity-theme');
     if (gameStylesheet) gameStylesheet.media = settings.theme === 'nightcity' ? 'all' : 'not all';
+    var deepStylesheet = document.getElementById('deepdive-theme');
+    if (deepStylesheet) deepStylesheet.media = settings.theme === 'deepdive' ? 'all' : 'not all';
     root.dataset.theme = settings.theme;
     root.dataset.motion = settings.motion ? 'on' : 'off';
     root.style.setProperty('--bg', settings.background);
@@ -48,7 +51,7 @@
   var preferenceKey = 'zfsn_visitor_theme_v1';
   var preferred = null;
   try { preferred = localStorage.getItem(preferenceKey); } catch (_) {}
-  if (!['classic','cyberpunk','nightcity'].includes(preferred)) preferred = null;
+  if (!['classic','cyberpunk','nightcity','deepdive'].includes(preferred)) preferred = null;
   var site = defaults('classic');
   function effective(){
     if (!preferred || isPreview) return site;
@@ -57,7 +60,7 @@
   }
   function setSite(value){ site = normalize(value); apply(effective()); }
   function chooseTheme(theme){
-    if (theme !== null && !['classic','cyberpunk','nightcity'].includes(theme)) return;
+    if (theme !== null && !['classic','cyberpunk','nightcity','deepdive'].includes(theme)) return;
     preferred = theme;
     try { if (theme) localStorage.setItem(preferenceKey,theme); else localStorage.removeItem(preferenceKey); } catch (_) {}
     apply(effective());
@@ -68,7 +71,7 @@
     if (preferred) apply(effective());
     window.addEventListener('storage',function(event){
       if (event.key !== preferenceKey && event.key !== null) return;
-      preferred = ['classic','cyberpunk','nightcity'].includes(event.newValue) ? event.newValue : null;
+      preferred = ['classic','cyberpunk','nightcity','deepdive'].includes(event.newValue) ? event.newValue : null;
       apply(effective());
     });
   }

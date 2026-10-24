@@ -17,3 +17,6 @@ html[data-motion=off] #wipe{display:none}
 html[data-danmaku=off] #danmaku-layer,html[data-danmaku=off] #danmaku-toggle{display:none!important}
 /* Contain decorative overhangs without creating a horizontal scroll area. */
 #page-home{overflow-x:clip}
+
+.deepdive-logo{display:none}
+html[data-theme=deepdive] .hero .name{width:min(var(--site-logo-size,470px),100%);font-size:inherit}

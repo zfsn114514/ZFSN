@@ -4,6 +4,7 @@ const http=require('http'),fs=require('fs'),path=require('path'),assert=require(
 const root=path.resolve(__dirname,'../..'),output=process.env.STUDIO_SCREENSHOTS||'/tmp/zfsn-studio';fs.mkdirSync(output,{recursive:true});
 let settings={theme:'nightcity',accent:'#ff4d5c',background:'#070d16',motion:true};
 let works=[{id:'aaaaaaaa',title:'植物大战老马',desc:'## 创作故事',images:['assets/avatar.jpg'],cover:'assets/avatar.jpg',tag:'游戏',files:[],order:0},{id:'bbbbbbbb',title:'夜之城摄影',desc:'城市记录',images:[],files:[],order:1}];
+const messages=[{id:'11111111',name:'访客一',text:'这个终端风格很有氛围。',time:'2026-10-25 09:20:00',geo:{region:'中国 · 上海'},images:['assets/avatar.jpg'],voices:[]},{id:'22222222',name:'创作记录',text:'这是一条较长的测试留言，用于验证主题切换后的展开与收起。'.repeat(60),time:'2026-10-25 08:40:00',geo:{region:'广东 · 深圳'},images:[],voices:[]},{id:'33333333',name:'语音访客',text:'留下一段声音。',time:'2026-10-25 08:00:00',geo:{region:'马来西亚'},images:[],voices:[{url:'assets/fixture.wav',duration:4}]},...Array.from({length:5},(_,i)=>({id:'4444444'+i,name:'访客 '+(i+2),text:['期待新的作品。','已收藏，下次再来。','你好，ZFSN。','这个配色很舒服。','来自远方的问候。'][i],time:'2026-10-24 21:00:00',geo:{region:'访客地区'},images:[],voices:[]}))];
 let postedOrder,uploadCount=0;
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.png':'image/png','.jpg':'image/jpeg','.svg':'image/svg+xml','.webp':'image/webp'};
 const server=http.createServer(async(req,res)=>{
@@ -14,6 +15,7 @@ const server=http.createServer(async(req,res)=>{
   if(name==='/api/health')data={ok:true};
   if(name==='/api/admin/check')data={ok:true,valid:true,exp:Date.now()+3600000};
   if(name==='/api/admin/stats')data={ok:true,messages:12,works:works.length,regions:[],sessions:1};
+  if(name==='/api/messages')data={ok:true,items:messages,count:messages.length};
   if(name==='/api/works'&&req.method==='GET')data={ok:true,items:works};
   if(name==='/api/works'&&req.method==='POST'){const item={...body,id:'cccccccc'};works.push(item);data={ok:true,item};}
   if(name==='/api/admin/works/order'){postedOrder=body.ids;works.sort((a,b)=>postedOrder.indexOf(a.id)-postedOrder.indexOf(b.id));}
@@ -80,5 +82,28 @@ const server=http.createServer(async(req,res)=>{
  await page.waitForTimeout(100);const bounds=await page.locator('#visitor-theme-panel').boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=390&&bounds.y>=0&&bounds.y+bounds.height<=844);
  await page.screenshot({path:path.join(output,'visitor-theme-mobile.png')});await page.keyboard.press('Escape');assert.equal(await page.locator('#visitor-theme-panel').evaluate(el=>el.open),false);
  await page.setViewportSize({width:1440,height:1000});await page.locator('#visitor-theme-toggle').click();await page.screenshot({path:path.join(output,'visitor-theme-desktop.png')});await page.keyboard.press('Escape');
- assert.deepEqual(errors,[]);console.log('PASS drafts survive reload; crop keeps originals; publish, ordering, site settings, mobile, rapid navigation and persistent visitor themes');
+
+ settings={...settings,backgroundImage:''};await page.evaluate(value=>ZFSNAppearance.setSite(value),settings);
+ const guestStyles=[];
+ for(const theme of ['classic','cyberpunk','nightcity','deepdive']){
+   await page.locator('#visitor-theme-toggle').click();await page.locator('.vt-option[data-theme='+theme+']').click();
+   await page.evaluate(()=>location.hash='guest');await page.waitForFunction(()=>document.body.dataset.page==='guest'&&!document.body.dataset.switching);
+   await page.waitForTimeout(150);
+   const card=page.locator('#glist .gitem').first();await card.waitFor();
+   guestStyles.push(await card.evaluate(el=>{const s=getComputedStyle(el),av=getComputedStyle(el.querySelector('.av'));return [s.borderRadius,s.backgroundColor,s.boxShadow,av.borderRadius].join('|');}));
+   const long=page.locator('#glist .gitem.clamped').first();await long.waitFor();assert.equal(await long.evaluate(el=>getComputedStyle(el,'::after').position),'static');
+   await long.evaluate(el=>el.querySelector('.body').click());assert(await long.evaluate(el=>el.classList.contains('open')));
+   await long.evaluate(el=>el.querySelector('.body').click());assert.equal(await long.evaluate(el=>el.classList.contains('open')),false);
+   await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(output,'guest-'+theme+'.png')});
+ }
+ assert.equal(new Set(guestStyles).size,4,'each guestbook theme has its own visual treatment');
+ assert.equal(await page.locator('#deepdive-theme').evaluate(el=>el.media),'all');
+ await page.reload();await page.waitForFunction(()=>document.documentElement.dataset.theme==='deepdive'&&window.ZFSN);
+ assert.equal(await page.evaluate(()=>ZFSNAppearance.preference()),'deepdive');
+ await page.evaluate(()=>location.hash='home');await page.waitForFunction(()=>document.body.dataset.page==='home'&&!document.body.dataset.switching);await page.waitForTimeout(1100);
+ await page.screenshot({path:path.join(output,'deepdive-home.png')});
+ await page.setViewportSize({width:390,height:844});await page.evaluate(()=>location.hash='guest');await page.waitForFunction(()=>document.body.dataset.page==='guest'&&!document.body.dataset.switching);await page.waitForTimeout(100);
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(output,'deepdive-mobile.png')});
+ await page.locator('#visitor-theme-toggle').click();const mobilePanel=await page.locator('#visitor-theme-panel').boundingBox();assert(mobilePanel.y>=0&&mobilePanel.y+mobilePanel.height<=844);await page.keyboard.press('Escape');
+ assert.deepEqual(errors,[]);console.log('PASS drafts survive reload; crop keeps originals; publish, ordering, site settings, mobile, rapid navigation and persistent visitor themes, deep-dive styling and all guestbook themes');
 }finally{if(browser)await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});

@@ -2,7 +2,7 @@
   'use strict';
   var appearance=window.ZFSNAppearance;
   if(!appearance||appearance.isPreview)return;
-  var names={classic:'经典红黑',cyberpunk:'赛博朋克终端',nightcity:'2077 游戏主菜单'};
+  var names={classic:'经典红黑',cyberpunk:'赛博朋克终端',nightcity:'2077 游戏主菜单',deepdive:'深潜协议'};
   var trigger=document.createElement('button');trigger.id='visitor-theme-toggle';trigger.type='button';
   trigger.innerHTML='<span aria-hidden="true">◈</span> 切换风格';trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-controls','visitor-theme-panel');
   var panel=document.createElement('dialog');panel.id='visitor-theme-panel';panel.setAttribute('aria-labelledby','visitor-theme-title');
@@ -11,7 +11,8 @@
   var choices=[{id:'default',title:'跟随站点默认',desc:'使用站长设置的主题与颜色'},
     {id:'classic',title:names.classic,desc:'居中布局 · 柔和圆角 · 红色高亮'},
     {id:'cyberpunk',title:names.cyberpunk,desc:'切角面板 · 黄色与青色 · 终端风格'},
-    {id:'nightcity',title:names.nightcity,desc:'游戏主菜单 · 暗红侧栏 · 锋利标志'}];
+    {id:'nightcity',title:names.nightcity,desc:'游戏主菜单 · 暗红侧栏 · 锋利标志'},
+    {id:'deepdive',title:names.deepdive,desc:'酒红终端 · 双层切角 · 青色高亮'}];
   choices.forEach(function(choice){
     var button=document.createElement('button');button.type='button';button.className='vt-option';button.dataset.theme=choice.id;
     button.innerHTML='<span class="vt-swatch" aria-hidden="true"></span><span><strong></strong><small></small></span><span class="vt-check" aria-hidden="true">✓</span>';
