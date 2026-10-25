@@ -173,7 +173,7 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/minecraft/game.a175d960.js
+/minecraft/game.2f7e65b8.js
   Cache-Control: public, max-age=31536000, immutable
 
 /minecraft/style.73525746.css
@@ -209,7 +209,7 @@
 /assets/js/admin-studio.5db594fe.js
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/app.4246dfc9.css
+/assets/css/app.0d3cb0e8.css
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/css/markdown.32a99c4e.css
@@ -224,7 +224,7 @@
 /assets/css/deepdive.5c260820.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/eldenring.a3543f81.css
+/assets/css/eldenring.260f6a14.css
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/css/site-experience.70ccfd78.css

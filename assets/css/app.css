@@ -42,6 +42,8 @@ svg:not([width]){width:1em;height:1em;flex:0 0 auto}
 }
 *{margin:0;padding:0;box-sizing:border-box}
 [hidden]{display:none!important}
+/* 艾尔登法环主题的页脚状态条图例：默认隐藏，仅该主题显示（见 eldenring.css） */
+.er-hud{display:none}
 html{scroll-behavior:smooth}
 html,body{height:100%}
 body{

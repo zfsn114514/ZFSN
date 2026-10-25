@@ -196,7 +196,12 @@ async function main() {
   check(ui.a.count === null && ui.a.dur === true, '胸甲格不显示数量角标（只显示耐久条）', ui.a);
   check(ui.b.count === null && ui.c.count === '64', '石头格显示 64，胸甲格不显示', { b: ui.b.count, c: ui.c.count });
 
-  // 截图
+  // 截图：切到「生存物品栏」标签，能直接看到两件胸甲各占一格、石头显示 64
+  await ev(`(async()=>{const t=[...document.querySelectorAll('#creative-tabs-top button,#creative-tabs-bottom button')]
+      .find(b=>b.dataset.tip==='生存物品栏');
+    if(t){t.click();await new Promise(r=>setTimeout(r,280));}
+    return true;})()`);
+  await sleep(300);
   const r = await cdp.send('Page.captureScreenshot', { format: 'png' });
   const fs = require('node:fs'), path = require('node:path');
   fs.mkdirSync('.tmp-mc', { recursive: true });

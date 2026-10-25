@@ -813,6 +813,7 @@ async function boot(){
   let camera={x:30,y:30},camX=0,camY=0;
   let last=performance.now(),accumulator=0,hudClock=0,saveClock=0,titleClock=0;
   let toastTimer,itemNameTimer,aim=null,mouseDown=false,touchMine=false,invSignature='',deadShown=false,debugOn=false;
+  let panelSig='';                   // 上一次「背包面板」渲染时的内容指纹（见 hud 末尾）
   let heldItem=null;                 // 手上拿着的物品（独立栈，跟随鼠标）
   let drag=null;                     // 拖拽状态 {button,slots:[]}
   let press=null;                    // 按下未松开 {area,index,button,x,y}
@@ -1142,6 +1143,10 @@ async function boot(){
   // ── 槽位 ──────────────────────────────────────────────────────
   function iconImg(id){ensureTexture(id);const img=document.createElement('img');img.src=new URL(ITEMS[id]?.cubeIcon?`../icons/${id}.png`:`${id}.png`,textureBase).href;img.alt='';img.draggable=false;return img;}
   function slotNode(stack,area,index,hotbar){
+    // ★ 存档里出现当前版本不认识的 id 时不能硬崩：slotNode 一旦抛错，
+    //   hud() 已经把 invSignature 写掉了、inventory() 也只画到一半 ——
+    //   表现就是「快捷栏/背包卡在旧内容不动」。这里降级成空格。
+    if(stack&&!ITEMS[stack.id])stack=null;
     const b=document.createElement('button');
     b.type='button';b.className='slot';
     b.setAttribute('aria-label',stack?`${ITEMS[stack.id].name} × ${stack.n}`:'空');
@@ -1182,6 +1187,13 @@ async function boot(){
   //   recipeIn() 数的是「有几格放着该物品」，一格堆 12 个木板永远凑不出需要 3 格的镐子。
   const slotLimit=(area,id)=>area==='grid'?1:stackLimit(id);
   let pointerPos={x:innerWidth/2,y:innerHeight/2};
+
+  /* 背包面板「画的是什么」的指纹。面板是打开时一次性渲染的：
+     捡起地上的东西、/give、吃东西、熔炉取产物、死亡重生、读档 —— 这些都只改
+     world.inventory，不会重画面板。于是面板里的快捷栏一行会和屏幕底部那条
+     快捷栏对不上（用户截图就是这种「两处内容不一样」）。
+     hud() 每 120ms 都在跑，顺手拿这个指纹比一下就能把面板补画回来。 */
+  const panelSignature=()=>JSON.stringify([world.inventory,craftMode,world.craftGrid,world.tableGrid,heldItem]);
 
   function renderHeld(){
     heldCursor.replaceChildren();
@@ -1418,6 +1430,10 @@ async function boot(){
         `目标 ${b&&b.id!=='air'?b.name:'—'}\n`+
         `生物 ${world.mobs.length}  掉落物 ${world.drops.length}`;
     }
+    /* ★ 面板内容变了就补画（指纹在 inventory() 末尾写，所以不会重复渲染）：
+       - 拖动中（press）不重画，否则按下时的那个 DOM 会被换掉，拖拽高亮会闪；
+       - 只补画「背包」这一个 dialog，熔炉/暂停那些各有各的刷新路径。 */
+    if(!press&&$('#inventory-dialog').open&&panelSig!==panelSignature())inventory();
   }
 
   // 背包左上角那块在原版里是玩家模型预览，贴图本身是空的，
@@ -1491,6 +1507,7 @@ async function boot(){
     $('#creative-browser').hidden=!creative||isTable;
     $('#slot-description').textContent=heldItem?`${ITEMS[heldItem.id].name} × ${heldItem.n}`:'';
     renderHeld();if(creative&&!isTable)renderCreative();
+    panelSig=panelSignature();   // 记下「这一帧画的是什么」，hud() 靠它判断要不要补画
   }
   let creativeTab='building',creativeRow=0;
   const categories=[['building','建筑方块','bricks'],['colored','染色方块','red_wool'],['nature','自然方块','grass_block'],['functional','功能方块','crafting_table'],['redstone','红石方块','redstone'],['search','搜索','compass'],['equipment','工具与实用物品','diamond_pickaxe'],['combat','战斗用品','diamond_sword'],['food','食物与饮品','apple'],['ingredients','原材料','iron_ingot'],['spawn','刷怪蛋','pig_spawn_egg'],['inventory','生存物品栏','chest']];
