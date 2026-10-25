@@ -26,6 +26,13 @@ async function main(){
     fs.mkdirSync(OUT,{recursive:true});fs.writeFileSync(path.join(OUT,name),Buffer.from(r.result.data,'base64'));};
 
   await send('Page.enable'); await send('Runtime.enable');
+  // ★ 合成 KeyboardEvent 派发到 window 不会传播到 document 上的监听器，
+  //   实测 chatOpen 恒为 false。必须走 CDP 的真实按键事件。
+  const key = (code,k,vk,extra={}) => send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k, windowsVirtualKeyCode: vk, ...extra })
+    .then(() => send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k, windowsVirtualKeyCode: vk, ...extra }));
+  const pressT = () => key('KeyT','t',84);
+  const pressE = () => key('KeyE','e',69);
+  const pressEsc = () => key('Escape','Escape',27);
   await send('Page.navigate',{url:PAGE});
   await new Promise(r=>setTimeout(r,1500));
   await evalJS('localStorage.clear(); true');
@@ -101,13 +108,147 @@ async function main(){
               touchMinW:tcBtns.length?Math.round(Math.min(...tcBtns.map(b=>b.getBoundingClientRect().width))):null,
               // 触屏键不能压住快捷栏
               touchOverBar:tcBtns.length?tcBtns.some(b=>{const q=b.getBoundingClientRect();
-                return r?q.bottom>r.top&&q.top<r.bottom:false;}):false};
+                return r?q.bottom>r.top&&q.top<r.bottom:false;}):false,
+              // ★ 也不能压住血条 / 饥饿条（HUD 贴着屏幕底，触屏键很容易整条盖上去）
+              touchOverStats:(()=>{
+                const st=document.querySelector('.stats');
+                if(!st||!tcBtns.length)return null;
+                const sr=st.getBoundingClientRect();
+                return tcBtns.some(b=>{const q=b.getBoundingClientRect();
+                  return q.bottom>sr.top+1&&q.top<sr.bottom-1&&q.right>sr.left+1&&q.left<sr.right-1;});
+              })(),
+              statsRect:(()=>{const st=document.querySelector('.stats');if(!st)return null;
+                const q=st.getBoundingClientRect();
+                return {t:Math.round(q.top),b:Math.round(q.bottom),l:Math.round(q.left),r:Math.round(q.right)};})(),
+              // ★ 跳跃键必须落在右手边（左半边只留左右移动）
+              jump:(()=>{const j=document.querySelector('[data-hold="jump"]');if(!j)return null;
+                const q=j.getBoundingClientRect();
+                return {cx:Math.round(q.left+q.width/2),right:Math.round(q.right),w:Math.round(q.width),
+                        // 只判「过半屏」太松：5 个按钮组成的右手组，组首位中心 x≈145 也能过。
+                        // 必须落在右侧 30% 以内，才真的够得着右手拇指。
+                        onRight:q.left+q.width/2>innerWidth*.7,
+                        inView:q.left>=-1&&q.right<=innerWidth+1};})(),
+              moveBtns:(()=>{const g=document.querySelector('.touch-move');
+                return g?[...g.querySelectorAll('button')].map(b=>b.dataset.hold||b.id):[];})()};
     })()`);
     await shot(`mob-${w}-ingame.png`);
     report.push({label,w,phase:'ingame',entered,inGame});
+
+    // ── 跳跃键搬位置后必须真的还能跳（位置对 ≠ 事件还连着）──
+    // 合成 PointerEvent 不行：处理函数第一行 setPointerCapture 对未激活的 pointerId 会抛
+    // NotFoundError，heldTouches 根本不会被写入。必须走真实触摸事件。
+    const jc = await evalJS(`(()=>{const j=document.querySelector('[data-hold="jump"]');
+      const q=j.getBoundingClientRect();return {x:Math.round(q.left+q.width/2),y:Math.round(q.top+q.height/2)};})()`);
+    const before = await evalJS(`(()=>{const p=window.zfsnMC.world.player;
+      return {y:p.y,vy:p.vy,ground:p.ground,mode:window.zfsnMC.world.mode};})()`);
+    await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:jc.x,y:jc.y,id:1}]});
+    await new Promise(r=>setTimeout(r,180));
+    const during = await evalJS(`(()=>{const p=window.zfsnMC.world.player;
+      return {y:p.y,vy:p.vy,ground:p.ground};})()`);
+    await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    const jumped = during.vy<-1||during.y<before.y-.05||(!during.ground&&before.ground);
+    report.push({label,w,phase:'jump',at:jc,before,during,jumped});
+
+    // ── 聊天栏：T 打开后不能横向溢出，输入框要留在屏幕里 ──
+    await pressT();
+    await new Promise(r=>setTimeout(r,350));
+    const chat = await evalJS(`(()=>{
+      const root=document.querySelector('#chat');
+      const bar=document.querySelector('#chat-bar');
+      const inp=document.querySelector('#chat-input');
+      if(!root||!bar||!inp)return {missing:true};
+      const r=root.getBoundingClientRect(), b=bar.getBoundingClientRect(), i=inp.getBoundingClientRect();
+      // ★ 触屏键会盖住聊天提示（两者都贴底），必须量「聊天栏底边」和「触屏键顶边」的关系
+      const tc=document.querySelector('#touch-controls');
+      const tcb=tc?[...tc.querySelectorAll('button')].filter(x=>x.offsetParent!==null):[];
+      const tcTop=tcb.length?Math.min(...tcb.map(x=>x.getBoundingClientRect().top)):null;
+      return {open:!bar.hidden, chatOpen:!!window.zfsnMC?.chatOpen,
+              barVisible:b.width>0,
+              chatBottom:Math.round(r.bottom), touchTop:tcTop===null?null:Math.round(tcTop),
+              overlapsTouch:tcTop===null?false:r.bottom>tcTop+1,
+              root:{l:Math.round(r.left),r:Math.round(r.right),w:Math.round(r.width),b:Math.round(r.bottom)},
+              inpFits:i.left>=-1&&i.right<=innerWidth+1&&i.bottom<=innerHeight+1,
+              inpW:Math.round(i.width), inpLeft:Math.round(i.left), inpRight:Math.round(i.right),
+              overflowX:document.documentElement.scrollWidth-innerWidth};
+    })()`);
+    await shot(`mob-${w}-chat.png`);
+    await pressEsc();
+    await new Promise(r=>setTimeout(r,250));
+    report.push({label,w,phase:'chat',chat});
+
+    // ── 背包面板：整块必须落在视口内，否则手机端点不到角落格子 ──
+    await pressE();
+    await new Promise(r=>setTimeout(r,400));
+    const inv = await evalJS(`(()=>{
+      const d=document.querySelector('#inventory-dialog');
+      if(!d)return {missing:true};
+      const r=d.getBoundingClientRect();
+      const p=d.querySelector('.mc-panel');
+      const pr=p?p.getBoundingClientRect():null;
+      return {open:!!d.open,
+              dialog:{l:Math.round(r.left),r:Math.round(r.right),t:Math.round(r.top),b:Math.round(r.bottom),w:Math.round(r.width)},
+              panel:pr?{l:Math.round(pr.left),r:Math.round(pr.right),w:Math.round(pr.width)}:null,
+              fits:pr?pr.left>=-1&&pr.right<=innerWidth+1:null,
+              overflowX:document.documentElement.scrollWidth-innerWidth};
+    })()`);
+    await shot(`mob-${w}-inv.png`);
+    report.push({label,w,phase:'inv',inv});
     await send('Emulation.clearDeviceMetricsOverride');
   }
   console.log(JSON.stringify(report,null,2));
+  // ── 汇总断言：把「肉眼看得懂」的结论打出来，别让 JSON 自己说话 ──
+  const bad=[];
+  const ok=[];
+  const check=(label,list,fn)=>{const before=bad.length;fn();if(bad.length===before)ok.push(label);};
+  for(const e of report){
+    if(e.phase==='ingame'){
+      const g=e.inGame;
+      check(`${e.w} 进游戏布局正常（快捷栏 ${g.barW}px，触屏键 ${g.touchBtnCount} 个，最窄 ${g.touchMinW}px）`, bad, ()=>{
+        if(!g.playing) bad.push(`${e.w} 没进入游戏`);
+        if(g.overflowX>0) bad.push(`${e.w} 进游戏后横向溢出 ${g.overflowX}px`);
+        if(g.fits===false) bad.push(`${e.w} 快捷栏超出视口`);
+        if(!g.touchVisible) bad.push(`${e.w} 触屏键不可见`);
+        if(g.touchOverflow>0) bad.push(`${e.w} 触屏键容器横向溢出 ${g.touchOverflow}px`);
+        if(g.touchOverBar) bad.push(`${e.w} 触屏键压住快捷栏`);
+        if(g.touchOverStats) bad.push(`${e.w} 触屏键压住血条/饥饿条（${JSON.stringify(g.statsRect)}）`);
+        if(!g.jump) bad.push(`${e.w} 找不到跳跃键`);
+        else{
+          if(!g.jump.onRight) bad.push(`${e.w} 跳跃键不在右手边（中心 x=${g.jump.cx} / 视口宽 ${e.w}）`);
+          if(!g.jump.inView) bad.push(`${e.w} 跳跃键超出视口`);
+        }
+        if(g.moveBtns.join(',')!=='left,right') bad.push(`${e.w} 左手组应该只有左右移动，实际 ${JSON.stringify(g.moveBtns)}`);
+        if(!g.touchInView) bad.push(`${e.w} 触屏键超出视口`);
+      });
+    }
+    if(e.phase==='jump'){
+      check(`${e.w} 触摸跳跃键真的跳起来了（y ${e.before?.y?.toFixed?.(2)} → ${e.during?.y?.toFixed?.(2)}，vy ${e.during?.vy?.toFixed?.(2)}）`, bad, ()=>{
+        if(!e.jumped) bad.push(`${e.w} 按住跳跃键没反应（vy=${e.during?.vy}）`);
+      });
+    }
+    if(e.phase==='chat'){
+      const c=e.chat;
+      check(`${e.w} 聊天栏正常（宽 ${c.root?.w}px，输入框 ${c.inpW}px）`, bad, ()=>{
+        if(c.missing) return bad.push(`${e.w} 找不到聊天栏元素`);
+        if(!c.open||!c.chatOpen) bad.push(`${e.w} 按 T 没打开聊天栏`);
+        if(!c.barVisible) bad.push(`${e.w} 聊天输入条宽度为 0（不可见）`);
+        if(!c.inpFits) bad.push(`${e.w} 聊天输入框超出视口（${c.inpLeft}~${c.inpRight}）`);
+        if(c.overflowX>0) bad.push(`${e.w} 聊天栏导致横向溢出 ${c.overflowX}px`);
+        if(c.overlapsTouch) bad.push(`${e.w} 聊天栏压住了触屏键（聊天底边 ${c.chatBottom} > 触屏顶边 ${c.touchTop}）`);
+      });
+    }
+    if(e.phase==='inv'){
+      const v=e.inv;
+      check(`${e.w} 背包面板正常（面板宽 ${v.panel?.w}px）`, bad, ()=>{
+        if(v.missing) return bad.push(`${e.w} 找不到背包对话框`);
+        if(!v.open) return bad.push(`${e.w} 按 E 没打开背包`);
+        if(v.fits===false) bad.push(`${e.w} 背包面板超出视口（${v.panel.left}~${v.panel.right}）`);
+        if(v.overflowX>0) bad.push(`${e.w} 背包导致横向溢出 ${v.overflowX}px`);
+      });
+    }
+  }
+  for(const l of ok) console.log('   PASS '+l);
+  if(bad.length){ console.log('\n=== 问题 ('+bad.length+') ==='); for(const b of bad) console.log('  - '+b); console.log('FAIL'); }
+  else console.log('\nPASS — 手机端 375/390 布局全部通过');
   clearInterval(dlg);
   ws.close();
   process.exit(0);

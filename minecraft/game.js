@@ -160,6 +160,12 @@ export class World {
       const type=['pig','cow','sheep','chicken'][i%4];let x=18+i*Math.floor((W-40)/28);
       for(let retry=0;retry<14;retry++,x++){if(x<2||x>=W-2)break;if(this.get(x,this.surface[x])===1&&this.get(x,this.surface[x]-1)===0){const mob=this.makeMob(type,x,0);mob.y=this.surface[x]-mob.h;if(!this.collides(mob)){this.mobs.push(mob);break;}}}
     }
+    /* ★ 让水先流到稳态再开玩。
+       湖泊的水面格全是「8 级水源」，而 stepWater 的 BFS 会从水源横向扩散，
+       所以刚生成的世界每跑一帧水面都会再宽一点 —— 表现为「进游戏时湖在长大」，
+       而且不同时刻读到的水量都不一样（测试里同一份种子 337 / 434 两种结果）。
+       先在这里空跑几轮，把稳态固化进初始地形。 */
+    for(let i=0;i<6;i++)this.stepWater();
   }
   get(x,y){x=Math.floor(x);y=Math.floor(y);return x<0||x>=W||y>=H?4:y<0?0:this.blocks[y*W+x];}
   set(x,y,id){if(x>=0&&x<W&&y>=0&&y<H){const i=y*W+x;this.blocks[i]=id;if(this.natural)this.natural[i]=0;if(this.water){this.water[i]=id===17?8:0;if(id!==17)this.waterSources.delete(i);}this.revision++;}}
@@ -377,6 +383,10 @@ export class World {
     this.mobClock+=dt;
     if(this.mobClock>9){this.mobClock=0;if(this.night()&&this.mobs.filter(m=>m.type==='zombie').length<9){const x=Math.floor(clamp(p.x+(this.rng()<.5?-1:1)*(15+this.rng()*15),2,W-3)),y=this.surface[x]-2;if(!this.nearTorch(x,y,7))this.mobs.push(this.makeMob('zombie',x,y));}}
     for(const m of this.mobs){
+      /* ★ 远处的生物「挂起」，不模拟也不删除（原版就是这样：出了模拟距离只是冻住）。
+         以前这里在末尾按「距玩家 95 格」直接 filter 掉，世界放大到 640 后
+         等于一走开就把大半张图的动物清空 —— 玩家永远只能在身边看到零星几只。 */
+      if(Math.abs(m.x-p.x)>64){m.vx=0;continue;}
       m.clock+=dt;m.hurt=Math.max(0,m.hurt-dt);
       // 转身动画：模型 yaw 朝朝向插值，而不是瞬间翻转贴图
       const wantYaw=m.face>0?0.95:-0.95;
@@ -390,7 +400,7 @@ export class World {
         if(!this.night()&&m.y<this.surface[Math.floor(clamp(m.x,0,W-1))]+1)m.health-=dt*2;
       }
     }
-    this.mobs=this.mobs.filter(m=>m.health>0&&Math.abs(m.x-p.x)<95);
+    this.mobs=this.mobs.filter(m=>m.health>0&&m.x>-8&&m.x<W+8);
     this.gravityClock+=dt;if(this.gravityClock>.16){this.gravityClock=0;for(let y=Math.min(H-4,Math.floor(p.y)+20);y>Math.max(0,p.y-20);y--)for(let x=Math.max(0,Math.floor(p.x)-22);x<Math.min(W,p.x+22);x++)if(this.get(x,y)===7&&[0,17].includes(this.get(x,y+1))&&!overlap({x,y:y+1,w:1,h:1},p)){this.set(x,y,0);this.set(x,y+1,7);}}
   }
   nearTorch(x,y,r){for(let yy=Math.max(0,Math.floor(y-r));yy<=Math.min(H-1,y+r);yy++)for(let xx=Math.max(0,Math.floor(x-r));xx<=Math.min(W-1,x+r);xx++)if(this.get(xx,yy)===16&&Math.hypot(xx-x,yy-y)<r)return true;return false;}
@@ -628,10 +638,10 @@ async function boot(){
   let camera={x:30,y:30},camX=0,camY=0;
   let last=performance.now(),accumulator=0,hudClock=0,saveClock=0,titleClock=0;
   let toastTimer,itemNameTimer,aim=null,mouseDown=false,touchMine=false,invSignature='',deadShown=false,debugOn=false;
-  let swap=null;                     // 正在搬运的槽位 {area,index}
   let heldItem=null;                 // 手上拿着的物品（独立栈，跟随鼠标）
   let drag=null;                     // 拖拽状态 {button,slots:[]}
   let press=null;                    // 按下未松开 {area,index,button,x,y}
+  let dragStarted=false;
   let sprintHeld=false,lastDirCode='',lastDirAt=0;
   let audioReady=false;
   // 雨滴粒子的存储放在这里：resize() 在天空模块之前就会被调用一次，
@@ -658,7 +668,8 @@ async function boot(){
 
   function bindWorld(next){
     world=next;world.notify=notify;world.sound=(group,pan,vol)=>audio.play(group,pan,vol);
-    invSignature='';swap=null;deadShown=false;aim=null;keys.clear();heldTouches.clear();mouseDown=false;touchMine=false;
+    invSignature='';deadShown=false;aim=null;keys.clear();heldTouches.clear();mouseDown=false;touchMine=false;
+    heldItem=null;drag=null;press=null;dragStarted=false;
   }
 
   // ── 贴图 ──────────────────────────────────────────────────────
@@ -939,53 +950,185 @@ async function boot(){
   function slotNode(stack,area,index,hotbar){
     const b=document.createElement('button');
     b.type='button';b.className='slot';
-    const label=stack?`${ITEMS[stack.id].name} × ${stack.n}`:'空';
-    b.setAttribute('aria-label',label);
-    if(hotbar){b.style.position='absolute';b.style.left=(6+40*index)+'px';b.style.top='6px';}
-    if(swap&&swap.area===area&&swap.index===index)b.style.background='rgba(255,255,255,.35)';
+    b.setAttribute('aria-label',stack?`${ITEMS[stack.id].name} × ${stack.n}`:'空');
+    if(hotbar){
+      b.style.position='absolute';b.style.left=(6+40*index)+'px';b.style.top='6px';
+      b.onclick=()=>{world.selected=index;showItemName();hud(true);};
+    }else{
+      // 容器里的格子走 pointerdown/pointerup 那一套（拖拽、右键、分堆），不用 onclick：
+      // onclick 只能表达「点了一下」，表达不了按下-拖动-松开。
+      b.dataset.area=area;b.dataset.index=index;
+      if(stack)b.title=ITEMS[stack.id].name;
+    }
     if(stack){
       b.append(iconImg(stack.id));
       if(stack.n>1){const c=document.createElement('span');c.className='count';c.textContent=stack.n;b.append(c);}
       if(stack.dur){const bar=document.createElement('div');bar.className='dur';const fill=document.createElement('i');fill.style.width=`${stack.dur/ITEMS[stack.id].durability*100}%`;bar.append(fill);b.append(bar);}
-      b.title=ITEMS[stack.id].name;
     }
-    b.onclick=hotbar?()=>{world.selected=index;showItemName();hud(true);}:()=>clickSlot(area,index);
     return b;
   }
-  // 当前打开的是背包（2×2）还是工作台（3×3），决定合成格指向哪个容器
+
+  /* ── 物品栏交互（按原版手感实现）──────────────────────────────────
+     关键：手上拿的东西以前只是「标记原槽位」，物品还留在格子里 ——
+     所以既画不出跟随鼠标的手持物品，也没法拆栈。现在手上是独立的一叠
+     heldItem，拿起来时槽位真的空了。这样才能做到：
+       左键点       拿起整叠 / 全部放下 / 同类合并 / 异类交换
+       右键点       拿起一半（向上取整）/ 放下一个
+       左键长按拖   经过的每格各放一个，松开时把剩余均分给这些格子
+       右键长按拖   经过的每格各放一个，剩余留在手上 */
+  const heldCursor=$('#held-cursor');
   let craftMode='inv';
   const gridRef=()=>craftMode==='table'?world.tableGrid:world.craftGrid;
   const stackAt=(area,index)=>area==='inv'?world.inventory[index]:gridRef()[index];
   const setStack=(area,index,stack)=>{if(area==='inv')world.inventory[index]=stack;else gridRef()[index]=stack;};
-  function clickSlot(area,index){
-    if(swap&&swap.area===area&&swap.index===index){swap=null;inventory();return;}
-    const here=stackAt(area,index);
-    if(!swap){
-      if(here){swap={area,index};inventory();}
-      return;
+  const stackLimit=id=>ITEMS[id]?.stack??64;
+  // ★ 合成格每格只能放 1 个（原版 SlotCrafting 的堆叠上限就是 1）。
+  //   recipeIn() 数的是「有几格放着该物品」，一格堆 12 个木板永远凑不出需要 3 格的镐子。
+  const slotLimit=(area,id)=>area==='grid'?1:stackLimit(id);
+  let pointerPos={x:innerWidth/2,y:innerHeight/2};
+
+  function renderHeld(){
+    heldCursor.replaceChildren();
+    if(!heldItem){heldCursor.hidden=true;return;}
+    heldCursor.hidden=false;
+    heldCursor.style.left=pointerPos.x+'px';heldCursor.style.top=pointerPos.y+'px';
+    heldCursor.append(iconImg(heldItem.id));
+    if(heldItem.n>1){const c=document.createElement('span');c.className='count';c.textContent=heldItem.n;heldCursor.append(c);}
+    const dur=ITEMS[heldItem.id]?.durability;
+    if(heldItem.dur&&dur){
+      const bar=document.createElement('div');bar.className='dur';
+      const fill=document.createElement('i');fill.style.width=`${heldItem.dur/dur*100}%`;
+      bar.append(fill);heldCursor.append(bar);
     }
-    const from=stackAt(swap.area,swap.index),dest=stackAt(area,index);
-    if(!from){swap=null;inventory();hud(true);return;}
-    // ★ 合成格每次只放 1 个：原版合成是按「图案 / 格子」算的，recipeIn() 统计的
-    //   也是格子数。如果一次把整叠 12 个木板塞进 1 格，格子数永远是 1，
-    //   需要 3 格木板的镐子配方就永远匹配不上。剩下的继续留在手上，可以接着点。
-    if(area==='grid'&&!dest&&from.n>1){
-      setStack('grid',index,{id:from.id,n:1,...(from.dur?{dur:from.dur}:{})});
-      from.n-=1;
-      inventory();hud(true);
-      return;
-    }
-    if(from&&dest&&from.id===dest.id&&ITEMS[from.id].stack>1){
-      const room=ITEMS[from.id].stack-dest.n;
-      if(room>0){const move=Math.min(room,from.n);dest.n+=move;from.n-=move;}
-      setStack(swap.area,swap.index,from.n>0?from:null);
-    }else{
-      setStack(swap.area,swap.index,dest);
-      setStack(area,index,from);
-    }
-    swap=null;
-    inventory();hud(true);
   }
+  function pickAll(area,index){
+    const stack=stackAt(area,index);if(!stack)return false;
+    heldItem={...stack};setStack(area,index,null);return true;
+  }
+  function pickHalf(area,index){
+    const stack=stackAt(area,index);if(!stack)return false;
+    const take=Math.ceil(stack.n/2);
+    heldItem={id:stack.id,n:take,...(stack.dur?{dur:stack.dur}:{})};
+    const left=stack.n-take;
+    setStack(area,index,left>0?{...stack,n:left}:null);
+    return true;
+  }
+  function canDropOne(area,index){
+    if(!heldItem)return false;
+    const t=stackAt(area,index);
+    return !t||(t.id===heldItem.id&&t.n<slotLimit(area,t.id));
+  }
+  function dropOne(area,index){
+    if(!canDropOne(area,index))return false;
+    const t=stackAt(area,index);
+    if(!t)setStack(area,index,{id:heldItem.id,n:1,...(heldItem.dur?{dur:heldItem.dur}:{})});
+    else setStack(area,index,{...t,n:t.n+1});
+    if(--heldItem.n<=0)heldItem=null;
+    return true;
+  }
+  // 单击（按下后没拖动就松开）
+  function clickSlot(area,index,button){
+    const target=stackAt(area,index);
+    if(button===2){
+      if(!heldItem){if(target)pickHalf(area,index);}
+      else dropOne(area,index);
+      return;
+    }
+    if(!heldItem){if(target)pickAll(area,index);return;}
+    // 合成格每格 1 个：左键点空格就是「放一个」，点满格就是交换
+    if(area==='grid'){
+      if(dropOne(area,index))return;
+      setStack(area,index,heldItem);heldItem=target;return;
+    }
+    if(!target){setStack(area,index,heldItem);heldItem=null;return;}
+    if(target.id===heldItem.id){
+      const room=stackLimit(target.id)-target.n;
+      if(room<=0){setStack(area,index,heldItem);heldItem=target;return;}
+      const move=Math.min(room,heldItem.n);
+      setStack(area,index,{...target,n:target.n+move});
+      heldItem.n-=move;
+      if(heldItem.n<=0)heldItem=null;
+      return;
+    }
+    setStack(area,index,heldItem);   // 异类交换
+    heldItem=target;
+  }
+  function applyDrag(area,index){
+    if(!drag||!heldItem)return;
+    const key=`${area}:${index}`;
+    if(drag.slots.includes(key))return;
+    if(!dropOne(area,index))return;
+    drag.slots.push(key);
+  }
+  function syncInv(){renderHeld();inventory();hud(true);}
+  // 关闭界面时手上的东西不能凭空消失：先塞回背包，塞不下就掉在脚边
+  function returnHeld(){
+    if(!heldItem)return;
+    const item=heldItem;heldItem=null;
+    const rest=world.add(item.id,item.n,item.dur);
+    if(rest>0){
+      world.drop(item.id,rest,world.player.x+.2,world.player.y+.5,item.dur);
+      notify('背包满了，手上的物品掉在脚边');
+    }
+    renderHeld();
+  }
+
+  document.addEventListener('pointerdown',e=>{
+    const el=e.target.closest?.('.slot[data-area]');
+    if(!el||!$('#inventory-dialog').open)return;
+    if(e.button!==0&&e.button!==2)return;
+    e.preventDefault();
+    press={area:el.dataset.area,index:Number(el.dataset.index),button:e.button,x:e.clientX,y:e.clientY};
+    dragStarted=false;drag=null;
+  },true);
+  addEventListener('pointermove',e=>{
+    pointerPos={x:e.clientX,y:e.clientY};
+    if(heldItem){heldCursor.style.left=e.clientX+'px';heldCursor.style.top=e.clientY+'px';}
+    if(!press)return;
+    if(!dragStarted){
+      const slot=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('.slot[data-area]');
+      const same=slot&&slot.dataset.area===press.area&&Number(slot.dataset.index)===press.index;
+      if(Math.hypot(e.clientX-press.x,e.clientY-press.y)<6&&(same||!slot))return;
+      // 进入拖拽模式：手上先有东西才开始
+      if(!heldItem){
+        const got=press.button===0?pickAll(press.area,press.index):pickHalf(press.area,press.index);
+        if(!got)return;
+      }
+      dragStarted=true;drag={button:press.button,slots:[]};
+      applyDrag(press.area,press.index);
+      syncInv();
+      // 不 return：第一次触发时指针可能已经跨到别的格子了，下面那段还要处理它
+    }
+    const slot=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('.slot[data-area]');
+    if(slot){applyDrag(slot.dataset.area,Number(slot.dataset.index));syncInv();}
+  });
+  function endPointer(){
+    if(!press)return;
+    const started=dragStarted,info=press;
+    press=null;dragStarted=false;
+    if(started&&drag){
+      if(drag.button===0&&heldItem&&drag.slots.length){
+        // 左键拖拽松开：剩余按顺序循环均分给经过的格子
+        let i=0,fails=0;
+        while(heldItem&&fails<drag.slots.length){
+          const [area,index]=drag.slots[i%drag.slots.length].split(':');
+          if(dropOne(area,Number(index)))fails=0;else fails++;
+          i++;
+        }
+      }
+      // 右键拖拽：剩下的留在手上（原版就是这样）
+      drag=null;
+      syncInv();
+      return;
+    }
+    drag=null;
+    clickSlot(info.area,info.index,info.button);
+    syncInv();
+  }
+  addEventListener('pointerup',endPointer);
+  addEventListener('pointercancel',()=>{press=null;drag=null;dragStarted=false;syncInv();});
+  addEventListener('blur',()=>{press=null;drag=null;dragStarted=false;});
+
 
   function showItemName(){
     const node=$('#item-name');
@@ -1043,13 +1186,34 @@ async function boot(){
   // ── 背包（2×2）/ 工作台（3×3）─────────────────────────────────
   // 两者共用同一个 dialog：换面板贴图、换格子数、换网格容器即可。
   // 复制一套 DOM 只会多一份要同步维护的坐标。
+  // 点产物格取货。材料按「每格 1 个」扣 —— recipeIn() 数的是「有几格放着
+  // 该物品」，扣的时候也必须一格一个，否则从同一格扣 3 个就吞材料了。
+  function takeResult(){
+    const recipe=craftMode==='table'?world.findTableRecipe():world.findGridRecipe();
+    if(!recipe)return;
+    const out={id:recipe.out,n:recipe.n};
+    if(heldItem){
+      if(heldItem.id!==out.id||heldItem.n+out.n>stackLimit(out.id))return;
+      heldItem.n+=out.n;
+    }else heldItem={...out};
+    const grid=gridRef();
+    for(const[id,need]of Object.entries(recipe.needs)){
+      let left=need;
+      for(let i=0;i<grid.length&&left>0;i++){
+        const s=grid[i];
+        if(s?.id===id){s.n-=1;left-=1;if(s.n<=0)grid[i]=null;}
+      }
+    }
+    world.sound('click',world.player.x,.4);
+    syncInv();
+  }
+
   function inventory(mode){
-    // 切换 2×2 / 3×3 时手上拿的要放回去，否则 swap 会指向另一个容器的越界下标
-    if(mode&&mode!==craftMode){swap=null;craftMode=mode;}
+    // 切换 2×2 / 3×3 时手上的东西要收回去，否则会指向另一个容器的越界下标
+    if(mode&&mode!==craftMode){returnHeld();craftMode=mode;}
     const isTable=craftMode==='table';
     const panel=$('.inv-panel');
     if(panel)panel.classList.toggle('is-table',isTable);
-    // 工作台界面在原版里没有玩家模型预览
     const player=$('#inv-player');
     if(player)player.hidden=isTable;
     const grid=gridRef();
@@ -1061,11 +1225,11 @@ async function boot(){
     out.replaceChildren();
     if(result){
       const b=document.createElement('button');
-      b.type='button';b.className='slot';b.style.position='relative';
+      b.type='button';b.className='slot';
       b.append(iconImg(result.out));
-      const c=document.createElement('span');c.className='count';c.textContent=result.n;b.append(c);
-      b.title=`合成 ${ITEMS[result.out].name}`;
-      b.onclick=()=>{if(isTable?world.takeTableRecipe():world.takeGridRecipe()){inventory();hud(true);}};
+      if(result.n>1){const c=document.createElement('span');c.className='count';c.textContent=result.n;b.append(c);}
+      b.title=`取得 ${ITEMS[result.out].name}`;
+      b.onclick=takeResult;
       out.append(b);
     }
     const table=world.nearBlock(13),furnace=world.nearBlock(14);
@@ -1074,13 +1238,13 @@ async function boot(){
     const creative=world.mode==='creative';
     const side=document.querySelector('.recipe-panel');
     if(side)side.hidden=!creative;
-    // 文案统一由这里出，clickSlot() 不要再单独写，否则会被这次渲染覆盖掉。
-    const held=swap?stackAt(swap.area,swap.index):null;
-    $('#slot-description').textContent=held
-      ?`已拿起 ${ITEMS[held.id].name} × ${held.n}，再点一个格子放下`
+    // 文案统一在这里出，别在交互函数里另写一份，否则会被这次渲染覆盖
+    $('#slot-description').textContent=heldItem
+      ?`已拿起 ${ITEMS[heldItem.id].name} × ${heldItem.n} · 左键放下 / 右键放一个`
       :creative?'创造模式：点右侧物品直接放进快捷栏'
-      :isTable?'点物品拿起 · 摆好材料后点产物'
-      :`点物品拿起 · 放进 2×2 格子合成${table?'（点工作台可用 3×3）':''}`;
+      :isTable?'左键拿起 · 右键拿一半 · 按住拖动可以分配'
+      :`左键拿起、右键拿一半 · 按住拖动分配到多个格子${table?'（点工作台可用 3×3）':''}`;
+    renderHeld();
     if(!creative)return;
     $('#station-status').textContent='创造模式：点物品直接放进快捷栏';
     const list=$('#recipes');list.replaceChildren();
@@ -1138,13 +1302,15 @@ async function boot(){
   }
 
   function clearInput(){keys.clear();heldTouches.clear();mouseDown=false;touchMine=false;world.mining=null;}
-  function openDialog(dialog){clearInput();if(!dialog.open)dialog.showModal();}
+  function openDialog(dialog){clearInput();closeChat();if(!dialog.open)dialog.showModal();}
   function begin(next){
     dialogs.forEach(d=>d.close());
     bindWorld(next);playing=true;
     $('#start-screen').hidden=true;$('#hud').hidden=false;
+    $('#chat').hidden=false;
     $('#touch-controls').hidden=!coarse;
     canvas.focus();hud(true);showItemName();save();
+    pushChat(`世界已生成：${world.seed} · 输入 /help 查看指令`,'system');
   }
 
   // ── 标题画面 ──────────────────────────────────────────────────
@@ -1172,7 +1338,11 @@ async function boot(){
 
   // ── 菜单按钮 ──────────────────────────────────────────────────
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
-  dialogs.forEach(d=>d.addEventListener('close',()=>{clearInput();swap=null;canvas.focus();}));
+  dialogs.forEach(d=>d.addEventListener('close',()=>{
+    clearInput();returnHeld();
+    press=null;drag=null;dragStarted=false;
+    canvas.focus();
+  }));
   // 原版背包没有「完成」按钮，按 E 或点界面外关闭。生存模式下配方书面板（含那个
   // 完成按钮）是隐藏的，所以必须补上「点界面外关闭」，否则手机端进去就出不来。
   $('#inventory-dialog').addEventListener('click',(e)=>{
@@ -1184,8 +1354,8 @@ async function boot(){
   $('#resume').onclick=()=>$('#pause-dialog').close();
   $('#save-button').onclick=()=>{if(save())notify('世界已保存');};
   $('#return-title').onclick=()=>{
-    save();$('#pause-dialog').close();playing=false;
-    $('#start-screen').hidden=false;$('#hud').hidden=true;$('#touch-controls').hidden=true;
+    save();$('#pause-dialog').close();playing=false;closeChat();
+    $('#start-screen').hidden=false;$('#hud').hidden=true;$('#touch-controls').hidden=true;$('#chat').hidden=true;
     newForm.hidden=true;$('.menu-buttons').hidden=false;playBtn.hidden=false;refreshContinue();
   };
   $('#export-button').onclick=()=>{
@@ -1221,6 +1391,129 @@ async function boot(){
     notify('手持食物可以进食；靠近工作台或熔炉可以交互');
   }
 
+  // ── 聊天 / 指令 ────────────────────────────────────────────────
+  const chatRoot=$('#chat'),chatLog=$('#chat-log'),chatBar=$('#chat-bar'),chatInput=$('#chat-input');
+  let chatOpen=false;
+
+  function pushChat(text,cls=''){
+    const line=document.createElement('div');
+    line.className='chat-line'+(cls?' '+cls:'');
+    line.textContent=text;
+    chatLog.append(line);
+    while(chatLog.childElementCount>10)chatLog.firstElementChild.remove();
+    setTimeout(()=>{line.style.opacity='0';setTimeout(()=>line.remove(),900);},7000);
+  }
+  function openChat(prefill=''){
+    if(!playing||chatOpen)return;
+    chatOpen=true;clearInput();
+    chatRoot.hidden=false;chatBar.hidden=false;
+    chatInput.value=prefill;
+    chatInput.focus();
+    chatInput.setSelectionRange(prefill.length,prefill.length);
+  }
+  function closeChat(){
+    if(!chatOpen)return;
+    chatOpen=false;chatBar.hidden=true;chatInput.value='';
+    chatInput.blur();canvas.focus();
+  }
+  function sendChat(raw){
+    const text=raw.trim();
+    if(!text)return;
+    if(text.startsWith('/'))runCommand(text.slice(1));
+    else pushChat(`<你> ${text}`);
+  }
+  function runCommand(body){
+    const parts=body.trim().split(/\s+/).filter(Boolean);
+    const name=(parts.shift()||'').toLowerCase();
+    const arg=(i,def='')=>String(parts[i]??def).toLowerCase();
+    const ok=msg=>pushChat(msg,'system');
+    const err=msg=>pushChat(msg,'error');
+    const p=world.player;
+    switch(name){
+      case '':case 'help':case '?':
+        ok('/gamemode <survival|creative|0|1>  切换游戏模式');
+        ok('/weather <clear|rain|thunder>  切换天气');
+        ok('/time <set|add> <day|noon|night|midnight|0-24000>  调整时间');
+        ok('/tp <x> [y]  传送；/spawn 回到出生点');
+        ok('/give <物品id> [数量]  给予物品；/clear 清空背包');
+        ok('/kill 自杀；/seed 查看种子；/debug 开关调试信息');
+        break;
+      case 'gamemode':case 'gm':{
+        const v=arg(0);
+        const mode=['1','c','creative','创造'].includes(v)?'creative':['0','s','survival','生存'].includes(v)?'survival':null;
+        if(!mode){err('用法：/gamemode <survival|creative>');break;}
+        world.mode=mode;
+        if(mode==='survival'){p.health=Math.max(1,p.health);p.food=20;}
+        ok(`游戏模式已切换为 ${mode==='creative'?'创造模式':'生存模式'}`);
+        hud(true);break;
+      }
+      case 'weather':{
+        const v=arg(0);
+        const w=['clear','sun','晴'].includes(v)?'clear':['rain','下雨'].includes(v)?'rain':['thunder','storm','雷暴'].includes(v)?'thunder':null;
+        if(!w){err('用法：/weather <clear|rain|thunder>');break;}
+        world.weather=w;world.weatherTimer=240+Math.random()*240;
+        ok(`天气已切换为 ${({clear:'晴朗',rain:'下雨',thunder:'雷暴'})[w]}`);
+        break;
+      }
+      case 'time':{
+        const sub=arg(0),val=arg(1),base=Math.floor(world.time/DAY)*DAY;
+        const marks={day:.08,noon:.25,sunset:.47,dusk:.53,night:.70,midnight:.75,sunrise:.97};
+        if(sub==='set'){
+          if(marks[val]!==undefined)world.time=base+marks[val]*DAY;
+          else if(/^\d+(\.\d+)?$/.test(val))world.time=base+clamp(Number(val),0,24000)/24000*DAY;
+          else{err('用法：/time set <day|noon|night|midnight|0-24000>');break;}
+          ok('时间已设置');
+        }else if(sub==='add'){
+          const n=Number(val);
+          if(!Number.isFinite(n)){err('用法：/time add <秒数>');break;}
+          world.time+=n;ok(`时间前进了 ${n} 秒`);
+        }else err('用法：/time <set|add> ...');
+        break;
+      }
+      case 'tp':{
+        const x=Number(parts[0]),rawY=parts[1];
+        if(!Number.isFinite(x)){err('用法：/tp <x> [y]（y 用 F3 里显示的数值）');break;}
+        const px=clamp(x,1,W-2);
+        let py;
+        if(rawY!==undefined&&Number.isFinite(Number(rawY)))py=clamp(H-Number(rawY),-10,H-2);
+        else{
+          py=null;
+          for(let yy=1;yy<H-2;yy++)if(world.solid(px,yy)){py=yy-p.h-.2;break;}
+          if(py===null)py=world.surface[Math.floor(px)]-2;
+        }
+        p.x=px;p.y=py;p.vx=0;p.vy=0;
+        ok(`已传送到 X ${px.toFixed(1)} / Y ${(H-py).toFixed(1)}`);
+        break;
+      }
+      case 'spawn':p.x=world.spawn.x;p.y=world.spawn.y;p.vx=0;p.vy=0;ok('已回到出生点');break;
+      case 'give':{
+        const id=(parts[0]||'').toLowerCase(),item=ITEMS[id];
+        if(!item){err(`没有叫「${id}」的物品。试试 oak_log / stone / cobblestone / diamond_pickaxe`);break;}
+        const want=clamp(Math.floor(Number(parts[1])||1),1,item.stack*36);
+        const rest=world.add(id,want);
+        ok(`已给予 ${item.name} × ${want-rest}${rest?`（背包满了，还剩 ${rest} 个没放下）`:''}`);
+        hud(true);break;
+      }
+      case 'clear':world.inventory.fill(null);ok('背包已清空');hud(true);break;
+      case 'kill':
+        if(world.mode==='creative'){err('创造模式下不会死亡');break;}
+        world.damage(100,'被 /kill 处死');break;
+      case 'seed':ok(`世界种子：${world.seed}`);break;
+      case 'day':world.time=Math.floor(world.time/DAY)*DAY+.25*DAY;ok('已是白天');break;
+      case 'night':world.time=Math.floor(world.time/DAY)*DAY+.70*DAY;ok('已是夜晚');break;
+      case 'debug':debugOn=!debugOn;$('#debug').hidden=!debugOn;if(debugOn)hud(true);ok(`调试信息 ${debugOn?'开':'关'}`);break;
+      default:err(`未知指令 /${name}，输入 /help 查看可用指令`);
+    }
+  }
+  // 输入框自己吃掉键盘事件，否则会冒泡到游戏那边触发移动、切换快捷栏
+  chatInput.addEventListener('keydown',e=>{
+    e.stopPropagation();
+    if(e.key==='Enter'){const value=chatInput.value;closeChat();sendChat(value);}
+    else if(e.key==='Escape'){e.preventDefault();closeChat();}
+  });
+  chatInput.addEventListener('keyup',e=>e.stopPropagation());
+  chatInput.addEventListener('keypress',e=>e.stopPropagation());
+
   // ── 键盘 ──────────────────────────────────────────────────────
   addEventListener('keydown',e=>{
     if(e.target.matches('input,select,textarea'))return;
@@ -1237,6 +1530,9 @@ async function boot(){
       return;
     }
     if(paused())return;
+    // 聊天：T 打开发言，/ 打开并预填斜杠
+    if(e.code==='KeyT'&&!e.repeat){e.preventDefault();openChat('');return;}
+    if((e.key==='/'||e.code==='Slash')&&!e.repeat){e.preventDefault();openChat('/');return;}
     if(['Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();
     keys.add(e.code);
     // 疾跑：双击同一个方向键（MC 的经典手感）。不能用 Ctrl —— Ctrl+W = 关标签页。
@@ -1345,6 +1641,6 @@ async function boot(){
   catch(e){notify(e.message);playBtn.disabled=true;continueBtn.disabled=true;}
   bindWorld(world);
   // 给验证脚本留一个只读探针（不影响游戏本身）
-  window.zfsnMC={get world(){return world;},audio,images,drawEntity,entityMesh,get playing(){return playing;}};
+  window.zfsnMC={get world(){return world;},audio,images,drawEntity,entityMesh,W,H,get playing(){return playing;},get held(){return heldItem;},get chatOpen(){return chatOpen;},runCommand,refreshInv(){inventory();hud(true);}};
   requestAnimationFrame(frame);
 }

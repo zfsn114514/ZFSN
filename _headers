@@ -161,10 +161,10 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/minecraft/game.2a33a524.js
+/minecraft/game.50b353b2.js
   Cache-Control: public, max-age=31536000, immutable
 
-/minecraft/style.01e53bf0.css
+/minecraft/style.fa0bf866.css
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/guest-media.4168334e.js

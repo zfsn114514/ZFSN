@@ -99,6 +99,19 @@ async function main() {
     return box;
   };
 
+  // 原版规则：手上拿着东西时取不了产物。合成格每格只放 1 个，点完还剩一叠在手上，
+  // 所以取产物前必须先把手上那叠放回背包（找一个空格点一下）。
+  const stowHeld = async () => {
+    const held = await ev(`(()=>{const h=window.zfsnMC.held;return h?{id:h.id,n:h.n}:null;})()`);
+    if (!held) return null;
+    const free = await ev(`(()=>{const w=window.zfsnMC.world;
+      for(let i=0;i<36;i++)if(!w.inventory[i])return i;return -1;})()`);
+    if (free < 0) return held;
+    if (free < 9) await clickSel('#inv-hotbar .slot', free);
+    else await clickSel('#slots .slot', free - 9);
+    return held;
+  };
+
   // 进入游戏（生存模式，固定种子便于复现）
   await ev(`document.querySelector('#play').click()`);
   await sleep(250);
@@ -187,13 +200,15 @@ async function main() {
   console.log('   ', JSON.stringify(result));
   check(!!result && result.icon === true, '★ 合成格放材料后出现产物（原版行为）', result);
 
-  // 点产物取出
+  // 点产物取出：产物先进「手上」（原版就是先到手上），再放下
+  await stowHeld();
   await clickSel('#craft-result .slot', 0);
-  const crafted = await ev(`(()=>{const w=window.zfsnMC.world;
-    const planks=w.inventory.reduce((s,x)=>s+(x?.id==='oak_planks'?x.n:0),0);
-    return {planks,grid0:w.craftGrid[0]};})()`);
+  const crafted = await ev(`(()=>{const w=window.zfsnMC.world,h=window.zfsnMC.held;
+    const inBag=w.inventory.reduce((s,x)=>s+(x?.id==='oak_planks'?x.n:0),0);
+    return {inBag,held:h?{id:h.id,n:h.n}:null,grid0:w.craftGrid[0]};})()`);
   console.log('   ', JSON.stringify(crafted));
-  check(crafted.planks >= 4, '★ 点产物真的拿到木板', crafted.planks);
+  check((crafted.held?.id === 'oak_planks' && crafted.held.n >= 4) || crafted.inBag >= 4,
+    '★ 点产物真的拿到木板（原版先放到手上）', crafted);
   await shot('inv-2-crafted.png');
 
   // ── 快捷栏（HUD）物品不重叠 ──────────────────────────────────
@@ -273,6 +288,7 @@ async function main() {
   await clickSel('#slots .slot', 1);          // 拿起 2 个木棍
   await clickSel('#craft-grid .slot', 4);     // 第 4 格（剩 1）
   await clickSel('#craft-grid .slot', 5);     // 第 5 格
+  await stowHeld();
   const pick = await ev(`(()=>{const b=document.querySelector('#craft-result .slot');const w=window.zfsnMC.world;
     return {has:!!b,icon:b?b.querySelector('img')?.getAttribute('src'):null,
       title:b?b.title:null,grid:w.tableGrid.filter(Boolean).length,
@@ -289,9 +305,12 @@ async function main() {
 
   await clickSel('#craft-result .slot', 0);
   const got = await ev(`(()=>{const w=window.zfsnMC.world;
-    return {pickaxe:w.count('wooden_pickaxe'),grid:w.tableGrid.filter(Boolean).length};})()`);
+    const h=window.zfsnMC.held;
+    return {inBag:w.count('wooden_pickaxe'),held:h?{id:h.id,n:h.n}:null,
+            grid:w.tableGrid.filter(Boolean).length};})()`);
   console.log('   ', JSON.stringify(got));
-  check(got.pickaxe >= 1, '★ 点产物真的拿到木镐', got.pickaxe);
+  check((got.held?.id === 'wooden_pickaxe') || got.inBag >= 1,
+    '★ 点产物真的拿到木镐（原版先放到手上）', got);
   check(got.grid === 0, '合成后 3×3 网格被清空', got.grid);
   await clickAt(5, 5);
   await sleep(300);

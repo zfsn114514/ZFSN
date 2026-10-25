@@ -122,6 +122,22 @@ dialog::backdrop{background:transparent}
 .slot .dur{position:absolute;left:2px;bottom:2px;width:32px;height:4px;background:#000;pointer-events:none}
 .slot .dur i{display:block;height:100%;background:#3ce63c;font-style:normal}
 .slot:hover{background:rgba(255,255,255,.22)}
+/* 手持物品跟随鼠标。用 fixed 定位，JS 每帧写 clientX/clientY，
+   translate(-16px,-16px) 让图标中心压在指针上（原版也是这样偏左上一点）。 */
+#held-cursor{
+  position:fixed;left:0;top:0;width:32px;height:32px;z-index:900;
+  pointer-events:none;transform:translate(-16px,-16px);
+}
+#held-cursor img{position:absolute;left:0;top:0;width:32px;height:32px;image-rendering:pixelated}
+#held-cursor .count{
+  position:absolute;right:0;bottom:-2px;font-size:16px;line-height:1;
+  color:#fff;text-shadow:2px 2px 0 #3f3f3f;
+}
+#held-cursor .dur{position:absolute;left:0;bottom:0;width:32px;height:4px;background:#000}
+#held-cursor .dur i{display:block;height:100%;background:#3ce63c;font-style:normal}
+/* 产物格：只能在有配方时出现，不做 hover 高亮以免和普通格子混淆 */
+#craft-result .slot{position:relative;width:36px;height:36px}
+#craft-result .slot img{left:2px;top:2px}
 /* HUD 快捷栏是 20×20 格子（×2 = 40），由 slotNode() 内联 left/top 定位 */
 #hotbar .slot{position:absolute;width:40px;height:40px}
 #hotbar .slot img{left:4px;top:4px}
@@ -159,6 +175,33 @@ dialog::backdrop{background:transparent}
   opacity:0;transition:opacity .25s;pointer-events:none;
 }
 #toast.show{opacity:1}
+
+/* ── 聊天栏（原版：左下角一行行堆着，输入框横跨下方）── */
+#chat{
+  position:absolute;left:0;bottom:52px;width:min(600px,74vw);z-index:8;
+  display:flex;flex-direction:column;justify-content:flex-end;
+  pointer-events:none;
+}
+#chat-log{display:flex;flex-direction:column;justify-content:flex-end;gap:1px;padding:0 0 4px 4px;max-height:46vh;overflow:hidden}
+.chat-line{
+  align-self:flex-start;max-width:100%;padding:2px 6px;
+  background:rgba(0,0,0,.42);color:#fff;font-size:16px;line-height:1.24;
+  overflow-wrap:anywhere;text-shadow:2px 2px 0 rgba(0,0,0,.6);
+  transition:opacity .8s;
+}
+.chat-line.system{color:#ffff55}
+.chat-line.error{color:#ff6b6b}
+#chat-bar{
+  display:flex;align-items:center;padding:2px 8px;
+  background:rgba(0,0,0,.56);border-bottom:2px solid rgba(255,255,255,.22);
+  pointer-events:auto;
+}
+#chat-bar[hidden]{display:none}
+#chat-input{
+  flex:1 1 auto;min-width:0;background:none;border:0;outline:none;
+  font-family:inherit;font-size:16px;line-height:1.3;color:#fff;
+  caret-color:#fff;padding:2px 0;
+}
 
 /* ── 容器面板 ── */
 .mc-panel{
@@ -261,7 +304,10 @@ dialog::backdrop{background:transparent}
 .help-panel .mc-btn{width:100%}
 
 /* ── 触屏 ── */
-#touch-controls{position:absolute;inset:auto 0 60px;z-index:9;display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
+/* ★ 底部这条 0~70px 是 HUD 的地盘（快捷栏 44 + 下边距 6 + 血条/饥饿条 ≈ 20）。
+   这里原来写 bottom:60px，触屏键（高 64）就落在 60~124，正好把血条和饥饿条盖住 ——
+   375 宽实测「挖掘/放置/使用/背包」四个键压在爱心上。抬到 HUD 顶边之上。 */
+#touch-controls{position:absolute;inset:auto 0 84px;z-index:9;display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
 #touch-controls>div{display:flex;gap:8px;pointer-events:auto}
 #touch-controls button{
   width:64px;height:64px;padding:0;font-family:inherit;font-size:16px;color:#fff;
@@ -269,6 +315,10 @@ dialog::backdrop{background:transparent}
   display:flex;align-items:center;justify-content:center;
 }
 #touch-controls button:active{background:rgba(255,255,255,.35)}
+/* 跳跃键：和动作键区分开（基岩版的跳跃也长得不一样），
+   不然一排五个方按钮里认不出哪个是跳。 */
+#touch-controls .touch-jump{background:rgba(40,110,60,.5);border-color:rgba(190,255,200,.85);font-size:20px}
+#touch-controls .touch-jump:active{background:rgba(150,255,180,.4)}
 
 /* 窄屏整体缩小，保证背包不溢出 */
 /* ★ 这里必须写 button.mc-btn 而不是 button：基础规则是 button.mc-btn{width:400px}，
@@ -282,7 +332,7 @@ dialog::backdrop{background:transparent}
   /* 触屏键：3 个移动键 + 4 个动作键，64px 时总共需要 ≈516px，375 屏塞不下，
      右边「使用/背包」会被挤出屏幕。窄屏缩到 44px（Apple 最小可点尺寸），
      总宽 3*44+4*44+间距 ≈ 354px，刚好放得下一行。 */
-  #touch-controls{padding:0 8px;bottom:58px;gap:6px}
+  #touch-controls{padding:0 8px;bottom:104px;gap:6px}
   #touch-controls>div{gap:6px}
   #touch-controls button{width:44px;height:44px;font-size:11px;border-width:1px}
   /* 底部版本文本是 left:-100px;width:600px 的绝对定位（模拟原版底栏比菜单宽），
@@ -293,4 +343,12 @@ dialog::backdrop{background:transparent}
 @media (max-height:520px){
   .inv-root{transform:scale(.72)}
   #title-logo{width:300px;height:75px}
+}
+
+/* ── 触屏下聊天栏要避开触屏键 ──
+   ★ 手机实测：黄色系统提示和底部「挖掘 / 放置 / 使用 / 背包」四个键叠在一起，两行字都糊了。
+   触屏键顶边 = bottom + 按钮高度：宽屏 84+64=148，窄屏 104+44=148（两者巧合相同），
+   所以聊天栏底边统一抬到 156px，留 8px 缝。改触屏键高度时这条要跟着改。 */
+@media (pointer:coarse){
+  #chat{bottom:156px}
 }

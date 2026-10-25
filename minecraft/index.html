@@ -7,8 +7,8 @@
   <meta name="description" content="ZFSN 的 2D 方块生存世界：挖掘、合成、建造，浏览器直接游玩。">
   <title>方块世界 · ZFSN</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="../minecraft/style.01e53bf0.css">
-  <script type="module" src="../minecraft/game.2a33a524.js"></script>
+  <link rel="stylesheet" href="../minecraft/style.fa0bf866.css">
+  <script type="module" src="../minecraft/game.50b353b2.js"></script>
 </head>
 <body>
 <main id="game">
@@ -37,18 +37,21 @@
     </div>
   </div>
 
-  <!-- 触屏操作（Java 版没有，这里只在触摸设备显示） -->
+  <!-- 触屏操作（Java 版没有，这里只在触摸设备显示）
+       ★ 跳跃键必须放在整排的最右端，而不是右手组的第一位：
+         5 个按钮一排时，组首位在 375 屏上的中心 x≈145，仍在屏幕左半边，
+         右手拇指要横跨过来够 —— 那就等于没移。放最右端后中心 x≈345。 -->
   <div id="touch-controls" hidden>
     <div class="touch-move">
       <button data-hold="left" aria-label="向左移动">◀</button>
       <button data-hold="right" aria-label="向右移动">▶</button>
-      <button data-hold="jump" aria-label="跳跃">▲</button>
     </div>
     <div class="touch-act">
       <button data-hold="mine">挖掘</button>
       <button id="touch-place">放置</button>
       <button id="touch-use">使用</button>
       <button id="touch-inventory">背包</button>
+      <button data-hold="jump" class="touch-jump" aria-label="跳跃">▲</button>
     </div>
   </div>
 
@@ -100,6 +103,9 @@
         <button class="mc-btn narrow" id="close-inventory">完成</button>
       </div>
     </div>
+    <!-- 手上拿着的物品必须放在 dialog 内部：<dialog> 用 showModal() 打开会进入
+         浏览器 top layer，那一层永远盖住普通元素的 z-index，放在外面会被整个挡住。 -->
+    <div id="held-cursor" hidden aria-hidden="true"></div>
   </dialog>
 
   <!-- ── 熔炉（原版 furnace.png 布局）── -->
@@ -148,11 +154,13 @@
     <div class="mc-panel help-panel">
       <h2>操作说明</h2>
       <ol class="guide">
-        <li><b>移动</b> A / D 或方向键，空格跳跃。按住 Shift 疾跑。</li>
+        <li><b>移动</b> A / D 或方向键，空格跳跃。连按两下左右方向键疾跑。</li>
+        <li><b>潜行</b> 按住 Shift 蹲下：碰撞盒变矮、移动变慢，走到方块边缘也不会掉下去。</li>
         <li><b>挖掘与放置</b> 按住左键挖掘，右键放置。数字 1–9 或滚轮切换快捷栏。</li>
-        <li><b>背包</b> 按 E。2×2 合成格可以手工合成，高级配方需要附近有工作台。点配方书可以一键填充材料。</li>
+        <li><b>背包</b> 按 E。左键整叠拿起／放下，右键拿一半或只放一个；<b>按住左键拖过格子</b>会把手上的方块均分过去，<b>按住右键拖过格子</b>则每格只放一个。2×2 合成格可以手工合成，高级配方需要附近有工作台。</li>
         <li><b>熔炉</b> 靠近放置的熔炉按 F 打开。煤、木板、原木都能当燃料。</li>
-        <li><b>生存</b> 一昼夜 20 分钟。饱食度足够时会缓慢回血，饿死或摔死都会掉落物品。</li>
+        <li><b>聊天与指令</b> 按 T 聊天，按 / 直接进入指令。可用：<code>/gamemode</code> <code>/weather</code> <code>/time</code> <code>/tp</code> <code>/give</code> <code>/clear</code> <code>/spawn</code> <code>/kill</code> <code>/seed</code> <code>/help</code>。</li>
+        <li><b>生存</b> 一昼夜 20 分钟，天气会自己晴雨交替。饱食度足够时会缓慢回血，饿死或摔死都会掉落物品。</li>
         <li><b>调试</b> 按 F3 显示坐标与目标方块。</li>
       </ol>
       <p class="mc-note">独立开发的 2D 单人沙盒，非 Mojang / Microsoft 产品。</p>

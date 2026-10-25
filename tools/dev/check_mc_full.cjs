@@ -94,6 +94,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ── 1. 进游戏 ────────────────────────────────────────────────
   console.log('→ 创建世界（固定种子，便于复现）');
+  // ★ 必须清存档：profile 是复用的，上一次跑完世界会被自动保存下来。
+  //   同一个种子再跑一次会 restore 出「上次已经倒过水 / 挖过方块」的世界，
+  //   水流测试就会因为水面已饱和而误判成"水不流动"。
+  await ev(`localStorage.clear(); true`);
+  await sleep(200);
   await ev(`document.querySelector('#play').click()`);
   await sleep(200);
   await ev(`(()=>{const s=document.querySelector('#seed');s.value='ZFSN-CHECK';})()`);
@@ -184,10 +189,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ── 5. 水流 ─────────────────────────────────────────────────
   console.log('→ 水流模拟');
   const flow = await ev(`(()=>{
-    const w=window.zfsnMC.world, W=384;
+    const w=window.zfsnMC.world, W=w.surface.length;
     const count=()=>w.blocks.reduce((n,v)=>n+(v===17?1:0),0);
-    // 找一块平地，从半空倒一桶水
-    let x=60;while(x<200&&!(w.get(x,w.surface[x])===1&&w.get(x,w.surface[x]-1)===0))x++;
+    // 找一块「同高、开阔、两边都是实心草方块」的平地，从半空倒一桶水。
+    // ★ 两个坑都会让测试误判成「水不流动」：
+    //   1) 世界里有自然生成的橡树，倒在树干/树叶中间会被直接挡住；
+    //   2) stepWater 要求「目标格下方能托住水」才不会横向铺（否则会变成悬空水板），
+    //      所以站在悬崖边倒水只会垂直落下，不会铺开。
+    let x=60;
+    const flat=(xx,y0)=>w.surface[xx]===y0&&w.get(xx,y0)===1&&w.get(xx,y0-1)===0&&w.get(xx,y0-2)===0;
+    while(x<W-40&&!(()=>{const y0=w.surface[x];
+      return flat(x,y0)&&flat(x-2,y0)&&flat(x+2,y0)&&flat(x-4,y0)&&flat(x+4,y0);})())x++;
     const y=w.surface[x]-4;
     const before=count();
     w.setWaterSource(x,y);
@@ -195,7 +207,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     for(let i=0;i<8;i++){w.stepWater();steps.push(count());}
     let maxLevel=0,levels={};
     for(let i=0;i<w.water.length;i++)if(w.blocks[i]===17){levels[w.water[i]]=(levels[w.water[i]]||0)+1;maxLevel=Math.max(maxLevel,w.water[i]);}
-    return {x,y,before,steps,levels,spread:steps[steps.length-1]-before};
+    return {x,y,before,steps,levels,spread:steps[steps.length-1]-before,
+      seed:w.seed,dims:[w.surface.length,w.blocks.length/w.surface.length],
+      atY:w.get(x,y),below:w.get(x,y+1),around:[w.get(x-1,y),w.get(x+1,y),w.get(x-1,y+1),w.get(x+1,y+1)]};
   })()`);
   console.log('   ', JSON.stringify(flow));
   check(flow.spread > 4, '倒水后水体横向/纵向扩散出多格', flow.spread);
