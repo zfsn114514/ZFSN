@@ -11,16 +11,30 @@ const check = (ok, msg, detail) => {
   console.log(`   ${ok ? 'PASS' : 'FAIL'} ${msg}${detail !== undefined ? '  ' + JSON.stringify(detail) : ''}`);
 };
 
-/** 把一只生物放到玩家旁边并朝指定方向站好，返回它的索引信息。 */
+/** 把一只生物放到玩家旁边并朝指定方向站好，返回它的索引信息。
+ *  ★ 先就地削一块 9 列同高的平台：`attack()` 带 3.5 格距离门禁 + `reachable()`
+ *  视线射线，坡地上射线会被地形挡住、attack 直接返回 false，于是整组断言
+ *  测的全是「没打中」——空断言通过的老套路。返回里带上 reach 便于自证。
+ *  ★ 玩家一起挪到同一水平面（脚底 = 平台顶）。 */
 const SETUP = (type, offset, face) => `(()=>{
-  const w=window.zfsnMC.world, p=w.player;
+  const w=window.zfsnMC.world, p=w.player, W=window.zfsnMC.W;
   w.mobs.length=0;
-  const x=Math.floor(p.x)+(${offset});
+  const x=Math.max(8,Math.min(W-9,Math.floor(p.x)+(${offset})));
+  const h=w.surface[x];
+  for(let c=x-4;c<=x+4;c++){
+    for(let dy=0;dy<5;dy++) w.set(c,h-1-dy,0);   // 清空上方
+    w.set(c,h,3);                                 // 地表统一铺石头
+    w.surface[c]=h;
+  }
   const m=w.makeMob('${type}',x,0);
-  m.y=w.surface[Math.max(0,Math.min(window.zfsnMC.W-1,x))]-m.h;
+  m.y=h-m.h;
   m.face=${face}; m.yaw=${face}>0?0.95:-0.95; m.health=20;
   w.mobs.push(m);
-  return {x:m.x,y:m.y,w:m.w,h:m.h};})()`;
+  p.x=(${offset})>0?m.x-2.2:m.x+m.w+2.2;
+  p.y=h-p.h; p.vx=0; p.vy=0;
+  return {x:m.x,y:m.y,w:m.w,h:m.h,px:p.x,py:p.y,
+    dist:+Math.hypot(m.x-p.x,m.y-p.y).toFixed(2),
+    reach:w.reachable(Math.floor(m.x),Math.floor(m.y))};})()`;
 
 /** 页面内采样：每 12ms 记一条，持续 ms 毫秒。 */
 const START_LOG = (ms) => `(()=>{
@@ -111,6 +125,7 @@ async function main() {
     return {ok,vx:m.vx,face:m.face};})()`);
   await sleep(650);
   const log2 = await ev(STOP_LOG);
+  check(hit2.ok === true, '反向攻击命中', hit2);
   check(hit2.vx < 0, '左侧的猪被向左推（−x）', hit2.vx);
   check(hit2.face < 0, '★ 同一时刻脸转向左边', hit2.face);
   const back2 = (log2 || []).filter((f) => Math.abs(f.vx) > 0.25 && Math.sign(f.vx) !== f.face);
@@ -135,13 +150,18 @@ async function main() {
   /* ── ④ 撞墙：被推到墙上时不该来回翻面抖成筛子 ── */
   await ev(`(()=>{const w=window.zfsnMC.world,p=w.player;
     w.mobs.length=0;
-    const x=Math.floor(p.x)+2;
+    const x=Math.floor(p.x)+2, h=w.surface[x];
+    for(let c=x-4;c<=x+4;c++){
+      for(let dy=0;dy<5;dy++) w.set(c,h-1-dy,0);
+      w.set(c,h,3);
+      w.surface[c]=h;
+    }
     const m=w.makeMob('pig',x,0);
-    m.y=w.surface[x]-m.h; m.face=-1; m.yaw=-0.95; m.health=20;
+    m.y=h-m.h; m.face=-1; m.yaw=-0.95; m.health=20;
     w.mobs.push(m);
-    // 在猪右侧堆一堵墙（它会被往右推）
-    const base=Math.floor(w.surface[x]);
-    for(let dy=0;dy<3;dy++)for(let dx=0;dx<2;dx++)w.set(x+2+dx,base-1-dy,3);
+    p.x=m.x-2.2; p.y=h-p.h; p.vx=0; p.vy=0;
+    // 在猪右侧堆一堵 3 格高的墙（它会被往右推，撞上就停）
+    for(let dy=1;dy<=3;dy++)for(let dx=2;dx<=3;dx++)w.set(x+dx,h-dy,3);
     return true;})()`);
   await ev(START_LOG(900));
   await sleep(60);
@@ -157,12 +177,21 @@ async function main() {
   /* ── ⑤ 随机游走的动物：方向也必须与脸一致 ── */
   await ev(`(()=>{const w=window.zfsnMC.world,p=w.player;
     w.mobs.length=0;
-    const x=Math.floor(p.x)-5;
+    const x=Math.floor(p.x)-5, h=w.surface[x];
+    for(let c=x-4;c<=x+4;c++){
+      for(let dy=0;dy<5;dy++) w.set(c,h-1-dy,0);
+      w.set(c,h,3);
+      w.surface[c]=h;
+    }
     const m=w.makeMob('cow',x,0);
-    m.y=w.surface[x]-m.h; m.face=1; m.yaw=0.95; m.health=20; m.clock=2.95;
-    w.mobs.push(m); return true;})()`);
-  await ev(START_LOG(3000));
-  await sleep(3100);
+    m.y=h-m.h; m.face=1; m.yaw=0.95; m.health=20;
+    // clock 压在 3 以下，AI 就不会重新随机方向；vx 手动给一个稳定值
+    m.clock=0.1; m.vx=-0.7;
+    w.mobs.push(m);
+    p.x=m.x+9; p.vx=0; p.vy=0;   // 走开点，别挡住它
+    return {x:m.x,y:m.y};})()`);
+  await ev(START_LOG(2000));
+  await sleep(2100);
   const rlog = await ev(STOP_LOG);
   const rback = (rlog || []).filter((f) => Math.abs(f.vx) > 0.25 && Math.sign(f.vx) !== f.face);
   check(rback.length === 0, '随机游走时零倒走帧', rback.slice(0, 4).map((f) => `t=${f.t} vx=${f.vx} face=${f.face}`));

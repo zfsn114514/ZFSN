@@ -394,11 +394,19 @@ export class World {
     this.remove(input,1);f.input=input;f.result=out;f.progress=0;return true;
   }
   collectSmelt(){const station=this.nearBlock(14),f=station&&this.furnaces[station.key];if(!f?.output)return;const rest=this.add(f.output,f.count);f.count=rest;if(!rest)f.output=null;}
-  makeMob(type,x,y){const size={pig:[1.05,.95,10],cow:[1.2,1.4,10],sheep:[1.1,1.25,8],chicken:[.55,.8,4],zombie:[.65,1.8,20]}[type]||[.65,1.8,20];return{type,x,y,w:size[0],h:size[1],vx:0,vy:0,ground:false,health:size[2],clock:0,face:1,yaw:.65,hurt:0};}
+  makeMob(type,x,y){const size={pig:[1.05,.95,10],cow:[1.2,1.4,10],sheep:[1.1,1.25,8],chicken:[.55,.8,4],zombie:[.65,1.8,20]}[type]||[.65,1.8,20];return{type,x,y,w:size[0],h:size[1],vx:0,vy:0,ground:false,health:size[2],clock:0,face:1,yaw:.65,hurt:0,panic:0};}
   damage(amount,reason){const p=this.player;if(this.mode==='creative'||p.invuln>0||p.health<=0)return;p.health=Math.max(0,p.health-amount);p.invuln=1;this.sound('hurt',p.x,.6);if(!p.health){this.deathReason=reason;for(const s of this.inventory)if(s)this.drop(s.id,s.n,p.x,p.y,s.dur);this.inventory.fill(null);this.notify('你倒下了，物品掉落在原地');}}
   respawn(){const p=this.player;Object.assign(p,{...this.spawn,vx:0,vy:0,health:20,food:20,invuln:3});while(this.collides(p)&&p.y>1)p.y--;this.mining=null;}
   attack(x,y){if(this.attackCooldown>0)return false;const p=this.player;const mob=this.mobs.find(m=>x>=m.x-.4&&x<=m.x+m.w+.4&&y>=m.y-.3&&y<=m.y+m.h+.3&&Math.hypot(m.x-p.x,m.y-p.y)<3.5&&this.reachable(Math.floor(m.x),Math.floor(m.y)));if(!mob)return false;
-    this.attackCooldown=.55;this.swing(.3);mob.health-=ITEMS[this.held()?.id]?.damage??1;mob.hurt=.25;this.sound(mob.type,mob.x,.65);mob.vx=(mob.x>p.x?1:-1)*6;mob.vy=-3;this.wear();if(mob.health<=0){const loot={pig:[['porkchop',2]],cow:[['beef',2],['leather',1]],sheep:[['mutton',2],['white_wool',1]],chicken:[['chicken',1],['feather',1]]}[mob.type]||[];for(const [id,n] of loot)this.drop(id,n,mob.x,mob.y);this.mobs.splice(this.mobs.indexOf(mob),1);}return true;
+    this.attackCooldown=.55;this.swing(.3);mob.health-=ITEMS[this.held()?.id]?.damage??1;mob.hurt=.25;this.sound(mob.type,mob.x,.65);
+    /* 击退：vx 指向远离玩家的方向，**脸必须同一帧跟上**。
+       以前只改 vx 不改 face，模型要等 0.25 秒受伤硬直结束、AI 重新决策时才转身，
+       这半秒里它朝玩家、人却被推远 —— 看起来就是「倒着走路」。
+       另外动物挨打会 panic 逃跑几秒（原版行为），僵尸不跑、继续追。 */
+    const away=mob.x>p.x?1:-1;
+    mob.vx=away*6;mob.vy=-3;mob.face=away;
+    if(mob.type!=='zombie')mob.panic=2.6;
+    this.wear();if(mob.health<=0){const loot={pig:[['porkchop',2]],cow:[['beef',2],['leather',1]],sheep:[['mutton',2],['white_wool',1]],chicken:[['chicken',1],['feather',1]]}[mob.type]||[];for(const [id,n] of loot)this.drop(id,n,mob.x,mob.y);this.mobs.splice(this.mobs.indexOf(mob),1);}return true;
   }
   move(e,dt,fallDamage=false){
     e.ground=false;const inWater=this.get(e.x+e.w/2,e.y+e.h*.65)===17;
@@ -464,11 +472,22 @@ export class World {
          以前这里在末尾按「距玩家 95 格」直接 filter 掉，世界放大后
          等于一走开就把大半张图的动物清空 —— 玩家永远只能在身边看到零星几只。 */
       if(Math.abs(m.x-p.x)>64){m.vx=0;continue;}
-      m.clock+=dt;m.hurt=Math.max(0,m.hurt-dt);
-      // 转身动画：模型 yaw 朝朝向插值，而不是瞬间翻转贴图
+      m.clock+=dt;m.hurt=Math.max(0,m.hurt-dt);m.panic=Math.max(0,(m.panic||0)-dt);
+      /* 决策只回答「往哪走」：挨打后 panic 逃跑 > 僵尸追人 > 随机漫步。
+         ★ 朝向统一在下面由 vx 反推 —— 以前 face 只在这几条分支里顺手更新，
+         于是任何「从外部改了 vx」的动作（击退、被冲走）都会短暂地朝反方向走。 */
+      if(m.panic>0)m.vx=(Math.sign(m.x-p.x)||m.face)*1.9;
+      else if(!m.hurt){
+        const chase=m.type==='zombie'&&Math.abs(m.x-p.x)<26;
+        if(chase)m.vx=Math.sign(p.x-m.x)*1.45;
+        else if(m.clock>3){m.clock=0;m.vx=(this.rng()<.5?0:this.rng()<.5?-1:1)*.7;}
+      }
+      // ★ 不变量：只要在水平移动，脸就朝着移动方向（静止时保持上一次朝向）
+      if(Math.abs(m.vx)>.12)m.face=m.vx>0?1:-1;
+      // 转身动画：模型 yaw 朝朝向插值，而不是瞬间翻转贴图；受伤时转得更快，
+      // 否则被击退的这几帧还在慢慢转，视觉上仍是「倒着漂」
       const wantYaw=m.face>0?0.95:-0.95;
-      m.yaw=(m.yaw??wantYaw)+(wantYaw-(m.yaw??wantYaw))*Math.min(1,dt*9);
-      if(!m.hurt){const chase=m.type==='zombie'&&Math.abs(m.x-p.x)<26;if(chase){m.vx=Math.sign(p.x-m.x)*1.45;m.face=Math.sign(m.vx)||1;}else if(m.clock>3){m.clock=0;m.vx=(this.rng()<.5?0:this.rng()<.5?-1:1)*.7;m.face=Math.sign(m.vx)||m.face;}}
+      m.yaw=(m.yaw??wantYaw)+(wantYaw-(m.yaw??wantYaw))*Math.min(1,dt*(m.hurt>0?20:9));
       if(m.ground&&m.vx&&this.solid(m.x+(m.vx>0?m.w+.2:-.2),m.y+m.h-.2))m.vy=-8;
       if(this.get(m.x+m.w/2,m.y+m.h*.7)===17)m.vy=-2.3;
       this.move(m,dt);

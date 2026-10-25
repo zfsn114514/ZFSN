@@ -93,6 +93,18 @@ id = "43b4e1c0827542dc88da95cce8f3796b"
 # 根本无法校验，**必须**用 `npm run password` 按 100000 轮重设一次。
 PBKDF2_ITERATIONS = 100000
 
+# ══ Turnstile 留言防灌水 ══════════════════════════════════════════
+# 启用步骤：
+#   1. Cloudflare 控制台 → Turnstile → Add site
+#      域名填 www.zfsnnb.dpdns.org（Widget Mode 用 Managed）
+#   2. 把拿到的 Site Key 填到下面 TURNSTILE_SITE_KEY（公开值，可进 git）
+#   3. Secret Key 用 `npx wrangler secret put TURNSTILE_SECRET_KEY`
+#      （保密值，绝不进 git；线上 Worker 读取）
+#   4. 本地 wrangler dev 调试时同理：`npx wrangler dev --var TURNSTILE_SECRET_KEY:xxx`
+# 两个值都配好即生效；留空则前后端都自动跳过，留言流程和从前一样。
+TURNSTILE_SITE_KEY = ""
+# TURNSTILE_SECRET_KEY —— 不要写在这里！用 `wrangler secret put` 配置。
+
 # 时间戳显示用的时区偏移（北京 = +8）。
 # Workers 运行时是 UTC，不偏移的话留言时间会早 8 小时。
 TZ_OFFSET = 8

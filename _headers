@@ -173,7 +173,7 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/minecraft/game.2f7e65b8.js
+/minecraft/game.9ac5199d.js
   Cache-Control: public, max-age=31536000, immutable
 
 /minecraft/style.73525746.css
@@ -185,13 +185,13 @@
 /assets/css/guest-media.c4f8d2a0.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/js/app.a84a1bf0.js
+/assets/js/app.8dcd94c9.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/danmaku.de1add44.js
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/js/appearance.d51a7529.js
+/assets/js/appearance.f98ddc20.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/site-settings-browser.c033daa5.js
@@ -215,13 +215,13 @@
 /assets/css/markdown.32a99c4e.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/cyberpunk.d5599c4b.css
+/assets/css/cyberpunk.6f3551ff.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/nightcity.48b281c3.css
+/assets/css/nightcity.49abc06a.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/deepdive.5c260820.css
+/assets/css/deepdive.aa193172.css
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/css/eldenring.260f6a14.css

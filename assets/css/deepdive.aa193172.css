@@ -36,3 +36,141 @@ footer{margin-left:248px;border-top:1px solid var(--line);font:9px Consolas,mono
 .profile-visual .face.front{opacity:1}.profile-visual .face.back{transform:none;opacity:0;pointer-events:none}
 .profile-visual .avatar-stage.flipped .face.front{opacity:0}.profile-visual .avatar-stage.flipped .face.back{opacity:1}
 .profile-visual .avatar-stage.reveal{opacity:1;transform:none;animation:none;perspective:none}
+
+/* ════════════════════════════════════════════════════════════════════════
+   极致优化层 v2 —— 深潜声呐协议
+   ────────────────────────────────────────────────────────────────────────
+   · 右侧远程声呐：旋转扫掠扇面 + 同心测距环（像潜望镜/声呐屏）
+   · 周期性信号故障：Logo 与大标题每 7s 撕裂一次
+   · 卡片悬停：声呐涟漪 + 提亮；侧栏状态 LED 脉冲
+   · 页脚：深度读数行
+   · 动效受 html[data-motion=off] 与 prefers-reduced-motion 约束
+   ════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --dd-red:#ff405d;
+  --dd-deep:#0d0810;
+}
+
+/* ── 声呐屏：右下角旋转扫掠 + 测距环 ─────────────────────                      */
+.hero::before{
+  content:"";position:absolute;right:-140px;bottom:-120px;z-index:0;
+  width:min(620px,58vw);aspect-ratio:1;pointer-events:none;border-radius:50%;
+  background:
+    radial-gradient(circle,transparent 58%,rgba(255,64,93,.05) 58.5% 59%,transparent 59.5%),
+    radial-gradient(circle,transparent 40%,rgba(255,64,93,.05) 40.5% 41%,transparent 41.5%),
+    radial-gradient(circle,transparent 20%,rgba(255,64,93,.06) 20.5% 21.5%,transparent 22%),
+    repeating-conic-gradient(from 0deg,rgba(255,64,93,.14) 0deg 26deg,transparent 26deg 90deg);
+  mask:radial-gradient(circle,#000 62%,transparent 71%);
+  -webkit-mask:radial-gradient(circle,#000 62%,transparent 71%);
+  animation:dd-radar 14s linear infinite;
+  opacity:.9;
+}
+@keyframes dd-radar{to{transform:rotate(360deg)}}
+/* 声呐屏前景扫掠亮扇（叠在环上） */
+.hero::after{
+  content:"";position:absolute;right:-140px;bottom:-120px;z-index:0;
+  width:min(620px,58vw);aspect-ratio:1;pointer-events:none;border-radius:50%;
+  background:conic-gradient(from 0deg,rgba(255,64,93,.22),transparent 70deg);
+  mask:radial-gradient(circle,#000 62%,transparent 70%);
+  -webkit-mask:radial-gradient(circle,#000 62%,transparent 70%);
+  animation:dd-radar 3.6s linear infinite;
+  mix-blend-mode:screen;
+}
+
+/* ── 周期性信号故障：Logo ─────────────────────────────                        */
+.hero .deepdive-logo{animation:dd-glitch 7s steps(1) infinite}
+@keyframes dd-glitch{
+  0%,93.8%,96.4%,100%{transform:none;filter:none}
+  94%{transform:translateX(-4px) skewX(-4deg);filter:drop-shadow(3px 0 rgba(105,228,234,.8)) drop-shadow(-3px 0 rgba(255,64,93,.8))}
+  95%{transform:translateX(3px);filter:drop-shadow(-4px 0 rgba(105,228,234,.7))}
+  96%{transform:translateX(-2px) skewX(3deg)}
+}
+/* 大标题同步故障 */
+.phead h2{animation:dd-glitch-txt 7s steps(1) infinite}
+@keyframes dd-glitch-txt{
+  0%,93.8%,96.4%,100%{text-shadow:none;transform:none}
+  94%{text-shadow:3px 0 rgba(105,228,234,.75),-3px 0 rgba(255,64,93,.75);transform:translateX(2px)}
+  95%{text-shadow:-3px 0 rgba(105,228,234,.6),3px 0 rgba(255,64,93,.6)}
+  96%{transform:translateX(-1px)}
+}
+
+/* ── 状态 LED：侧栏底部连接状态脉冲 ─────────────────────                      */
+.nav::after{
+  text-shadow:0 0 10px rgba(255,64,93,.25);
+  animation:dd-led 2.4s ease-in-out infinite;
+}
+@keyframes dd-led{0%,100%{opacity:.72}50%{opacity:1}}
+
+/* 顶栏 Logo 五边形：呼吸红光 */
+.topbar .mark .dot{animation:dd-dot 2.8s ease-in-out infinite}
+@keyframes dd-dot{
+  0%,100%{box-shadow:0 0 0 rgba(255,64,93,0)}
+  50%{box-shadow:0 0 14px rgba(255,64,93,.75)}
+}
+
+/* ── 卡片：提亮 + 悬停声呐涟漪 ────────────────────────                        */
+.gitem,.vcard,.sgame,.rcard,.xcard,.gtl-item,.bprofile,.hero .home-about{
+  background:linear-gradient(165deg,rgba(38,16,24,.88),rgba(16,9,14,.94) 60%);
+  border-color:rgba(255,64,93,.34);
+  box-shadow:0 12px 32px rgba(2,2,6,.6),inset 0 1px 0 rgba(255,64,93,.07);
+}
+.gitem:hover,.vcard:hover,.sgame:hover,.rcard:hover,.xcard:hover{
+  border-color:rgba(255,112,130,.75);
+  box-shadow:0 16px 40px rgba(2,2,6,.65),0 0 0 1px rgba(255,64,93,.35),0 0 30px rgba(255,64,93,.14);
+  animation:dd-ping .7s ease-out 1;
+}
+@keyframes dd-ping{
+  0%{box-shadow:0 0 0 0 rgba(255,64,93,.35),0 16px 40px rgba(2,2,6,.65)}
+  100%{box-shadow:0 0 0 18px rgba(255,64,93,0),0 16px 40px rgba(2,2,6,.65)}
+}
+.gitem img,.vcard img,.sgame img,.rcard img,.xcard img{transition:filter .25s}
+.gitem:hover img,.vcard:hover img,.sgame:hover img,.rcard:hover img,.xcard:hover img{filter:saturate(1.12) brightness(1.05)}
+
+/* ── 全屏深海扫描线（极淡） ───────────────────────────                        */
+.vignette::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 4px);
+  opacity:.5;
+}
+/* 缓慢上浮的悬浮颗粒（海雪） */
+.vignette::after{
+  content:"";position:absolute;inset:-12%;pointer-events:none;opacity:.55;
+  background-image:
+    radial-gradient(circle,rgba(255,160,170,.4) 0 1px,transparent 1.5px),
+    radial-gradient(circle,rgba(255,64,93,.28) 0 .8px,transparent 1.3px);
+  background-size:280px 320px,190px 220px;
+  mix-blend-mode:screen;
+  animation:dd-marine 34s linear infinite;
+}
+@keyframes dd-marine{from{transform:translate3d(0,10%,0)}to{transform:translate3d(24px,-10%,0)}}
+
+/* ── 页脚：深度读数 ──────────────────────────────────                        */
+footer::before{
+  content:"DEPTH -3800M // PRESSURE NOMINAL // SONAR ACTIVE";
+  display:block;margin-bottom:14px;
+  font:8px Consolas,monospace;letter-spacing:.3em;color:rgba(255,64,93,.5);
+  animation:dd-led 3.2s ease-in-out infinite;
+}
+
+/* ── 选区 / 焦点 ─────────────────────────────────────                        */
+::selection{background:rgba(255,64,93,.85);color:#12060a}
+:focus-visible{outline:1px dashed var(--dd-red);outline-offset:3px}
+
+/* ── 降级 ───────────────────────────────────────────                        */
+@media (prefers-reduced-motion:reduce){
+  .hero::before,.hero::after,.hero .deepdive-logo,.phead h2,.nav::after,.topbar .mark .dot,.vignette::after,footer::before,.gitem:hover,.vcard:hover,.sgame:hover,.rcard:hover,.xcard:hover{animation:none}
+}
+html[data-motion=off] .hero::before,
+html[data-motion=off] .hero::after,
+html[data-motion=off] .hero .deepdive-logo,
+html[data-motion=off] .phead h2,
+html[data-motion=off] .nav::after,
+html[data-motion=off] .topbar .mark .dot,
+html[data-motion=off] .vignette::after,
+html[data-motion=off] footer::before{animation:none}
+html[data-motion=off] .gitem:hover,
+html[data-motion=off] .vcard:hover,
+html[data-motion=off] .sgame:hover,
+html[data-motion=off] .rcard:hover,
+html[data-motion=off] .xcard:hover{animation:none}

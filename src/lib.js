@@ -366,3 +366,25 @@ export function humanSize(n) {
   if (b < 1073741824) return (b / 1048576).toFixed(1) + " MB";
   return (b / 1073741824).toFixed(2) + " GB";
 }
+
+/* ═══ Turnstile 服务端校验 ════════════════════════════════════════════
+   前端 widget 拿到的 token 一次性有效，拿去和 Cloudflare siteverify
+   换验证结果。secret 未配置时调用方应直接跳过（本地开发零负担）。 */
+export async function verifyTurnstile(secret, token, ip) {
+  if (!secret || !token) return false;
+  try {
+    const body = new URLSearchParams({ secret, response: token });
+    if (ip) body.set("remoteip", ip);
+    const rs = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body
+    });
+    const data = await rs.json();
+    return !!data.success;
+  } catch (_) {
+    // siteverify 网络异常时宁可放行也别把全站留言锁死？——不。
+    // 校验挂了还放行，等于告诉攻击者"打挂 siteverify 就能随便灌"。
+    return false;
+  }
+}

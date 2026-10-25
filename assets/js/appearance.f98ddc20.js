@@ -59,6 +59,9 @@
     root.style.setProperty('--site-background-image', backgroundImage ? 'url("' + backgroundImage + '")' : 'none');
     root.dataset.customBackground = settings.backgroundImage ? 'on' : 'off';
     root.dataset.danmaku = settings.danmaku ? 'on' : 'off';
+    // PWA：手机状态栏/标题栏颜色跟随主题底色
+    var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) themeColorMeta.setAttribute('content', settings.background);
     document.querySelectorAll('.nav button[data-go] > span, .game-main-menu a[data-go] > span').forEach(function(label){
       var key = label.parentElement.dataset.go;
       if (settings.menu && settings.menu[key]) label.textContent = settings.menu[key];

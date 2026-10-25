@@ -12,12 +12,31 @@
 <meta property="og:title" content="ZFSN 的个人主页 · 二次元 / 游戏 / 创作">
 <meta property="og:description" content="ZFSN 的个人主页 —— 二次元 / 游戏 / 创作。B站投稿、Steam 游戏库、作品集与留言弹幕。">
 <meta property="og:url" content="https://www.zfsnnb.dpdns.org/">
-<meta property="og:image" content="https://www.zfsnnb.dpdns.org/assets/avatar.jpg">
+<meta property="og:image" content="https://www.zfsnnb.dpdns.org/assets/branding/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="ZFSN 的个人主页 · 二次元 / 游戏 / 创作">
 <meta name="twitter:description" content="二次元 / 游戏 / 创作 —— B站投稿、Steam 游戏库、作品集与留言弹幕。">
-<meta name="twitter:image" content="https://www.zfsnnb.dpdns.org/assets/avatar.jpg">
+<meta name="twitter:image" content="https://www.zfsnnb.dpdns.org/assets/branding/og-card.jpg">
 <link rel="canonical" href="https://www.zfsnnb.dpdns.org/">
+
+<!-- ══ PWA ════════════════════════════════════════════════════════════
+     manifest 让浏览器"添加到主屏幕"时拥有名字和图标；
+     theme-color 染手机状态栏，appearance.js 会在切主题时同步更新它。 -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#07070b">
+
+<!-- ══ Cloudflare Web Analytics ═══════════════════════════════════════
+     启用方式二选一：
+     A. 控制台一键注入（推荐，零代码）：
+        Cloudflare 控制台 → 该域名 → Analytics & Logs → Web Analytics
+        → Enable（勾选 auto-install，因为本站域名就托管在 CF）。
+     B. 手动贴信标：先去 Web Analytics 添加站点拿到 token，然后
+        取消下面这段注释，把 TOKEN 换成你的 token。
+<script defer>(function(s){var b=document.createElement('script');b.defer=1;b.src='https://static.cloudflareinsights.com/beacon.min.js';b.dataset.cfBeacon=s;document.head.appendChild(b);})('{"token": "把这里换成你的TOKEN"}');</script>
+-->
+
 <!-- RSS 自动发现：浏览器/阅读器插件看到这行就能自动找到订阅地址，
      用户不用手动复制 feed.xml 链接 -->
 <link rel="alternate" type="application/rss+xml" title="ZFSN 的作品" href="/feed.xml">
@@ -97,15 +116,15 @@
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="stylesheet" href="assets/css/app.0d3cb0e8.css">
 <link rel="stylesheet" href="assets/css/markdown.32a99c4e.css">
-<link id="cyberpunk-theme" rel="stylesheet" href="assets/css/cyberpunk.d5599c4b.css" media="not all">
-<link id="nightcity-theme" rel="stylesheet" href="assets/css/nightcity.48b281c3.css" media="not all">
-<link id="deepdive-theme" rel="stylesheet" href="assets/css/deepdive.5c260820.css" media="not all">
+<link id="cyberpunk-theme" rel="stylesheet" href="assets/css/cyberpunk.6f3551ff.css" media="not all">
+<link id="nightcity-theme" rel="stylesheet" href="assets/css/nightcity.49abc06a.css" media="not all">
+<link id="deepdive-theme" rel="stylesheet" href="assets/css/deepdive.aa193172.css" media="not all">
 <link id="eldenring-theme" rel="stylesheet" href="assets/css/eldenring.260f6a14.css" media="not all">
 <link rel="stylesheet" href="assets/css/site-experience.70ccfd78.css">
 <link rel="stylesheet" href="assets/css/guestbook-themes.36e66c77.css">
 <link rel="stylesheet" href="assets/css/visitor-theme.b00d998c.css">
 <script src="assets/js/site-settings-browser.c033daa5.js"></script>
-<script src="assets/js/appearance.d51a7529.js"></script>
+<script src="assets/js/appearance.f98ddc20.js"></script>
 <link rel="stylesheet" href="assets/css/guest-media.c4f8d2a0.css">
 </head>
 <!-- data-page 标记当前页，供弹幕层判断"是否只在首页显示"。
@@ -581,6 +600,9 @@
 
     <div class="attach-preview" id="gm-preview"></div>
 
+    <!-- Turnstile 人机验证容器：siteKey 下发后由 app.js 渲染，未配置时保持隐藏 -->
+    <div id="gturnstile" class="g-turnstile" hidden></div>
+
     <div class="modal-foot">
       <div class="modal-err" id="gmerr"></div>
       <button class="btn primary" id="gsubmit">发布留言</button>
@@ -592,7 +614,7 @@
   <script defer src="assets/vendor/marked-17.0.1.js"></script>
   <script defer src="assets/vendor/dompurify-3.3.3.js"></script>
   <script defer src="assets/js/markdown.42400e06.js"></script>
-  <script defer src="assets/js/app.a84a1bf0.js"></script>
+  <script defer src="assets/js/app.8dcd94c9.js"></script>
   <script defer src="assets/js/visitor-theme.6ca1e859.js"></script>
   <script defer src="assets/js/guest-media.4168334e.js"></script>
   <script defer src="assets/js/danmaku.de1add44.js"></script>

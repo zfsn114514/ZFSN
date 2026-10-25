@@ -2663,6 +2663,8 @@
     gmerr.textContent = "";
     gmask.classList.add("on");
     document.body.classList.add("locked");
+    // Turnstile：首次打开弹窗才拉取 sitekey + 渲染 widget（未配置则零开销）
+    tsPrepare();
     // 重置附件：之前留的图、录音；避免上次写一半的内容混进来
     pendingImages = [];
     pendingVoice = null;
@@ -2810,6 +2812,43 @@
     $("#gmtext-cnt").textContent = gtext.value.length;
   });
 
+  /* ── Turnstile 人机验证（配置了密钥才启用）──────────────
+     流程：首次打开留言弹窗 → GET /api/turnstile 拿 siteKey
+       → 有 key 才加载 Cloudflare 脚本并渲染 widget；
+       提交时把 token 塞进 body.turnstile，后端拿去 siteverify。
+     未配置（siteKey 为空）时整段逻辑静默，与从前完全一致。 */
+  var tsBox = $("#gturnstile");
+  var tsSiteKey = null, tsWidgetId = null, tsLoading = false, tsScriptLoading = false;
+  function tsToken(){ return tsWidgetId !== null && window.turnstile ? turnstile.getResponse(tsWidgetId) : ""; }
+  function tsReset(){ if (tsWidgetId !== null && window.turnstile) turnstile.reset(tsWidgetId); }
+  window.ZFSNTurnstileReady = function(){ if (tsSiteKey && gmask.classList.contains("on")) tsRender(); };
+  function tsLoadScript(){
+    if (tsScriptLoading) return;
+    tsScriptLoading = true;
+    var s = document.createElement("script");
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=ZFSNTurnstileReady";
+    s.async = 1; s.defer = 1;
+    document.head.appendChild(s);
+  }
+  function tsPrepare(){
+    if (tsSiteKey !== null || tsLoading) return;
+    tsLoading = true;
+    api("/api/turnstile").then(function(d){
+      tsSiteKey = (d && d.siteKey) || "";
+      tsLoading = false;
+      if (tsSiteKey){ tsLoadScript(); if (gmask.classList.contains("on")) tsRender(); }
+    }).catch(function(){ tsLoading = false; });
+  }
+  function tsRender(){
+    if (!tsSiteKey || tsWidgetId !== null || !window.turnstile || !tsBox) return;
+    tsBox.hidden = false;
+    tsWidgetId = turnstile.render(tsBox, {
+      sitekey: tsSiteKey,
+      theme: "dark",
+      language: "zh-cn"
+    });
+  }
+
   gsubmit.addEventListener("click", function(){
     var name = gname.value.trim();
     var text = gtext.value.trim();
@@ -2821,6 +2860,12 @@
     var body = { name: name, text: text };
     if (pendingImages.length) body.images = pendingImages.map(function(x){ return x.dataUrl; });
     if (pendingVoice)         body.voices = [pendingVoice];
+    // Turnstile 已启用时必须带 token（后端没配 secret 会忽略这个字段）
+    if (tsSiteKey){
+      var token = tsToken();
+      if (!token){ gmerr.textContent = "请先完成上方的人机验证"; return; }
+      body.turnstile = token;
+    }
 
     gsubmit.disabled = true;
     gsubmit.textContent = "发布中…";
@@ -2840,6 +2885,8 @@
     }).catch(function(e){
       var msg = e.message || "发布失败";
       gmerr.innerHTML = esc(msg);
+      // 人机验证失败（token 过期/被吃掉）就重置 widget 让访客重验
+      if (/人机验证/.test(msg)) tsReset();
       // 后端连不上时，给出可操作的指引
       if (/未启动|Failed to fetch|NetworkError|Load failed/i.test(msg)){
         gmerr.innerHTML = '无法连接后端服务<br>' +

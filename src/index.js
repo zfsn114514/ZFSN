@@ -613,6 +613,12 @@ async function handleAPI(request, env, ctx, url) {
 
   /* ══ 留言 ══ */
 
+  // Turnstile sitekey 下发：前端据此决定是否渲染人机验证 widget。
+  // 未配置 siteKey 时返回空串，前端整体跳过，零开销。
+  if (p === "/api/turnstile" && method === "GET") {
+    return L.ok({ siteKey: env.TURNSTILE_SITE_KEY || "" });
+  }
+
   if (p === "/api/messages" && method === "GET") {
     const limit = Math.min(Number(url.searchParams.get("limit")) || 200, 500);
     const rs = await env.DB.prepare(
@@ -644,6 +650,13 @@ async function handleAPI(request, env, ctx, url) {
     const text = L.clean(body.text, MAX_TEXT);
     if (!name) return L.fail("请填写名字");
     if (!text) return L.fail("请填写留言内容");
+
+    // Turnstile 人机校验：配置了 TURNSTILE_SECRET_KEY 才启用；
+    // 本地开发 / 未配置时自动跳过，前端也拿不到 siteKey 不会渲染 widget。
+    if (env.TURNSTILE_SECRET_KEY) {
+      const human = await L.verifyTurnstile(env.TURNSTILE_SECRET_KEY, body.turnstile, ip);
+      if (!human) return L.fail("人机验证未通过，请刷新验证后重新发布", 403);
+    }
 
     // 每个 IP 每分钟最多 3 条
     if (!(await L.rateAllow(env, "msg:" + ip, 3, 60 * 1000))) {
