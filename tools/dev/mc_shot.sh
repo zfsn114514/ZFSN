@@ -35,7 +35,9 @@ while [ $i -lt 40 ]; do
 done
 echo "调试端口 :$PORT 就绪"
 
-CDP_PORT=$PORT MC_URL="http://127.0.0.1:$SERVE/minecraft/" "$NODE" "$SCRIPT"
+# MC_URL 可由外部覆盖，指向线上站点做真实环境回归：
+#   MC_URL=https://www.zfsnnb.dpdns.org/minecraft/ sh tools/dev/mc_shot.sh tools/dev/check_mc_full.cjs
+CDP_PORT=$PORT MC_URL="${MC_URL:-http://127.0.0.1:$SERVE/minecraft/}" "$NODE" "$SCRIPT"
 RC=$?
 
 taskkill //F //IM msedge.exe >/dev/null 2>&1

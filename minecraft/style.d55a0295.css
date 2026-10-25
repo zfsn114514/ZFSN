@@ -161,7 +161,7 @@ dialog::backdrop{background:transparent}
 .mc-note{font-size:16px;color:#c0c0c0;text-align:center;margin:8px 0 0}
 
 /* 背包：176×166 设计稿 ×2 = 352×332，背景取 inventory.png 左上角区域 */
-.inv-root{display:flex;align-items:flex-start;gap:12px}
+.inv-root{display:flex;align-items:flex-start;gap:12px;position:relative}
 .inv-panel{
   width:352px;height:332px;padding:0;
   background:url('textures/gui_inventory.png') 0 0/512px 512px no-repeat;
@@ -173,9 +173,13 @@ dialog::backdrop{background:transparent}
 #craft-grid{position:absolute;left:196px;top:36px;display:grid;grid-template-columns:repeat(2,36px);grid-auto-rows:36px}
 #craft-result{position:absolute;left:308px;top:56px;width:36px;height:36px}
 .craft-arrow{position:absolute;left:272px;top:52px;font-size:16px;color:#8b8b8b}
+/* 提示文字挂在面板下方，不能放面板里：hotbar 占到 y=320，面板 332 高、
+   底部只剩 12px，16px 字放在 bottom:4px 会直接压在快捷栏格子上。
+   脱离 flex 流（absolute）避免它变成 .inv-root 的第三列；
+   面板外是 .62 黑遮罩，字色必须转浅才看得见。 */
 #slot-description{
-  position:absolute;left:0;right:0;bottom:4px;text-align:center;
-  font-size:16px;color:#404040;margin:0;
+  position:absolute;left:0;right:0;top:calc(100% + 10px);text-align:center;
+  font-size:16px;color:#c0c0c0;margin:0;
 }
 .recipe-panel{width:300px;height:332px;display:flex;flex-direction:column;gap:6px}
 .recipe-panel h2{flex:0 0 auto}
