@@ -145,7 +145,7 @@ export class World {
   constructor(seed='ZFSN',mode='survival'){
     this.seed=String(seed);this.mode=mode;const terrain=generate(this.seed);this.blocks=terrain.blocks;this.surface=terrain.surface;
     this.natural=terrain.natural;
-    this.spawn={x:40,y:this.surface[40]-2};this.player={...this.spawn,w:.65,h:1.8,vx:0,vy:0,ground:false,health:20,food:20,invuln:0,face:1,crouch:false};
+    this.spawn={x:40,y:this.surface[40]-2};this.player={...this.spawn,w:.65,h:1.8,vx:0,vy:0,ground:false,health:20,food:20,invuln:0,face:1,crouch:false,swing:0,swingDur:.26};
     this.inventory=Array(36).fill(null);this.craftGrid=Array(4).fill(null);
     // 工作台 3×3 与背包 2×2 是两个独立容器（原版就是这样，互不串味）
     this.tableGrid=Array(9).fill(null);
@@ -281,11 +281,18 @@ export class World {
     return true;
   }
   wear(){if(this.mode==='creative')return;const slot=this.held();if(slot?.dur&&--slot.dur<=0){this.notify(`${ITEMS[slot.id].name} 已损坏`);this.sound('break_tool',this.player.x,.6);this.inventory[this.selected]=null;}}
+  /** 触发一次挥臂（放置/攻击/吃东西/挖穿最后一下）。
+   *  ★ 已经在挥的时候不重置：连点鼠标会把动作永久卡在第一帧，
+   *    表现成「手一直在最高点抖」。让它自然播完更接近原版。 */
+  swing(dur=.26){const p=this.player;if(p.swing>0)return;p.swing=p.swingDur=dur;}
   drop(id,n,x,y,dur){if(n>0)this.drops.push({id,n,x,y,w:.3,h:.3,vx:(this.rng()-.5)*2,vy:-3,age:0,...(dur?{dur}:{})});}
   mine(x,y,dt){
     x=Math.floor(x);y=Math.floor(y);const block=BLOCKS[this.get(x,y)],tool=ITEMS[this.held()?.id];
     if(!block||this.get(x,y)===0||!this.reachable(x,y)||!Number.isFinite(block.hard)){this.mining=null;return;}
-    const key=`${x},${y}`;if(this.mining?.key!==key)this.mining={key,x,y,progress:0};
+    const key=`${x},${y}`;if(this.mining?.key!==key)this.mining={key,x,y,progress:0,swingT:0};
+    // 挖掘是「按住」的连续动作，挥臂相位单独计时（不能用 progress：不同方块硬度不同，
+    // 用 progress 当相位会让石头挥得慢、泥土挥得快）
+    this.mining.swingT=(this.mining.swingT||0)+dt;
     const correct=tool?.tool===block.tool,harvest=!block.tier||(correct&&tool.tier>=block.tier);
     const seconds=this.mode==='creative'?.12:Math.max(.08,block.hard*(harvest?1.5:5)/(correct?tool.speed:1));
     this.mining.progress+=dt/seconds;this.mining.soundClock=(this.mining.soundClock||0)+dt;
@@ -297,18 +304,18 @@ export class World {
       else{const drop=block.drop===undefined?block.id:block.drop;if(drop)this.drop(drop,1,x+.35,y+.35);}
     }
     const furnace=this.furnaces[key];if(furnace){if(furnace.input)this.drop(furnace.input,1,x,y);if(furnace.output)this.drop(furnace.output,furnace.count,x,y);delete this.furnaces[key];}
-    this.mining=null;
+    this.mining=null;this.swing();   // 挖穿的收尾动作
   }
   place(x,y){
     x=Math.floor(x);y=Math.floor(y);const slot=this.held(),item=ITEMS[slot?.id];
-    if(slot?.id==='water_bucket'&&this.reachable(x,y)&&[0,17].includes(this.get(x,y))){this.setWaterSource(x,y);if(this.mode!=='creative')this.inventory[this.selected]={id:'bucket',n:1};this.sound('splash',x,.6);return true;}
-    if(slot?.id==='bucket'&&this.reachable(x,y)&&this.waterSources.has(y*W+x)){this.setWaterSource(x,y,false);if(this.mode!=='creative'){if(slot.n===1)this.inventory[this.selected]={id:'water_bucket',n:1};else{slot.n--;if(this.add('water_bucket'))this.drop('water_bucket',1,this.player.x,this.player.y);}}this.sound('splash',x,.5);return true;}
+    if(slot?.id==='water_bucket'&&this.reachable(x,y)&&[0,17].includes(this.get(x,y))){this.setWaterSource(x,y);if(this.mode!=='creative')this.inventory[this.selected]={id:'bucket',n:1};this.sound('splash',x,.6);this.swing();return true;}
+    if(slot?.id==='bucket'&&this.reachable(x,y)&&this.waterSources.has(y*W+x)){this.setWaterSource(x,y,false);if(this.mode!=='creative'){if(slot.n===1)this.inventory[this.selected]={id:'water_bucket',n:1};else{slot.n--;if(this.add('water_bucket'))this.drop('water_bucket',1,this.player.x,this.player.y);}}this.sound('splash',x,.5);this.swing();return true;}
     if(!item?.block||!this.reachable(x,y)||![0,17].includes(this.get(x,y)))return false;
     if(![[x-1,y],[x+1,y],[x,y-1],[x,y+1]].some(([xx,yy])=>this.solid(xx,yy)))return false;
     const rect={x,y,w:1,h:1};if(item.solid!==false&&(overlap(rect,this.player)||this.mobs.some(m=>overlap(rect,m))))return false;
-    this.set(x,y,item.block);this.sound('dig_'+material(item),x,.5);if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;return true;
+    this.set(x,y,item.block);this.sound('dig_'+material(item),x,.5);if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;this.swing();return true;
   }
-  eat(){const slot=this.held(),item=ITEMS[slot?.id];if(!item?.food||this.player.food>=20)return false;this.player.food=Math.min(20,this.player.food+item.food);if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;this.notify('补充了饱食度');this.sound('eat',this.player.x,.6);return true;}
+  eat(){const slot=this.held(),item=ITEMS[slot?.id];if(!item?.food||this.player.food>=20)return false;this.player.food=Math.min(20,this.player.food+item.food);if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;this.notify('补充了饱食度');this.sound('eat',this.player.x,.6);this.swing();return true;}
   smelt(input){
     const station=this.nearBlock(14),out=SMELTS[input];
     if(!station||!out||!this.count(input))return false;
@@ -322,7 +329,7 @@ export class World {
   damage(amount,reason){const p=this.player;if(this.mode==='creative'||p.invuln>0||p.health<=0)return;p.health=Math.max(0,p.health-amount);p.invuln=1;this.sound('hurt',p.x,.6);if(!p.health){this.deathReason=reason;for(const s of this.inventory)if(s)this.drop(s.id,s.n,p.x,p.y,s.dur);this.inventory.fill(null);this.notify('你倒下了，物品掉落在原地');}}
   respawn(){const p=this.player;Object.assign(p,{...this.spawn,vx:0,vy:0,health:20,food:20,invuln:3});while(this.collides(p)&&p.y>1)p.y--;this.mining=null;}
   attack(x,y){if(this.attackCooldown>0)return false;const p=this.player;const mob=this.mobs.find(m=>x>=m.x-.4&&x<=m.x+m.w+.4&&y>=m.y-.3&&y<=m.y+m.h+.3&&Math.hypot(m.x-p.x,m.y-p.y)<3.5&&this.reachable(Math.floor(m.x),Math.floor(m.y)));if(!mob)return false;
-    this.attackCooldown=.55;mob.health-=ITEMS[this.held()?.id]?.damage??1;mob.hurt=.25;this.sound(mob.type,mob.x,.65);mob.vx=(mob.x>p.x?1:-1)*6;mob.vy=-3;this.wear();if(mob.health<=0){const loot={pig:[['porkchop',2]],cow:[['beef',2],['leather',1]],sheep:[['mutton',2],['white_wool',1]],chicken:[['chicken',1],['feather',1]]}[mob.type]||[];for(const [id,n] of loot)this.drop(id,n,mob.x,mob.y);this.mobs.splice(this.mobs.indexOf(mob),1);}return true;
+    this.attackCooldown=.55;this.swing(.3);mob.health-=ITEMS[this.held()?.id]?.damage??1;mob.hurt=.25;this.sound(mob.type,mob.x,.65);mob.vx=(mob.x>p.x?1:-1)*6;mob.vy=-3;this.wear();if(mob.health<=0){const loot={pig:[['porkchop',2]],cow:[['beef',2],['leather',1]],sheep:[['mutton',2],['white_wool',1]],chicken:[['chicken',1],['feather',1]]}[mob.type]||[];for(const [id,n] of loot)this.drop(id,n,mob.x,mob.y);this.mobs.splice(this.mobs.indexOf(mob),1);}return true;
   }
   move(e,dt,fallDamage=false){
     e.ground=false;const inWater=this.get(e.x+e.w/2,e.y+e.h*.65)===17;
@@ -351,6 +358,7 @@ export class World {
   update(dt,controls={}){
     if(this.player.health<=0)return;
     const p=this.player;this.time+=dt;this.elapsed+=dt;this.attackCooldown=Math.max(0,this.attackCooldown-dt);p.invuln=Math.max(0,p.invuln-dt);
+    p.swing=Math.max(0,p.swing-dt);
     this.weatherTimer-=dt;
     if(this.weatherTimer<=0){
       this.weatherTimer=200+this.rng()*260;
@@ -477,18 +485,44 @@ export class World {
 // 渲染时逐面做背面剔除 + 深度排序，再正投影（绕 Y 转朝向、绕 X 微俯）。
 // 这才是「立体生物」：以前 render() 走的是扁平的 skin()，把皮肤图上的
 // 几个矩形硬拼在一起，所以猪会断成两截，别的生物根本看不出是什么。
-export function entityMesh(type,time=0,velocity=0){
+/** 史蒂夫的右臂角度（弧度，绕 X 轴，负值=向前抬）。
+ *  swing 为 null 时走普通走路摆臂；否则是 0..1 的挥击进度，走一条「抬起→落下」的正弦。
+ *  ★ 这个函数被 entityMesh 和 drawEntity 两边用：手上物品要挂到手臂末端，
+ *    两边算出的角度必须完全一致，否则挥手时物品会跟手脱开。
+ *  ★ 静止时留 -0.3 的前倾：手臂完全垂着的话，手上的物品会正正压在大腿上，
+ *    看起来像贴在腿上而不是握着。 */
+const ARM_REST=-0.3, ARM_LIFT=1.42;
+export function steveArmAngle(time=0,velocity=0,swing=null){
+  const walk=Math.sin(time*9)*Math.min(1,Math.abs(velocity)/2)*.65;
+  if(swing!=null)return ARM_REST-Math.sin(swing*Math.PI)*ARM_LIFT;
+  return ARM_REST+walk;
+}
+/** 手臂在模型坐标系里的两个关节点：肩 [-6,24,0]、手 [-6,12,0]（长度 12）。
+ *  ★ 为什么是 x=-6 而不是 +6：yaw≈0.95 时 rot() 把 +x 转到「负 z」＝远离镜头，
+ *    -x 才是朝向观众的那条手臂（它的贴图 [40,16] 也正是原版 64×64 布局里的「右臂」）。
+ *    动错了那条的话，手臂在挥、但被身体挡着看不见，手上的物品也会被躯干盖住。 */
+const STEVE_ARM={x:-6,shoulder:24,len:12};
+/** 手在模型坐标系里的位置（已绕肩旋转）。 */
+export function steveHand(a){
+  return{x:STEVE_ARM.x,y:STEVE_ARM.shoulder-STEVE_ARM.len*Math.cos(a),z:-STEVE_ARM.len*Math.sin(a)};
+}
+
+export function entityMesh(type,time=0,velocity=0,swing=null){
   const boxes=[],walk=Math.sin(time*9)*Math.min(1,Math.abs(velocity)/2)*.65;
   const box=(texture,uv,center,size,angle=0,pivot=center)=>boxes.push({texture,uv,center,size,angle,pivot});
   if(type==='steve'||type==='zombie'){
     const zombie=type==='zombie',armSwing=zombie?-1.35:0;
+    // 右手（朝镜头那条，x=-6）：拿东西、挖、打都用这只手。
+    // ★ 必须无条件走 steveArmAngle：物品的位置也是它算的，两处走不同分支
+    //   就会出现「手臂在 0、物品按 -0.3 摆」——手和物品错开半个手臂。
+    const rightArm=zombie?armSwing:steveArmAngle(time,velocity,swing);
     box(type,[0,0],[0,28,0],[8,8,8]);
     box(type,[16,16],[0,18,0],[8,12,4]);
     box(type,[0,16],[-2,6,0],[4,12,4],walk,[-2,12,0]);
     box(type,zombie?[0,16]:[16,48],[2,6,0],[4,12,4],-walk,[2,12,0]);
     // 僵尸两条手臂都平举，贴图都在 (40,16)。以前左臂取的是 (0,16)，
     // 那是腿的位置，于是僵尸身上会多出一截腿肉。
-    box(type,[40,16],[-6,18,0],[4,12,4],zombie?armSwing:-walk,[-6,24,0]);
+    box(type,[40,16],[-6,18,0],[4,12,4],rightArm,[-6,24,0]);
     box(type,zombie?[40,16]:[32,48],[6,18,0],[4,12,4],zombie?armSwing:walk,[6,24,0]);
     if(!zombie)box(type,[32,0],[0,28,0],[8.5,8.5,8.5]);   // 帽子/外套层
   }else if(type==='chicken'){
@@ -531,9 +565,10 @@ export function meshBounds(parts){
   return{lo,hi,height:Math.max(1,hi-lo)};
 }
 
-/** 把一只生物画到画布上。cx = 身体中线屏幕 x，groundY = 脚底屏幕 y。 */
-export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw){
-  const parts=entityMesh(mob.type||'steve',time,mob.vx||0);
+/** 把一只生物画到画布上。cx = 身体中线屏幕 x，groundY = 脚底屏幕 y。
+ *  hold（可选）= {id, swing}：把物品画在右手上，swing 是 0..1 的挥击进度（null=不挥）。 */
+export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw,hold=null){
+  const parts=entityMesh(mob.type||'steve',time,mob.vx||0,hold?hold.swing:null);
   if(!parts.length)return 0;
   const{lo,hi}=meshBounds(parts);
   const scale=heightPx/Math.max(1,hi-lo);
@@ -564,8 +599,30 @@ export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw){
     }
   }
   faces.sort((a,b)=>a.depth-b.depth);
+  // ── 手上的物品 ──
+  // 不走立方体那套：物品在 MC 里本来就是一张 16×16 的平面图。
+  // 位置直接取「手臂末端再往外延伸 25%」，所以挥手时自然跟着手臂走；
+  // 旋转角用肩→手两点的屏幕向量反推，比套用三维角度近似准得多。
+  const proj=(x,y,z)=>{const r=rot(x,y,z);return{x:cx+r.x*scale,y:groundY-(r.y-lo)*scale,z:r.z};};
+  const holdImg=hold?(hold.img||images[hold.id]):null;
+  if(holdImg){
+    const a=steveArmAngle(time,mob.vx||0,hold.swing);
+    const hand=steveHand(a);
+    const sh=proj(STEVE_ARM.x,STEVE_ARM.shoulder,0);
+    const hd=proj(hand.x,STEVE_ARM.shoulder+(hand.y-STEVE_ARM.shoulder)*1.12,hand.z*1.12);
+    faces.push({sprite:holdImg,x:hd.x,y:hd.y,size:11*scale,
+      ang:Math.atan2(hd.y-sh.y,hd.x-sh.x)-Math.PI/2,depth:hd.z+.01});
+  }
   const hurt=(mob.hurt||0)>0;
   for(const f of faces){
+    if(f.sprite){
+      ctx.save();ctx.translate(f.x,f.y);ctx.rotate(f.ang);
+      const s=f.size,img=f.sprite;
+      ctx.drawImage(img,0,0,img.width,img.height,-s/2,-s/2,s,s);
+      if(hurt){ctx.globalCompositeOperation='source-atop';ctx.fillStyle='rgba(255,64,64,.42)';
+        ctx.fillRect(-s/2,-s/2,s,s);ctx.globalCompositeOperation='source-over';}
+      ctx.restore();continue;
+    }
     const[p0,p1,,p3]=f.q,img=f.image;
     let[u,v,w,h]=f.uv;
     // UV 越界就裁到图内：羊的羊毛层、僵尸的平举手臂都可能踩到边缘，
@@ -916,7 +973,13 @@ async function boot(){
     if(playing){
       if(p.invuln>.2&&Math.floor(p.invuln*12)%2)ctx.globalAlpha=.45;
       const pc=Math.round((p.x+p.w/2)*tile-camX),py=Math.round((p.y+p.h)*tile-camY);
-      drawEntity(ctx,images,{...p,type:'steve'},world.elapsed,pc,py,p.h*tile,p.face>0?0.95:-0.95);
+      // 挥臂相位：挖掘时连续循环，其余动作（放置/攻击/吃东西）播一次性动画
+      const swingPhase=world.mining?((world.mining.swingT||0)*2.4)%1
+                      :(p.swing>0?1-p.swing/p.swingDur:null);
+      // 贴图要过一遍 tinted：树叶在原版是灰度图靠生物群系染色，直接取 images 会是一坨灰
+      const heldId=world.held()?.id;
+      drawEntity(ctx,images,{...p,type:'steve'},world.elapsed,pc,py,p.h*tile,p.face>0?0.95:-0.95,
+        {img:heldId?(tinted[heldId]||images[heldId]):null,swing:swingPhase});
       ctx.globalAlpha=1;
     }
 
@@ -1641,6 +1704,11 @@ async function boot(){
   catch(e){notify(e.message);playBtn.disabled=true;continueBtn.disabled=true;}
   bindWorld(world);
   // 给验证脚本留一个只读探针（不影响游戏本身）
-  window.zfsnMC={get world(){return world;},audio,images,drawEntity,entityMesh,W,H,get playing(){return playing;},get held(){return heldItem;},get chatOpen(){return chatOpen;},runCommand,refreshInv(){inventory();hud(true);}};
+  window.zfsnMC={get world(){return world;},audio,images,drawEntity,entityMesh,W,H,steveArmAngle,steveHand,
+    get playing(){return playing;},get held(){return heldItem;},get chatOpen(){return chatOpen;},runCommand,refreshInv(){inventory();hud(true);},
+    /* 世界坐标 → 屏幕像素。探针要靠它把鼠标精确点到某个方块上，
+       不然只能靠猜屏幕位置（相机跟随玩家，位置一直在变）。 */
+    screenOf(wx,wy){return{x:Math.round(wx*tile-camX),y:Math.round(wy*tile-camY)};},
+    get view(){return{camX,camY,tile};}};
   requestAnimationFrame(frame);
 }
