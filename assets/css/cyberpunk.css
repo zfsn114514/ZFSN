@@ -86,3 +86,121 @@ canvas#bg{opacity:.28}.grain{opacity:.016;animation:none}.glow{opacity:.28;backg
 .profile-actions,.portal-label,.terminal-rail{display:flex}
 @media(max-width:1100px){.terminal-tag,.topbar .mark-label{display:none}}
 @media(max-width:760px){.terminal-rail{display:none}.topbar .mark-label{display:inline}}
+
+/* ════════════════════════════════════════════════════════════════════════
+   极致优化层 v2 —— CRT 显示器质感
+   ────────────────────────────────────────────────────────────────────────
+   · 细扫描线 + 缓慢下行的扫描光带 + 极轻的整机闪烁（像老显示器在呼吸）
+   · 黄色荧光字呼吸辉光；选区变荧光黄；方块形终端滚动条
+   · 卡片悬停：信号线点亮 + 抬升 + 荧光描边；按钮悬停：从左到右的填充扫描
+   · 所有动效受 html[data-motion=off] 与 prefers-reduced-motion 约束
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* CRT 细扫描线（常驻，极淡） */
+.vignette::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(2,8,12,.22) 0 1px,transparent 1px 3px);
+  opacity:.55;
+}
+/* 下行扫描光带：每 8s 扫过一整屏 */
+.vignette::after{
+  content:"";position:absolute;left:0;right:0;height:140px;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(105,228,234,.05) 42%,rgba(243,230,0,.07) 50%,rgba(105,228,234,.05) 58%,transparent);
+  animation:cp-scan 8s linear infinite;
+  mix-blend-mode:screen;
+}
+@keyframes cp-scan{from{top:-160px}to{top:110%}}
+/* 整机闪烁：幅度压到 2%，只是"活"的感觉 */
+.vignette{animation:cp-flicker 4.6s steps(60) infinite}
+@keyframes cp-flicker{0%,100%{opacity:1}31%{opacity:.985}32%{opacity:1}67%{opacity:.978}68%{opacity:1}}
+
+/* 荧光黄标题呼吸辉光 */
+.hero .name,.phead h2{
+  animation:cp-glow 5.2s ease-in-out infinite;
+}
+@keyframes cp-glow{
+  0%,100%{text-shadow:0 0 22px rgba(243,230,0,.18)}
+  50%{text-shadow:0 0 34px rgba(243,230,0,.42),0 0 70px rgba(243,230,0,.14)}
+}
+
+/* 顶栏终端标签：闪烁的 REC 光点 */
+.terminal-tag::before{
+  content:"";display:inline-block;width:6px;height:6px;margin-right:8px;
+  background:var(--red);vertical-align:1px;
+  animation:cp-rec 1.6s steps(2) infinite;
+}
+@keyframes cp-rec{0%,60%{opacity:1}61%,100%{opacity:.15}}
+
+/* 打字光标更"终端"：块状 + 闪烁 */
+.caret{animation:cp-caret 1.06s steps(2) infinite}
+@keyframes cp-caret{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+/* 卡片：悬停时信号线点亮 + 荧光描边 + 抬升 */
+.gitem,.vcard,.sgame,.rcard,.xcard,.hero>.links .card,.bprofile{
+  transition:transform .22s cubic-bezier(.2,.9,.3,1.2),border-color .22s,box-shadow .22s;
+}
+.gitem:hover,.vcard:hover,.sgame:hover,.rcard:hover,.xcard:hover,.hero>.links .card:hover{
+  transform:translateY(-4px);
+  border-color:rgba(243,230,0,.55);
+  box-shadow:0 14px 34px rgba(0,0,0,.5),0 0 0 1px rgba(243,230,0,.22),0 0 26px rgba(105,228,234,.10);
+}
+
+/* 按钮：悬停时黄色填充从左向右扫描进来 */
+.btn,.backbtn,.data-refresh,.profile-actions a{
+  position:relative;overflow:hidden;
+  transition:color .18s,border-color .18s,box-shadow .18s;
+}
+.btn::before,.backbtn::before,.data-refresh::before,.profile-actions a::before{
+  content:"";position:absolute;inset:0;z-index:-1;
+  background:linear-gradient(90deg,rgba(243,230,0,.92),rgba(243,230,0,.78));
+  transform:scaleX(0);transform-origin:left;
+  transition:transform .26s cubic-bezier(.3,.8,.3,1);
+}
+.btn:hover,.backbtn:hover,.data-refresh:hover,.profile-actions a:hover{
+  color:#0a0e02;border-color:var(--c1);
+  box-shadow:0 0 24px rgba(243,230,0,.35);
+}
+.btn:hover::before,.backbtn:hover::before,.data-refresh:hover::before,.profile-actions a:hover::before{
+  transform:scaleX(1);
+}
+
+/* 选区：荧光黄 */
+::selection{background:rgba(243,230,0,.9);color:#0a0e02}
+
+/* 滚动条：方块段式，像终端进度条 */
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:#050a10;border-left:1px solid rgba(100,213,225,.15)}
+::-webkit-scrollbar-thumb{
+  background:repeating-linear-gradient(180deg,var(--cyan) 0 6px,rgba(100,213,225,.25) 6px 10px);
+  border:2px solid #050a10;
+}
+::-webkit-scrollbar-thumb:hover{background:repeating-linear-gradient(180deg,var(--c1) 0 6px,rgba(243,230,0,.3) 6px 10px);border:2px solid #050a10}
+*{scrollbar-width:thin;scrollbar-color:var(--cyan) #050a10}
+
+/* 侧边竖排字与页脚：打字机式逐字浮现太贵，改为静态提亮 + 光标尾缀 */
+footer::after{
+  content:"_";
+  display:inline-block;margin-left:6px;
+  color:var(--c1);animation:cp-caret 1.06s steps(2) infinite;
+}
+
+/* 焦点可见性：终端式虚线框 */
+:focus-visible{outline:1px dashed var(--c1);outline-offset:3px}
+
+/* 降级：关动效 / 系统减弱动效时全部静止 */
+html[data-motion=off] .vignette,
+html[data-motion=off] .vignette::after,
+html[data-motion=off] .hero .name,
+html[data-motion=off] .phead h2,
+html[data-motion=off] .terminal-tag::before,
+html[data-motion=off] .caret,
+@media (prefers-reduced-motion:reduce){
+  .vignette,.vignette::after,.hero .name,.phead h2,.terminal-tag::before,.caret,footer::after{animation:none}
+}
+html[data-motion=off] .vignette,
+html[data-motion=off] .vignette::after,
+html[data-motion=off] .hero .name,
+html[data-motion=off] .phead h2,
+html[data-motion=off] .terminal-tag::before,
+html[data-motion=off] .caret,
+html[data-motion=off] footer::after{animation:none}

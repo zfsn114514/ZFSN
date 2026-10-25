@@ -46,3 +46,119 @@ body[data-page=home]>.nav{display:none}#page-home{padding:100px 8vw 70px;min-hei
 @media(min-width:1100px){#page-home{padding-left:9vw}.hero .home-about{position:absolute;right:0;bottom:10px;width:300px;background:rgba(5,15,23,.65);padding:16px;border-top:1px solid rgba(100,201,222,.3)}.profile-visual{bottom:240px;right:0;width:300px}}
 @media(max-width:760px){#page-home{padding:70px 36px 90px}.hero .name{margin:0 0 5px -20px;width:calc(100% + 30px)}#page-home .hero::before{top:-70px;bottom:-90px;left:-14px;width:calc(100% + 28px)}.game-menu-edition{margin-bottom:28px}.game-menu-edition span{font-size:8px}.game-menu-edition strong{font-size:28px}.game-main-menu a{font-size:20px;min-height:43px}.hero .tagline{font-size:8px;margin-bottom:18px}.profile-visual{display:none}.hero .home-about{padding:16px 0}.hero{min-height:700px}}
 @media(prefers-reduced-motion:reduce){.game-main-menu a:hover::before,.game-main-menu a:focus-visible::before{animation:none}}
+
+/* ════════════════════════════════════════════════════════════════════════
+   极致优化层 v2 —— 夜之城的霓虹与雨夜
+   ────────────────────────────────────────────────────────────────────────
+   · 对比度全面提亮：卡片从"糊在背景里"变成清晰的浮层
+   · 黄/青双色系统强化：警示条纹、悬停黄闪、标题双色故障
+   · 下行的全息扫描脉冲 + 卡片悬停时的 RGB 撕裂感
+   · 动效受 html[data-motion=off] 与 prefers-reduced-motion 约束
+   ════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --nc-yellow:#f3e600;--nc-cyan:#75eeec;
+  --nc-card:#0d1e2d;--nc-card-hi:#12263a;
+}
+
+/* ── 对比度提亮：卡片 / 面板 ─────────────────────────                                 */
+.gitem,.vcard,.sgame,.rcard,.xcard,.bprofile,.gtl-item,.stat,.bstat,.sgame,.modal,.hero .home-about,.gfilter{
+  background:linear-gradient(160deg,var(--nc-card-hi),var(--nc-card) 62%);
+  border-color:rgba(117,238,236,.28);
+  box-shadow:0 10px 30px rgba(2,6,10,.55),inset 0 1px 0 rgba(117,238,236,.08);
+}
+.gitem:hover,.vcard:hover,.sgame:hover,.rcard:hover,.xcard:hover{
+  border-color:var(--nc-yellow);
+  box-shadow:0 16px 40px rgba(2,6,10,.6),0 0 0 1px rgba(243,230,0,.35),0 0 30px rgba(243,230,0,.12);
+}
+.gitem .t,.vcard .t,.card-title,.wd-title,.wt-t{color:#eaf6f4}
+
+/* ── 页面标题：黄青双色故障阴影 + 警示条纹底边 ───────────────                      */
+.phead{position:relative;padding-bottom:26px}
+.phead h2{
+  text-shadow:
+    2px 0 0 rgba(117,238,236,.55),
+    -2px 0 0 rgba(255,77,92,.45),
+    0 0 34px rgba(243,230,0,.22);
+}
+.phead::after{
+  content:"";position:absolute;left:0;bottom:-1px;height:4px;width:min(340px,60%);
+  background:repeating-linear-gradient(-45deg,var(--nc-yellow) 0 9px,#101318 9px 12px,var(--nc-cyan) 12px 18px,#101318 18px 21px);
+  opacity:.85;
+}
+
+/* ── 全息扫描脉冲：每 7s 自上而下扫过一屏 ────────────────                        */
+.vignette::before{
+  content:"";position:absolute;left:0;right:0;height:190px;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(117,238,236,.045) 45%,rgba(243,230,0,.06) 52%,rgba(117,238,236,.045) 58%,transparent);
+  mix-blend-mode:screen;
+  animation:nc-scan 7s linear infinite;
+}
+@keyframes nc-scan{from{top:-200px}to{top:110%}}
+/* 雨夜微尘：青色噪点轻微漂移 */
+.vignette::after{
+  content:"";position:absolute;inset:-12%;pointer-events:none;opacity:.5;
+  background-image:
+    radial-gradient(circle,rgba(117,238,236,.5) 0 1px,transparent 1.6px),
+    radial-gradient(circle,rgba(243,230,0,.32) 0 .8px,transparent 1.4px);
+  background-size:230px 270px,160px 190px;
+  mix-blend-mode:screen;
+  animation:nc-drift 26s linear infinite alternate;
+}
+@keyframes nc-drift{from{transform:translate3d(0,0,0)}to{transform:translate3d(-60px,42px,0)}}
+
+/* ── 主菜单：黄色斜杠编号 + 悬停故障抖动 ────────────────                        */
+.game-main-menu a{counter-increment:nc-menu}
+.game-main-menu a::after{
+  content:counter(nc-menu,decimal-leading-zero);
+  position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  font:10px Consolas,monospace;letter-spacing:.14em;color:rgba(243,230,0,.5);
+  transition:color .09s;
+}
+.game-main-menu a small{margin-right:34px}
+.game-main-menu a:hover,.game-main-menu a:focus-visible{animation:nc-glitch .22s steps(3) 1}
+.game-main-menu a:hover::after,.game-main-menu a:focus-visible::after{color:#07121b}
+@keyframes nc-glitch{
+  0%{transform:translateX(5px) skewX(0)}
+  40%{transform:translateX(7px) skewX(-6deg)}
+  70%{transform:translateX(4px) skewX(3deg)}
+  100%{transform:translateX(5px) skewX(0)}
+}
+
+/* ── Logo：全息微光呼吸 ───────────────────────────────                        */
+.hero .name .nightcity-logo{
+  animation:nc-holo 4.8s ease-in-out infinite;
+}
+@keyframes nc-holo{
+  0%,100%{filter:drop-shadow(0 0 13px rgba(245,237,0,.07)) drop-shadow(0 0 2px rgba(117,238,236,.12))}
+  50%{filter:drop-shadow(0 0 26px rgba(245,237,0,.20)) drop-shadow(0 0 5px rgba(117,238,236,.3))}
+}
+
+/* ── 卡片悬停：RGB 撕裂 ───────────────────────────────                        */
+.gitem img,.vcard img,.sgame img,.rcard img,.xcard img{transition:filter .2s,transform .3s}
+.gitem:hover img,.vcard:hover img,.sgame:hover img,.rcard:hover img,.xcard:hover img{
+  filter:saturate(1.18) contrast(1.05);
+}
+
+/* ── 页脚：警示条纹顶线 ───────────────────────────────                        */
+footer{position:relative;border-top:0}
+footer::before{
+  content:"";position:absolute;left:0;right:0;top:0;height:3px;
+  background:repeating-linear-gradient(-45deg,rgba(243,230,0,.75) 0 10px,transparent 10px 16px);
+  opacity:.5;
+}
+
+/* ── 选区 / 焦点 ─────────────────────────────────────                        */
+::selection{background:rgba(243,230,0,.92);color:#07121b}
+:focus-visible{outline:1px dashed var(--nc-cyan);outline-offset:3px}
+
+/* ── 降级 ───────────────────────────────────────────                        */
+@media (prefers-reduced-motion:reduce){
+  .vignette::before,.vignette::after,.hero .name .nightcity-logo,.game-main-menu a:hover,.game-main-menu a:focus-visible{animation:none}
+  .game-main-menu a:hover,.game-main-menu a:focus-visible{transform:translateX(5px)}
+}
+html[data-motion=off] .vignette::before,
+html[data-motion=off] .vignette::after,
+html[data-motion=off] .hero .name .nightcity-logo{animation:none}
+html[data-motion=off] .game-main-menu a:hover,
+html[data-motion=off] .game-main-menu a:focus-visible{animation:none;transform:translateX(5px)}
