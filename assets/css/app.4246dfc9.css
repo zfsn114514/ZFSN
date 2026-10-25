@@ -368,7 +368,11 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,[contenteditable
 .card:hover::before{opacity:1}
 .card svg{width:26px;height:26px;flex:0 0 26px;position:relative;transition:transform .35s}
 .card:hover svg{transform:scale(1.14)}
-.card .txt{position:relative;text-align:left}
+/* ★ 卡片文字必须是纵向 flex，只靠主题里的 .hero .card .txt 不够：
+   首页的卡片恰好在 .hero 容器内，所以那三条主题规则掩盖了这个缺口；
+   一旦把同一个 .card 用在 .hero 之外（游戏库页就是），.t / .s 两个
+   span 会退回 inline，标题和副标题挤成一行。基础样式里必须自带。 */
+.card .txt{position:relative;text-align:left;display:flex;flex-direction:column}
 .card .t{font-size:15px;font-weight:600;letter-spacing:.02em}
 .card .s{font-size:11.5px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
 .card .arrow{position:relative;margin-left:auto;color:var(--muted);font-size:17px;transition:transform .35s,color .35s}
@@ -382,6 +386,9 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,[contenteditable
 /* 站内游戏入口：PvZ 用草坪绿 + 向日葵黄，跟 Xbox 的绿区分开（靠黄色图标） */
 .card.pvz{--c:rgba(126,200,80,.22);--c2:rgba(126,200,80,.3)}
 .card.pvz svg{color:#c8e85c}
+/* 站内游戏入口：方块世界用钻石青，和 PvZ 的黄绿拉开区分 */
+.card.minecraft{--c:rgba(92,225,207,.20);--c2:rgba(124,186,74,.28)}
+.card.minecraft svg{color:#6fe3c8}
 
 /* ── 卡片 3D 倾斜（鼠标跟随）──
    仅指针精确的设备启用：触摸屏没有 hover，倾斜只会让人困惑，

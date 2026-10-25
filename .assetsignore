@@ -60,9 +60,9 @@ Thumbs.db
 # 本地验证 / 临时目录（headless Chromium 缓存、探测实例等）
 # ⚠ .tmp-v/ 下有 35MB 的 optimization_guide_model_store（Chromium 的模型），
 #   不排除会直接报 "Asset too large" 让 wrangler 起不来。
-.tmp-v/
-.tmp-avif/
-.tmp-cursor/
-.tmp-test/
+# ⚠ 用通配而不是逐个列：写死清单漏一个就会被静默打包进去。
+#   2026-10-25 实测 .tmp-mc 下有 274 MB 的 Chrome profile（CDP 验证用），
+#   wrangler 只会甩一句 Asset too large，不会告诉你是哪个目录撑爆的。
+.tmp-*/
 
 .site-manager/

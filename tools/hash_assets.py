@@ -46,6 +46,7 @@ import common  # noqa: E402
 #   拆出去是为了让 HTML 变小 —— 它每次都要协商缓存（max-age=0），
 #   而 CSS 加了内容哈希后可以 immutable 长缓存，改文案/作品时不用重下样式。
 ASSETS = [
+    "minecraft/game.js", "minecraft/style.css",
     "assets/js/guest-media.js", "assets/css/guest-media.css",
     "assets/js/app.js", "assets/js/danmaku.js", "assets/js/appearance.js",
     "assets/js/site-settings-browser.js", "assets/js/visitor-theme.js",
@@ -57,7 +58,7 @@ ASSETS = [
 ]
 
 # 会被回写的 HTML
-HTML_FILES = ["index.html", "admin/index.html"]
+HTML_FILES = ["index.html", "admin/index.html", "minecraft/index.html"]
 
 HASH_LEN = 8
 

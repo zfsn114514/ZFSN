@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#141d17">
+  <meta name="description" content="ZFSN 的 2D 方块生存世界：探索、采矿、建造和合成，浏览器直接游玩。">
+  <title>方块世界 2D · ZFSN</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="../minecraft/style.fa548f9c.css">
+  <script type="module" src="../minecraft/game.5373bab8.js"></script>
+</head>
+<body>
+  <main id="game">
+    <canvas id="world" aria-label="2D 方块世界，使用 A D 移动、空格跳跃，鼠标挖掘和放置" tabindex="0"></canvas>
+    <header class="game-header">
+      <a href="/" class="brand">Z<span>■</span>FSN <small>ARCADE / 002</small></a>
+      <div class="world-label"><i></i> 方块世界 <span>2D</span></div>
+      <div class="header-actions"><button id="inventory-button" title="背包 E">背包 <kbd>E</kbd></button><button id="pause-button" title="暂停 Esc">Ⅱ <span>菜单</span></button></div>
+    </header>
+    <div id="readout"><span id="biome">OVERWORLD</span><span id="coordinates"></span><span id="clock"></span></div>
+    <div id="target-label"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <div id="hud" hidden><div class="vitals"><div id="health" aria-label="生命值"></div><div id="hunger" aria-label="饥饿值"></div></div><div id="item-name"></div><div id="hotbar" aria-label="快捷栏"></div><div class="key-hint">A D 移动 · SPACE 跳跃 · 左键挖掘 · 右键放置 · E 背包 · F 交互 / 进食</div></div>
+    <div id="touch-controls" hidden><div class="touch-move"><button data-hold="left" aria-label="向左移动">◀</button><button data-hold="right" aria-label="向右移动">▶</button><button data-hold="jump" aria-label="跳跃">↑</button></div><div class="touch-act"><button data-hold="mine">挖掘</button><button id="touch-place">放置</button><button id="touch-use">使用</button></div></div>
+    <section id="start-screen" class="overlay">
+      <div class="title-card"><div class="eyebrow">ZFSN ORIGINAL WEB EXPERIENCE</div><h1>方块世界<span>IN TWO DIMENSIONS.</span></h1><p class="intro">从第一块木头开始，<br>建造属于你的世界。</p><div class="title-divider"></div><p class="features">原版像素贴图 <b>·</b> 随机地形 <b>·</b> 生存与创造</p>
+      <button id="continue" class="primary" hidden>继续我的世界 <span>→</span></button>
+      <form id="new-world"><label>世界种子 <input id="seed" maxlength="48" placeholder="留空，开启一场新的冒险" autocomplete="off"></label><div class="mode-choice"><label><input type="radio" name="mode" value="survival" checked> 生存模式</label><label><input type="radio" name="mode" value="creative"> 创造模式</label></div><button class="primary" type="submit">创建世界 <span>→</span></button></form>
+      <div class="start-links"><button id="start-import">导入存档</button><button id="help-button">操作指南</button><a href="/#steam">返回游戏库 ↗</a></div>
+      <p class="legal">非官方同人作品 · 非 Mojang / Microsoft 产品<br>Minecraft 原版贴图 © Mojang / Microsoft · Java 1.21.1</p></div>
+      <div class="scene-caption"><span>01 / THE OVERWORLD</span><p>山野之外，总有新的可能。</p></div>
+    </section>
+    <dialog id="inventory-dialog"><div class="panel-heading"><div><small>INVENTORY & CRAFTING</small><h2>背包与合成</h2></div><button data-close aria-label="关闭背包">×</button></div><p id="station-status"></p><div class="inventory-layout"><section><h3>物品栏 <small>点选两个格子可交换 · 前 9 格为快捷栏</small></h3><div id="slots"></div><p id="slot-description">选择一个格子查看物品。</p><div id="furnace-panel"><h3>熔炉</h3><p id="furnace-status">靠近熔炉后可以冶炼。</p><div class="furnace-actions"><button data-smelt="raw_iron">铁矿 → 铁锭</button><button data-smelt="sand">沙子 → 玻璃</button><button data-smelt="porkchop">生猪排 → 熟猪排</button></div><small>每次投入 1 件材料和燃料，10 秒完成；产物留在熔炉，点击领取。</small><button id="collect-smelt">领取产物</button></div></section><section><h3 id="recipe-title">配方书</h3><div id="recipes"></div></section></div></dialog>
+    <dialog id="pause-dialog"><div class="panel-heading"><div><small>TAKE A BREATH</small><h2>游戏已暂停</h2></div><button data-close aria-label="继续游戏">×</button></div><p id="save-status">世界保存在当前浏览器中。</p><div class="menu-buttons"><button id="resume" class="primary">继续游戏</button><button id="save-button">保存世界</button><button id="export-button">导出存档</button><button id="import-button">导入存档</button><button id="fullscreen-button">切换全屏</button><button id="return-title">返回标题画面</button></div><p class="panel-note">存档按浏览器和域名分别保存，切换设备或从本地转到线上前，请先导出存档。</p></dialog>
+    <dialog id="help-dialog"><div class="panel-heading"><h2>从一块木头开始</h2><button data-close aria-label="关闭指南">×</button></div><ol class="guide"><li><b>采集</b> A / D 或方向键移动，空格跳跃。按住左键挖树，数字 1–9 或滚轮切换物品。</li><li><b>合成</b> 按 E 打开背包：原木 → 木板 → 木棍 / 工作台。放置工作台并站在附近，就能制作工具。</li><li><b>开采</b> 木镐挖石头，石镐挖铁，铁镐挖钻石。工具会消耗耐久，错误工具无法获得矿物。</li><li><b>冶炼</b> 用 8 块圆石合成熔炉，放置后按 F 或打开背包。煤、木板或原木可以作为燃料。</li><li><b>生存</b> 一昼夜为 20 分钟有效游戏时间；新世界约 9 分钟后入夜。打开菜单或背包时世界暂停。注意摔落、饥饿和夜晚的僵尸。手持食物按 F 进食，饱食时会缓慢回血。死亡会掉落物品，可回去拾取。</li><li><b>建造</b> 右键放置选中的方块，需要依附已有方块。火把能照亮洞穴；创造模式有无限方块，可按住跳跃飞行。</li><li><b>手机</b> 点击场景选中目标，再按住“挖掘”或点击“放置”。左下角移动和跳跃；横屏视野更开阔。</li></ol><p class="panel-note">这是独立开发的 2D 单人沙盒。已实现核心采集建造循环；不含联机、红石、下界和 Java 版全部生物、流体系统。</p></dialog>
+    <dialog id="death-dialog"><h2>你重生的地方，故事还在。</h2><p id="death-text"></p><button id="respawn" class="primary">返回出生点</button></dialog>
+    <input type="file" id="import-file" accept=".json,application/json" hidden>
+    <noscript>请开启 JavaScript 以游玩这个游戏。</noscript>
+  </main>
+</body>
+</html>

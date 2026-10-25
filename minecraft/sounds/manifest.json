@@ -1,0 +1,96 @@
+{
+  "click": [
+    "random_click.ogg"
+  ],
+  "hurt": [
+    "damage_hit1.ogg",
+    "damage_hit2.ogg",
+    "damage_hit3.ogg"
+  ],
+  "eat": [
+    "random_eat1.ogg",
+    "random_eat2.ogg"
+  ],
+  "pickup": [
+    "random_pop.ogg"
+  ],
+  "break_tool": [
+    "random_break.ogg"
+  ],
+  "splash": [
+    "liquid_splash.ogg"
+  ],
+  "water": [
+    "liquid_water.ogg"
+  ],
+  "dig_stone": [
+    "dig_stone1.ogg",
+    "dig_stone2.ogg",
+    "dig_stone3.ogg"
+  ],
+  "dig_wood": [
+    "dig_wood1.ogg",
+    "dig_wood2.ogg",
+    "dig_wood3.ogg"
+  ],
+  "dig_grass": [
+    "dig_grass1.ogg",
+    "dig_grass2.ogg",
+    "dig_grass3.ogg"
+  ],
+  "dig_gravel": [
+    "dig_gravel1.ogg",
+    "dig_gravel2.ogg",
+    "dig_gravel3.ogg"
+  ],
+  "dig_sand": [
+    "dig_sand1.ogg",
+    "dig_sand2.ogg",
+    "dig_sand3.ogg"
+  ],
+  "dig_glass": [
+    "random_glass1.ogg",
+    "random_glass2.ogg",
+    "random_glass3.ogg"
+  ],
+  "step_stone": [
+    "step_stone1.ogg",
+    "step_stone2.ogg"
+  ],
+  "step_wood": [
+    "step_wood1.ogg",
+    "step_wood2.ogg"
+  ],
+  "step_grass": [
+    "step_grass1.ogg",
+    "step_grass2.ogg"
+  ],
+  "step_gravel": [
+    "step_gravel1.ogg",
+    "step_gravel2.ogg"
+  ],
+  "step_sand": [
+    "step_sand1.ogg",
+    "step_sand2.ogg"
+  ],
+  "pig": [
+    "mob_pig_say1.ogg",
+    "mob_pig_say2.ogg"
+  ],
+  "cow": [
+    "mob_cow_say1.ogg",
+    "mob_cow_say2.ogg"
+  ],
+  "sheep": [
+    "mob_sheep_say1.ogg",
+    "mob_sheep_say2.ogg"
+  ],
+  "chicken": [
+    "mob_chicken_say1.ogg",
+    "mob_chicken_say2.ogg"
+  ],
+  "zombie": [
+    "mob_zombie_say1.ogg",
+    "mob_zombie_say2.ogg"
+  ]
+}

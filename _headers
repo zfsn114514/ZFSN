@@ -27,6 +27,9 @@
 /admin/
   Content-Type: text/html; charset=utf-8
 
+/minecraft/
+  Content-Type: text/html; charset=utf-8
+
 # ── 图片长缓存 ────────────────────────────────────────────────
 #
 # Workers 的静态资源层默认直接返回文件（**优先于** Worker 代码），
@@ -158,6 +161,12 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
+/minecraft/game.5373bab8.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/minecraft/style.fa548f9c.css
+  Cache-Control: public, max-age=31536000, immutable
+
 /assets/js/guest-media.4168334e.js
   Cache-Control: public, max-age=31536000, immutable
 
@@ -188,7 +197,7 @@
 /assets/js/admin-studio.5db594fe.js
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/app.2f8bb160.css
+/assets/css/app.4246dfc9.css
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/css/markdown.32a99c4e.css
