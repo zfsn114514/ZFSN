@@ -104,18 +104,29 @@ dialog::backdrop{background:transparent}
   position:absolute;left:0;bottom:0;width:364px;height:44px;
   background:url('textures/gui_hotbar.png') 0 0/100% 100% no-repeat;
 }
+/* ★ .slot 绝对不能写 position:absolute —— 那是给 HUD 快捷栏用的，
+   而 #slots / #inv-hotbar / #craft-grid 都是 display:grid。
+   绝对定位的 grid 子项会脱离网格、全部堆在容器左上角：27 格物品栏 + 9 格快捷栏
+   + 4 格合成格全叠成一坨，视觉上"物品叠在一起"，点击也永远只命中同一格
+   → 表现就是"物品拿不起来、放不到别处"。HUD 那边由 slotNode() 内联 absolute。 */
 .slot{
-  position:absolute;width:40px;height:40px;padding:0;border:0;background:transparent;
-  cursor:pointer;display:block;
+  position:relative;width:100%;height:100%;padding:0;border:0;background:transparent;
+  cursor:pointer;display:block;box-sizing:border-box;
 }
-.slot img{position:absolute;left:4px;top:4px;width:32px;height:32px;pointer-events:none}
+/* 36px 格子（原版 18×18 ×2）：32px 图标居中偏移 2px */
+.slot img{position:absolute;left:2px;top:2px;width:32px;height:32px;pointer-events:none}
 .slot .count{
-  position:absolute;right:2px;bottom:-2px;font-size:16px;line-height:1;
-  color:#fff;pointer-events:none;
+  position:absolute;right:2px;bottom:0;font-size:16px;line-height:1;
+  color:#fff;text-shadow:2px 2px 0 #3f3f3f;pointer-events:none;
 }
-.slot .dur{position:absolute;left:4px;bottom:4px;width:32px;height:4px;background:#000;pointer-events:none}
+.slot .dur{position:absolute;left:2px;bottom:2px;width:32px;height:4px;background:#000;pointer-events:none}
 .slot .dur i{display:block;height:100%;background:#3ce63c;font-style:normal}
 .slot:hover{background:rgba(255,255,255,.22)}
+/* HUD 快捷栏是 20×20 格子（×2 = 40），由 slotNode() 内联 left/top 定位 */
+#hotbar .slot{position:absolute;width:40px;height:40px}
+#hotbar .slot img{left:4px;top:4px}
+#hotbar .slot .count{right:3px;bottom:1px}
+#hotbar .slot .dur{left:4px;bottom:5px}
 #hotbar-selection{
   position:absolute;width:48px;height:46px;top:-2px;
   background:url('textures/gui_hotbar_selection.png') 0 0/100% 100% no-repeat;
@@ -167,12 +178,22 @@ dialog::backdrop{background:transparent}
   background:url('textures/gui_inventory.png') 0 0/512px 512px no-repeat;
   box-shadow:none;
 }
-#inv-player{position:absolute;left:52px;top:14px;width:96px;height:128px;image-rendering:pixelated}
-#slots{position:absolute;left:16px;top:168px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
-#inv-hotbar{position:absolute;left:16px;top:284px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
-#craft-grid{position:absolute;left:196px;top:36px;display:grid;grid-template-columns:repeat(2,36px);grid-auto-rows:36px}
-#craft-result{position:absolute;left:308px;top:56px;width:36px;height:36px}
-.craft-arrow{position:absolute;left:272px;top:52px;font-size:16px;color:#8b8b8b}
+#inv-player{position:absolute;left:52px;top:16px;width:96px;height:128px;image-rendering:pixelated}
+/* ★ 坐标全部按「贴图里格子左边框/上边框」量出来再 ×2（见 tools/dev/probe_guigeom.cjs）：
+   物品栏首格边框 x=7,y=83 → 14,166；快捷栏 y=141 → 282。
+   之前写成 16/168 是按「格内」算的，整体偏右下 2px，图标看起来就不在格子正中。 */
+#slots{position:absolute;left:14px;top:166px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#inv-hotbar{position:absolute;left:14px;top:282px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#craft-grid{position:absolute;left:194px;top:34px;display:grid;grid-template-columns:repeat(2,36px);grid-auto-rows:36px}
+#craft-result{position:absolute;left:306px;top:54px;width:36px;height:36px}
+/* 贴图里两个界面都自带箭头图案，HTML 里那个 "→" 元素已经删掉，
+   不要再加回来（会画重） */
+/* 工作台 3×3：同一个 dialog 换贴图 + 换网格位置（gui_crafting.png 里 3×3 首格
+   边框 x=29,y=16 → 58,32；产物格 x=119,y=30 → 238,60）。
+   物品栏/快捷栏两个界面位置相同，所以不用动。 */
+.inv-panel.is-table{background-image:url('textures/gui_crafting.png')}
+.inv-panel.is-table #craft-grid{left:58px;top:32px;grid-template-columns:repeat(3,36px)}
+.inv-panel.is-table #craft-result{left:238px;top:60px}
 /* 提示文字挂在面板下方，不能放面板里：hotbar 占到 y=320，面板 332 高、
    底部只剩 12px，16px 字放在 bottom:4px 会直接压在快捷栏格子上。
    脱离 flex 流（absolute）避免它变成 .inv-root 的第三列；
@@ -182,6 +203,9 @@ dialog::backdrop{background:transparent}
   font-size:16px;color:#c0c0c0;margin:0;
 }
 .recipe-panel{width:300px;height:332px;display:flex;flex-direction:column;gap:6px}
+/* display:flex 会压过 [hidden] 的 display:none，必须显式补一条，
+   否则生存模式下面板"隐藏"了却照样占位。 */
+.recipe-panel[hidden]{display:none}
 .recipe-panel h2{flex:0 0 auto}
 #station-status{flex:0 0 auto;margin:0;font-size:16px;color:#404040;text-shadow:none}
 #recipes{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding-right:4px}

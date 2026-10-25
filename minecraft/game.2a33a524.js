@@ -113,7 +113,10 @@ export class World {
   constructor(seed='ZFSN',mode='survival'){
     this.seed=String(seed);this.mode=mode;const terrain=generate(this.seed);this.blocks=terrain.blocks;this.surface=terrain.surface;
     this.spawn={x:40,y:this.surface[40]-2};this.player={...this.spawn,w:.65,h:1.8,vx:0,vy:0,ground:false,health:20,food:20,invuln:0,face:1};
-    this.inventory=Array(36).fill(null);this.craftGrid=Array(4).fill(null);this.selected=0;this.time=120;this.elapsed=0;this.drops=[];this.mobs=[];this.furnaces={};this.mining=null;this.attackCooldown=0;this.exhaustion=0;this.regen=0;this.mobClock=0;this.gravityClock=0;this.deathReason='';this.revision=0;this.notify=()=>{};
+    this.inventory=Array(36).fill(null);this.craftGrid=Array(4).fill(null);
+    // 工作台 3×3 与背包 2×2 是两个独立容器（原版就是这样，互不串味）
+    this.tableGrid=Array(9).fill(null);
+    this.selected=0;this.time=120;this.elapsed=0;this.drops=[];this.mobs=[];this.furnaces={};this.mining=null;this.attackCooldown=0;this.exhaustion=0;this.regen=0;this.mobClock=0;this.gravityClock=0;this.deathReason='';this.revision=0;this.notify=()=>{};
     this.rng=random(hash(seed)^0xabcd);this.sound=()=>{};this.water=new Uint8Array(W*H);this.waterSources=new Set();this.fluidClock=0;this.stepClock=0;this.ambientClock=0;this.wasInWater=false;
     for(let i=0;i<this.blocks.length;i++)if(this.blocks[i]===17){this.water[i]=8;if(i<W||this.blocks[i-W]!==17)this.waterSources.add(i);}
     if(mode==='creative') ['grass_block_side','dirt','stone','oak_log','oak_planks','glass','torch','crafting_table_front','furnace_front'].forEach(id=>this.add(id,64));
@@ -190,19 +193,36 @@ export class World {
   giveCreative(id){if(this.mode!=='creative'||!ITEMS[id]||['bedrock','water_still'].includes(id))return;this.inventory[this.selected]={id,n:ITEMS[id].stack,...(ITEMS[id].durability?{dur:ITEMS[id].durability}:{})};}
   /* 2×2 合成网格：只认不需要工作台的配方，也就是「拿着就能做」的那几个。
      木板 / 木棍 / 工作台 / 火把 都在这条线上，正好是开局要用的。*/
-  gridNeeds(){const map={};for(const s of this.craftGrid)if(s)map[s.id]=(map[s.id]||0)+1;return map;}
-  findGridRecipe(){
-    const need=this.gridNeeds(),keys=Object.keys(need);
+  // 只按「材料种类 + 数量」匹配，不看摆放形状（简化，但 2×2 能出的配方
+  // 在 3×3 里也成立，3×3 专属配方在 2×2 里数量不够自然匹配不上）。
+  // station 参数：station:true 的配方（镐子/熔炉/桶）只在工作台 3×3 里成立。
+  recipeIn(grid,station=false){
+    const map={};for(const s of grid)if(s)map[s.id]=(map[s.id]||0)+1;
+    const keys=Object.keys(map);
     if(!keys.length)return null;
-    return RECIPES.find(r=>!r.station&&Object.keys(r.needs).length===keys.length&&keys.every(id=>need[id]===r.needs[id]))||null;
+    return RECIPES.find(r=>(station||!r.station)&&Object.keys(r.needs).length===keys.length&&keys.every(id=>map[id]===r.needs[id]))||null;
   }
-  takeGridRecipe(){
-    const recipe=this.findGridRecipe();if(!recipe)return false;
+  findGridRecipe(){return this.recipeIn(this.craftGrid,false);}
+  findTableRecipe(){return this.recipeIn(this.tableGrid,true);}
+  takeRecipe(grid,station=false){
+    const recipe=this.recipeIn(grid,station);if(!recipe)return false;
     const before=structuredClone(this.inventory);
     if(this.add(recipe.out,recipe.n)){this.inventory=before;this.notify('背包已满，先腾出一个格子');return false;}
-    this.craftGrid=Array(4).fill(null);this.sound('click',this.player.x,.4);
+    // 按配方数量扣减，不是整格清空：合成格允许同类叠加，一次全清会吞掉多余材料。
+    for(const[id,need]of Object.entries(recipe.needs)){
+      let left=need;
+      for(let i=0;i<grid.length&&left>0;i++){
+        const s=grid[i];
+        if(s?.id!==id)continue;
+        const use=Math.min(left,s.n);
+        s.n-=use;left-=use;
+        if(s.n<=0)grid[i]=null;
+      }
+    }this.sound('click',this.player.x,.4);
     this.notify(`合成了 ${ITEMS[recipe.out].name} × ${recipe.n}`);return true;
   }
+  takeGridRecipe(){return this.takeRecipe(this.craftGrid,false);}
+  takeTableRecipe(){return this.takeRecipe(this.tableGrid,true);}
   reachable(x,y){
     const p=this.player,dx=x+.5-(p.x+p.w/2),dy=y+.5-(p.y+.7),dist=Math.hypot(dx,dy);
     if(x<0||x>=W||y<0||y>=H||dist>5)return false;
@@ -704,16 +724,29 @@ async function boot(){
     b.onclick=hotbar?()=>{world.selected=index;showItemName();hud(true);}:()=>clickSlot(area,index);
     return b;
   }
-  const stackAt=(area,index)=>area==='inv'?world.inventory[index]:world.craftGrid[index];
-  const setStack=(area,index,stack)=>{if(area==='inv')world.inventory[index]=stack;else world.craftGrid[index]=stack;};
+  // 当前打开的是背包（2×2）还是工作台（3×3），决定合成格指向哪个容器
+  let craftMode='inv';
+  const gridRef=()=>craftMode==='table'?world.tableGrid:world.craftGrid;
+  const stackAt=(area,index)=>area==='inv'?world.inventory[index]:gridRef()[index];
+  const setStack=(area,index,stack)=>{if(area==='inv')world.inventory[index]=stack;else gridRef()[index]=stack;};
   function clickSlot(area,index){
     if(swap&&swap.area===area&&swap.index===index){swap=null;inventory();return;}
     const here=stackAt(area,index);
     if(!swap){
-      if(here){swap={area,index};$('#slot-description').textContent=`已拿起 ${ITEMS[here.id].name} × ${here.n}，再点一个格子放下`;}
-      inventory();return;
+      if(here){swap={area,index};inventory();}
+      return;
     }
     const from=stackAt(swap.area,swap.index),dest=stackAt(area,index);
+    if(!from){swap=null;inventory();hud(true);return;}
+    // ★ 合成格每次只放 1 个：原版合成是按「图案 / 格子」算的，recipeIn() 统计的
+    //   也是格子数。如果一次把整叠 12 个木板塞进 1 格，格子数永远是 1，
+    //   需要 3 格木板的镐子配方就永远匹配不上。剩下的继续留在手上，可以接着点。
+    if(area==='grid'&&!dest&&from.n>1){
+      setStack('grid',index,{id:from.id,n:1,...(from.dur?{dur:from.dur}:{})});
+      from.n-=1;
+      inventory();hud(true);
+      return;
+    }
     if(from&&dest&&from.id===dest.id&&ITEMS[from.id].stack>1){
       const room=ITEMS[from.id].stack-dest.n;
       if(room>0){const move=Math.min(room,from.n);dest.n+=move;from.n-=move;}
@@ -722,7 +755,7 @@ async function boot(){
       setStack(swap.area,swap.index,dest);
       setStack(area,index,from);
     }
-    swap=null;$('#slot-description').textContent='点两个格子可以交换物品。';
+    swap=null;
     inventory();hud(true);
   }
 
@@ -779,12 +812,23 @@ async function boot(){
     drawEntity(invCtx,images,{...world.player,type:'steve'},world.elapsed,48,126,118,.62);
   }
 
-  // ── 背包 / 配方书 ─────────────────────────────────────────────
-  function inventory(){
+  // ── 背包（2×2）/ 工作台（3×3）─────────────────────────────────
+  // 两者共用同一个 dialog：换面板贴图、换格子数、换网格容器即可。
+  // 复制一套 DOM 只会多一份要同步维护的坐标。
+  function inventory(mode){
+    // 切换 2×2 / 3×3 时手上拿的要放回去，否则 swap 会指向另一个容器的越界下标
+    if(mode&&mode!==craftMode){swap=null;craftMode=mode;}
+    const isTable=craftMode==='table';
+    const panel=$('.inv-panel');
+    if(panel)panel.classList.toggle('is-table',isTable);
+    // 工作台界面在原版里没有玩家模型预览
+    const player=$('#inv-player');
+    if(player)player.hidden=isTable;
+    const grid=gridRef();
     $('#slots').replaceChildren(...Array.from({length:27},(_,i)=>slotNode(world.inventory[9+i],'inv',9+i,false)));
     $('#inv-hotbar').replaceChildren(...Array.from({length:9},(_,i)=>slotNode(world.inventory[i],'inv',i,false)));
-    $('#craft-grid').replaceChildren(...Array.from({length:4},(_,i)=>slotNode(world.craftGrid[i],'grid',i,false)));
-    const result=world.findGridRecipe();
+    $('#craft-grid').replaceChildren(...Array.from({length:isTable?9:4},(_,i)=>slotNode(grid[i],'grid',i,false)));
+    const result=isTable?world.findTableRecipe():world.findGridRecipe();
     const out=$('#craft-result');
     out.replaceChildren();
     if(result){
@@ -793,24 +837,29 @@ async function boot(){
       b.append(iconImg(result.out));
       const c=document.createElement('span');c.className='count';c.textContent=result.n;b.append(c);
       b.title=`合成 ${ITEMS[result.out].name}`;
-      b.onclick=()=>{if(world.takeGridRecipe()){inventory();hud(true);}};
+      b.onclick=()=>{if(isTable?world.takeTableRecipe():world.takeGridRecipe()){inventory();hud(true);}};
       out.append(b);
     }
     const table=world.nearBlock(13),furnace=world.nearBlock(14);
-    $('#station-status').textContent=world.mode==='creative'?'创造模式：点物品直接放进快捷栏'
-      :`${table?'✓ 附近有工作台':'附近没有工作台'}${furnace?' · ✓ 附近有熔炉':''}`;
+    // 生存模式要的是原版 176×166 背包：只有 2×2 合成格 + 物品栏，没有侧边列表。
+    // 创造模式才需要物品来源，那块列表只在创造模式露出来。
+    const creative=world.mode==='creative';
+    const side=document.querySelector('.recipe-panel');
+    if(side)side.hidden=!creative;
+    // 文案统一由这里出，clickSlot() 不要再单独写，否则会被这次渲染覆盖掉。
+    const held=swap?stackAt(swap.area,swap.index):null;
+    $('#slot-description').textContent=held
+      ?`已拿起 ${ITEMS[held.id].name} × ${held.n}，再点一个格子放下`
+      :creative?'创造模式：点右侧物品直接放进快捷栏'
+      :isTable?'点物品拿起 · 摆好材料后点产物'
+      :`点物品拿起 · 放进 2×2 格子合成${table?'（点工作台可用 3×3）':''}`;
+    if(!creative)return;
+    $('#station-status').textContent='创造模式：点物品直接放进快捷栏';
     const list=$('#recipes');list.replaceChildren();
-    $('#recipe-title').textContent=world.mode==='creative'?'创造物品栏':'配方书';
-    if(world.mode==='creative'){
-      for(const[id,item]of Object.entries(ITEMS)){
-        if(['bedrock','water_still'].includes(id))continue;
-        list.append(recipeRow(id,item.name,'点击放入快捷栏',false,()=>{world.giveCreative(id);inventory();hud(true);}));
-      }
-    }else{
-      for(const recipe of RECIPES){
-        const need=Object.entries(recipe.needs).map(([id,n])=>`${ITEMS[id].name} ${world.count(id)}/${n}`).join(' · ');
-        list.append(recipeRow(recipe.out,`${ITEMS[recipe.out].name} × ${recipe.n}`,need,!world.canCraft(recipe),()=>{world.craft(recipe);inventory();hud(true);}));
-      }
+    $('#recipe-title').textContent='创造物品栏';
+    for(const[id,item]of Object.entries(ITEMS)){
+      if(['bedrock','water_still'].includes(id))continue;
+      list.append(recipeRow(id,item.name,'点击放入快捷栏',false,()=>{world.giveCreative(id);inventory();hud(true);}));
     }
   }
   function recipeRow(icon,title,sub,disabled,onclick){
@@ -895,7 +944,12 @@ async function boot(){
 
   // ── 菜单按钮 ──────────────────────────────────────────────────
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
-  dialogs.forEach(d=>d.addEventListener('close',()=>{clearInput();canvas.focus();}));
+  dialogs.forEach(d=>d.addEventListener('close',()=>{clearInput();swap=null;canvas.focus();}));
+  // 原版背包没有「完成」按钮，按 E 或点界面外关闭。生存模式下配方书面板（含那个
+  // 完成按钮）是隐藏的，所以必须补上「点界面外关闭」，否则手机端进去就出不来。
+  $('#inventory-dialog').addEventListener('click',(e)=>{
+    if(e.target===e.currentTarget)e.currentTarget.close();
+  });
   $('#help-button').onclick=()=>openDialog($('#help-dialog'));
   $('#close-inventory').onclick=()=>$('#inventory-dialog').close();
   $('#close-furnace').onclick=()=>$('#furnace-dialog').close();
@@ -935,7 +989,7 @@ async function boot(){
     if(paused())return;
     if(world.eat()){hud(true);return;}
     if(world.nearBlock(14)){openFurnace();return;}
-    if(world.nearBlock(13)){inventory();openDialog($('#inventory-dialog'));return;}
+    if(world.nearBlock(13)){inventory('table');openDialog($('#inventory-dialog'));return;}
     notify('手持食物可以进食；靠近工作台或熔炉可以交互');
   }
 
@@ -951,7 +1005,7 @@ async function boot(){
     if(e.code==='KeyE'&&!e.repeat){
       e.preventDefault();
       if($('#inventory-dialog').open)$('#inventory-dialog').close();
-      else if(!paused()){inventory();openDialog($('#inventory-dialog'));}
+      else if(!paused()){inventory('inv');openDialog($('#inventory-dialog'));}
       return;
     }
     if(paused())return;
@@ -978,7 +1032,7 @@ async function boot(){
     if(e.button===2){
       const bx=Math.floor(aim.x),by=Math.floor(aim.y),id=world.get(bx,by);
       if(id===14){openFurnace();return;}
-      if(id===13){inventory();openDialog($('#inventory-dialog'));return;}
+      if(id===13){inventory('table');openDialog($('#inventory-dialog'));return;}
       world.place(aim.x,aim.y);hud(true);return;
     }
     mouseDown=true;canvas.setPointerCapture(e.pointerId);
@@ -997,7 +1051,7 @@ async function boot(){
   });
   $('#touch-place').onclick=()=>{if(aim&&!paused()){world.place(aim.x,aim.y);hud(true);}};
   $('#touch-use').onclick=use;
-  $('#touch-inventory').onclick=()=>{if(playing){inventory();openDialog($('#inventory-dialog'));}};
+  $('#touch-inventory').onclick=()=>{if(playing){inventory('inv');openDialog($('#inventory-dialog'));}};
 
   // ── 主循环 ────────────────────────────────────────────────────
   function frame(now){
@@ -1030,7 +1084,7 @@ async function boot(){
       hudClock=0;
       if(playing)hud();
       if($('#furnace-dialog').open)furnaceUI();   // 只刷熔炉进度，背包按操作刷新
-      if($('#inventory-dialog').open)drawInvPlayer();
+      if($('#inventory-dialog').open&&craftMode!=='table')drawInvPlayer();
     }
     render();
     requestAnimationFrame(frame);
