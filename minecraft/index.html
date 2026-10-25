@@ -29,6 +29,14 @@
   <div id="debug" hidden></div>
   <div id="toast" role="status" aria-live="polite"></div>
 
+  <!-- ── 聊天栏（原版按 T 打开，/ 开头是指令）── -->
+  <div id="chat" hidden>
+    <div id="chat-log" aria-live="polite"></div>
+    <div id="chat-bar" hidden>
+      <input id="chat-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="200" aria-label="聊天输入">
+    </div>
+  </div>
+
   <!-- 触屏操作（Java 版没有，这里只在触摸设备显示） -->
   <div id="touch-controls" hidden>
     <div class="touch-move">
