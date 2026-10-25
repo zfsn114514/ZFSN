@@ -116,12 +116,28 @@ async function main() {
     const g=c.getContext('2d');
     const plain=mc.drawEntity(g,mc.images,{type:'steve'},0,100,180,80,.95);
     const withItem=mc.drawEntity(g,mc.images,{type:'steve'},0,100,180,80,.95,
-      {img:mc.images['wooden_pickaxe'],swing:null});
+      {id:'wooden_pickaxe',img:mc.images['wooden_pickaxe'],swing:null});
     const emptyHand=mc.drawEntity(g,mc.images,{type:'steve'},0,100,180,80,.95,
       {img:null,swing:null});
     return {plain,withItem,emptyHand};})()`);
-  check(faceCounts.withItem === faceCounts.plain + 1, '手上有物品时多画一个面（物品贴图）', faceCounts);
+  check(faceCounts.withItem > faceCounts.plain + 2, '工具有正反面和轮廓厚度（不是单张图标）', faceCounts);
   check(faceCounts.emptyHand === faceCounts.plain, '空手不多画面', faceCounts.emptyHand);
+
+  const sheet = await ev(`(()=>{
+    const mc=window.zfsnMC,c=document.createElement('canvas');c.width=960;c.height=480;
+    const g=c.getContext('2d');g.imageSmoothingEnabled=false;g.fillStyle='#778da4';g.fillRect(0,0,960,480);
+    const ids=['diamond_pickaxe','diamond_axe','diamond_sword','diamond_shovel'];
+    const rows=[];
+    ids.forEach((id,i)=>[-.95,.95].forEach((yaw,j)=>{
+      const faces=mc.drawEntity(g,mc.images,{type:'steve'},0,i*240+120,j*240+205,165,yaw,{id,img:mc.images[id],swing:j?.5:null});
+      rows.push({id,yaw,faces});g.fillStyle='#fff';g.fillText(id,i*240+55,j*240+225);
+    }));
+    const added=['charcoal','stone_bricks','sandstone','iron_block','diamond_block','coal_block','smooth_stone','diamond_axe','diamond_sword','diamond_shovel'];
+    return {png:c.toDataURL(),rows,loaded:added.filter(id=>mc.images[id]?.naturalWidth===16)};
+  })()`);
+  check(sheet.loaded.length===10,'十种新增物品原版贴图全部加载',sheet.loaded);
+  check(sheet.rows.every(r=>r.faces>23),'四种钻石工具左右朝向均绘制立体模型',sheet.rows);
+  fs.writeFileSync(path.join(OUT,'tools-model-sheet.png'),Buffer.from(sheet.png.split(',')[1],'base64'));
 
   // ── 3. 挖掘：真实鼠标按住 → 挥臂相位在推进 ──
   const target = await ev(`(()=>{const w=window.zfsnMC.world,p=w.player;

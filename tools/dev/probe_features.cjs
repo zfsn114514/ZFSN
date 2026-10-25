@@ -69,7 +69,7 @@ async function main() {
       trees:Array.from(w.natural).filter(v=>v===1).length,
       mobs:w.mobs.length};})()`);
   console.log('   ', JSON.stringify(dims));
-  check(dims.W === 640 && dims.H === 160, '★ 世界放大到 640×160（原来 384×144）', [dims.W, dims.H]);
+  check(dims.W === 4096 && dims.H === 256, '★ 世界放大到 4096×256（原来 640×160）', [dims.W, dims.H]);
   check(dims.trees > 200, '新世界里有自然生成的橡树', dims.trees);
   check(dims.mobs >= 16, '生物铺满整张地图，不是只挤在出生点', dims.mobs);
 

@@ -20,3 +20,5 @@ html[data-danmaku=off] #danmaku-layer,html[data-danmaku=off] #danmaku-toggle{dis
 
 .deepdive-logo{display:none}
 html[data-theme=deepdive] .hero .name{width:min(var(--site-logo-size,470px),100%);font-size:inherit}
+.eldenring-logo{display:none}
+html[data-theme=eldenring] .hero .name{width:min(var(--site-logo-size,470px),100%);font-size:inherit}

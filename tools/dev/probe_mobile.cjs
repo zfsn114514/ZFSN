@@ -44,7 +44,7 @@ async function main(){
   //   否则首轮读到 pointer:fine，#touch-controls 一直 hidden。
   await send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
   await send('Emulation.setEmulatedMedia',{features:[{name:'pointer',value:'coarse'},{name:'hover',value:'none'}]});
-  for(const [w,h,label] of [[375,812,'iPhone SE/8'],[390,844,'iPhone 12/13']]){
+  for(const [w,h,label] of [[320,568,'Small phone'],[375,812,'iPhone SE/8'],[390,844,'iPhone 12/13']]){
     // 每轮重载，否则第二轮截到的还是上一轮的游戏画面
     await send('Page.navigate',{url:PAGE});
     await new Promise(r=>setTimeout(r,1500));
@@ -193,6 +193,13 @@ async function main(){
     })()`);
     await shot(`mob-${w}-inv.png`);
     report.push({label,w,phase:'inv',inv});
+    await pressEsc();
+    await evalJS(`(()=>{const w=window.zfsnMC.world,p=w.player;w.set(Math.floor(p.x)+2,Math.floor(p.y),14);return true;})()`);
+    await key('KeyF','f',70);await new Promise(r=>setTimeout(r,200));
+    const furnace=await evalJS(`(()=>{const d=document.querySelector('#furnace-dialog'),p=d.querySelector('.furnace-panel'),wrap=d.querySelector('.furnace-wrap');
+      const r=p.getBoundingClientRect();const b=d.querySelector('#close-furnace');b.scrollIntoView({block:'nearest'});const br=b.getBoundingClientRect();
+      return {open:d.open,left:r.left,right:r.right,recipes:d.querySelectorAll('[data-smelt]').length,closeVisible:br.top>=0&&br.bottom<=innerHeight,overflow:wrap.scrollWidth-wrap.clientWidth};})()`);
+    report.push({w,phase:'furnace',furnace});await shot(`mob-${w}-furnace.png`);
     await send('Emulation.clearDeviceMetricsOverride');
   }
   console.log(JSON.stringify(report,null,2));
@@ -203,6 +210,8 @@ async function main(){
   for(const e of report){
     if(e.phase==='ingame'){
       const g=e.inGame;
+      if(g.barW>e.w) bad.push(`${e.w} 快捷栏宽于实际屏幕 ${g.barW}`);
+      if(g.jump?.right>e.w) bad.push(`${e.w} 跳跃键超出实际屏幕 ${g.jump.right}`);
       check(`${e.w} 进游戏布局正常（快捷栏 ${g.barW}px，触屏键 ${g.touchBtnCount} 个，最窄 ${g.touchMinW}px）`, bad, ()=>{
         if(!g.playing) bad.push(`${e.w} 没进入游戏`);
         if(g.overflowX>0) bad.push(`${e.w} 进游戏后横向溢出 ${g.overflowX}px`);
@@ -219,6 +228,11 @@ async function main(){
         if(g.moveBtns.join(',')!=='left,right') bad.push(`${e.w} 左手组应该只有左右移动，实际 ${JSON.stringify(g.moveBtns)}`);
         if(!g.touchInView) bad.push(`${e.w} 触屏键超出视口`);
       });
+    }
+    if(e.phase==='furnace'){
+      const f=e.furnace;
+      if(!f?.open||f.recipes!==9||f.left<0||f.right>e.w||!f.closeVisible||f.overflow>0)bad.push(`${e.w} 熔炉菜单异常 ${JSON.stringify(f)}`);
+      else ok.push(`${e.w} 九种冶炼入口与关闭按钮可访问`);
     }
     if(e.phase==='jump'){
       check(`${e.w} 触摸跳跃键真的跳起来了（y ${e.before?.y?.toFixed?.(2)} → ${e.during?.y?.toFixed?.(2)}，vy ${e.during?.vy?.toFixed?.(2)}）`, bad, ()=>{
@@ -241,6 +255,7 @@ async function main(){
       check(`${e.w} 背包面板正常（面板宽 ${v.panel?.w}px）`, bad, ()=>{
         if(v.missing) return bad.push(`${e.w} 找不到背包对话框`);
         if(!v.open) return bad.push(`${e.w} 按 E 没打开背包`);
+        if(v.panel && (v.panel.l<0 || v.panel.r>e.w)) bad.push(`${e.w} 背包超出实际屏幕`);
         if(v.fits===false) bad.push(`${e.w} 背包面板超出视口（${v.panel.left}~${v.panel.right}）`);
         if(v.overflowX>0) bad.push(`${e.w} 背包导致横向溢出 ${v.overflowX}px`);
       });
@@ -248,9 +263,9 @@ async function main(){
   }
   for(const l of ok) console.log('   PASS '+l);
   if(bad.length){ console.log('\n=== 问题 ('+bad.length+') ==='); for(const b of bad) console.log('  - '+b); console.log('FAIL'); }
-  else console.log('\nPASS — 手机端 375/390 布局全部通过');
+  else console.log('\nPASS — 手机端 320/375/390 布局全部通过');
   clearInterval(dlg);
   ws.close();
-  process.exit(0);
+  process.exit(bad.length ? 1 : 0);
 }
 main().catch(e=>{console.error('FATAL',e);process.exit(1);});

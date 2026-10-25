@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 220" fill="none">
+  <title>ZFSN — 黄金律法 / The Lands Between</title>
+  <defs>
+    <linearGradient id="erGold" x1="352" y1="30" x2="352" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8ecc9"/>
+      <stop offset=".38" stop-color="#e6c68b"/>
+      <stop offset=".72" stop-color="#b98f4a"/>
+      <stop offset="1" stop-color="#8a6630"/>
+    </linearGradient>
+    <linearGradient id="erRule" x1="120" y1="0" x2="584" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d9b978" stop-opacity="0"/>
+      <stop offset=".2" stop-color="#d9b978" stop-opacity=".55"/>
+      <stop offset=".5" stop-color="#f4e3b6" stop-opacity=".95"/>
+      <stop offset=".8" stop-color="#d9b978" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#d9b978" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="erGlow" x="-30%" y="-60%" width="160%" height="220%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <mask id="erErode">
+      <rect width="700" height="220" fill="#fff"/>
+      <path d="M172 22 158 196m96-190 18 178M320 14l-6 190m92-186-24 180M492 20 470 198" stroke="#000" stroke-width="1.2" opacity=".55"/>
+    </mask>
+  </defs>
+
+  <!-- shattered ring behind the signature -->
+  <g stroke="#d9b978" opacity=".55">
+    <circle cx="352" cy="102" r="94" stroke-width="1.2" stroke-dasharray="360 34 120 44" transform="rotate(-24 352 102)"/>
+    <circle cx="284" cy="116" r="54" stroke-width="1" stroke-dasharray="150 26 80 32" transform="rotate(38 284 116)" opacity=".55"/>
+    <circle cx="352" cy="102" r="112" stroke-width=".7" stroke-dasharray="2 9" opacity=".7"/>
+    <path d="M352 8v18M352 178v18M242 102h18M444 102h18" stroke-width="1.6" opacity=".8"/>
+    <path d="M254 36l11 11M439 156l11 11M450 36l-11 11M265 156l-11 11" stroke-width="1.2" opacity=".6"/>
+  </g>
+
+  <!-- side flourishes -->
+  <g stroke="#d9b978" stroke-width="1.1" opacity=".75" stroke-linecap="round">
+    <path d="M108 106c16 0 26-5 34-14 5-6 12-8 20-8"/>
+    <path d="M108 112c16 0 26 5 34 14 5 6 12 8 20 8"/>
+    <path d="M596 106c-16 0-26-5-34-14-5-6-12-8-20-8"/>
+    <path d="M596 112c-16 0-26 5-34 14-5 6-12 8-20 8"/>
+    <path d="M160 109l7-7 7 7-7 7z" opacity=".9"/>
+    <path d="M540 109l7-7 7 7-7 7z" opacity=".9"/>
+  </g>
+
+  <!-- signature -->
+  <g mask="url(#erErode)">
+    <text x="352" y="136" text-anchor="middle" textLength="404" lengthAdjust="spacing"
+          font-family="Cinzel, Georgia, 'Times New Roman', 'Songti SC', serif"
+          font-size="104" font-weight="500" letter-spacing="4"
+          fill="url(#erGold)" stroke="#120c05" stroke-width="1.1" paint-order="stroke"
+          filter="url(#erGlow)">ZFSN</text>
+  </g>
+
+  <!-- hairline + diamond -->
+  <path d="M120 157h198M382 157h198" stroke="url(#erRule)" stroke-width="1"/>
+  <path d="M352 149l8 8-8 8-8-8z" fill="#0a0805" stroke="#e6c68b" stroke-width="1"/>
+  <path d="M352 153l4 4-4 4-4-4z" fill="#e6c68b" opacity=".9"/>
+  <circle cx="120" cy="157" r="1.6" fill="#d9b978"/><circle cx="584" cy="157" r="1.6" fill="#d9b978"/>
+
+  <!-- subtitle -->
+  <text x="352" y="186" text-anchor="middle" textLength="322" lengthAdjust="spacing"
+        font-family="Georgia, 'Times New Roman', 'Songti SC', serif"
+        font-size="10.5" letter-spacing="3.4" fill="#c9ad78" opacity=".92">THE LANDS BETWEEN</text>
+  <text x="352" y="206" text-anchor="middle"
+        font-family="'Songti SC','STSong','SimSun',serif"
+        font-size="10" letter-spacing="6" fill="#9b8258" opacity=".85">交界地 · 黄金律法</text>
+
+  <!-- fracture scars -->
+  <path d="M196 54 322 150 470 60" stroke="#0a0805" stroke-width="1.6" opacity=".38"/>
+  <path d="M322 150l34-8" stroke="#e6c68b" stroke-width=".8" opacity=".5"/>
+</svg>

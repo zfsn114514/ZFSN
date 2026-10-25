@@ -27,6 +27,9 @@ test('appearance defaults to the original theme and accepts only safe typed sett
   assert.equal(appearanceDefaults().accent, '#ff2d4a');
   assert.equal(validateAppearance(appearanceDefaults('nightcity')).theme, 'nightcity');
   assert.equal(validateAppearance(appearanceDefaults('deepdive')).theme, 'deepdive');
+  assert.equal(validateAppearance(appearanceDefaults('eldenring')).theme, 'eldenring');
+  assert.equal(appearanceDefaults('eldenring').accent, '#d8b46a');
+  assert.equal(appearanceDefaults('eldenring').background, '#0a0805');
   for (const value of [null, {}, { theme: 'custom-css', accent: '#fff000', background: '#000000', motion: true }, { theme: 'classic', accent: 'red;display:none', background: '#000000', motion: true }, { theme: 'classic', accent: '#ffffff', background: '#000000', motion: 'true' }]) {
     assert.throws(() => validateAppearance(value));
   }
@@ -49,6 +52,8 @@ test('public appearance reading, authenticated updates, validation and restorati
   assert.equal((await (await get()).json()).settings.theme, 'nightcity');
   assert.equal((await save(appearanceDefaults('deepdive'), 'test-session')).status, 200);
   assert.equal((await (await get()).json()).settings.theme, 'deepdive');
+  assert.equal((await save(appearanceDefaults('eldenring'), 'test-session')).status, 200);
+  assert.equal((await (await get()).json()).settings.theme, 'eldenring');
   assert.equal((await save(appearanceDefaults(), 'test-session')).status, 200);
   assert.deepEqual((await (await get()).json()).settings, appearanceDefaults());
 });

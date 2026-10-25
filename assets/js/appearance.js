@@ -2,7 +2,9 @@
 (function () {
   'use strict';
   var isPreview = new URLSearchParams(location.search).get('appearance-preview') === '1';
+  var themes = ['classic','cyberpunk','nightcity','deepdive','eldenring'];
   function themeDefaults(theme) {
+    if (theme === 'eldenring') return { theme: theme, accent: '#d8b46a', background: '#0a0805', motion: true };
     if (theme === 'deepdive') return { theme: theme, accent: '#ff6a63', background: '#100b10', motion: true };
     if (theme === 'nightcity') return { theme: theme, accent: '#ff4d5c', background: '#070d16', motion: true };
     return theme === 'cyberpunk'
@@ -20,11 +22,14 @@
   }
   function syncBrand(){
     var theme = document.documentElement.dataset.theme || 'classic';
-    var active = theme === 'nightcity' ? document.getElementById('nightcity-theme') : theme === 'deepdive' ? document.getElementById('deepdive-theme') : null;
+    var active = theme === 'nightcity' ? document.getElementById('nightcity-theme')
+      : theme === 'deepdive' ? document.getElementById('deepdive-theme')
+      : theme === 'eldenring' ? document.getElementById('eldenring-theme') : null;
     var ready = !active || !!active.sheet;
     document.querySelectorAll('.deepdive-logo').forEach(function(logo){logo.hidden = !ready || theme !== 'deepdive';});
     document.querySelectorAll('.nightcity-logo').forEach(function(logo){logo.hidden = !ready || theme !== 'nightcity';});
-    document.querySelectorAll('.name-text').forEach(function(label){label.hidden = ready && (theme === 'deepdive' || theme === 'nightcity');});
+    document.querySelectorAll('.eldenring-logo').forEach(function(logo){logo.hidden = !ready || theme !== 'eldenring';});
+    document.querySelectorAll('.name-text').forEach(function(label){label.hidden = ready && (theme === 'deepdive' || theme === 'nightcity' || theme === 'eldenring');});
     if (active && !ready) active.addEventListener('load', syncBrand, {once:true});
   }
   document.addEventListener('DOMContentLoaded',syncBrand);
@@ -38,6 +43,8 @@
     if (gameStylesheet) gameStylesheet.media = settings.theme === 'nightcity' ? 'all' : 'not all';
     var deepStylesheet = document.getElementById('deepdive-theme');
     if (deepStylesheet) deepStylesheet.media = settings.theme === 'deepdive' ? 'all' : 'not all';
+    var eldenStylesheet = document.getElementById('eldenring-theme');
+    if (eldenStylesheet) eldenStylesheet.media = settings.theme === 'eldenring' ? 'all' : 'not all';
     root.dataset.theme = settings.theme;
     root.dataset.motion = settings.motion ? 'on' : 'off';
     root.style.setProperty('--bg', settings.background);
@@ -62,7 +69,7 @@
   var preferenceKey = 'zfsn_visitor_theme_v1';
   var preferred = null;
   try { preferred = localStorage.getItem(preferenceKey); } catch (_) {}
-  if (!['classic','cyberpunk','nightcity','deepdive'].includes(preferred)) preferred = null;
+  if (!themes.includes(preferred)) preferred = null;
   var site = defaults('classic');
   function effective(){
     if (!preferred || isPreview) return site;
@@ -71,7 +78,7 @@
   }
   function setSite(value){ site = normalize(value); apply(effective()); }
   function chooseTheme(theme){
-    if (theme !== null && !['classic','cyberpunk','nightcity','deepdive'].includes(theme)) return;
+    if (theme !== null && !themes.includes(theme)) return;
     preferred = theme;
     try { if (theme) localStorage.setItem(preferenceKey,theme); else localStorage.removeItem(preferenceKey); } catch (_) {}
     apply(effective());
@@ -82,7 +89,7 @@
     if (preferred) apply(effective());
     window.addEventListener('storage',function(event){
       if (event.key !== preferenceKey && event.key !== null) return;
-      preferred = ['classic','cyberpunk','nightcity','deepdive'].includes(event.newValue) ? event.newValue : null;
+      preferred = themes.includes(event.newValue) ? event.newValue : null;
       apply(effective());
     });
   }

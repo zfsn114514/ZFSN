@@ -1,10 +1,11 @@
+import {CATALOG} from './catalog.js?v=dcbd02b6';
 /* Standalone 2D sandbox. Distances are blocks; simulation uses fixed 60 Hz steps.
  * No server calls, accounts, game-client code, or third-party runtime required. */
 // Simulation time is in SECONDS, not frames: update(1 / 60) advances 1/60 s.
 // A full day therefore takes 72,000 simulation steps (20 minutes of active play).
-// 世界尺寸。原来 384×144 走两步就到头，现在 640×160，地下也更深。
+// 世界尺寸。384×144 → 640×160 → 4096×256（32 屏宽、8 屏高，104 万格）。
 // 改这两个数字必须同步改存档版本（World.restore 会做尺寸迁移）。
-export const W = 640, H = 160, DAY = 20 * 60;
+export const W = 4096, H = 256, DAY = 20 * 60;
 export const BLOCKS = [
   {id:'air',name:'空气',solid:false},
   {id:'grass_block_side',name:'草方块',hard:.6,tool:'shovel',drop:'dirt'},
@@ -25,20 +26,65 @@ export const BLOCKS = [
   {id:'torch',name:'火把',hard:0,solid:false},
   {id:'water_still',name:'水',solid:false,hard:Infinity},
   {id:'white_wool',name:'白色羊毛',hard:.8},
+  {id:'stone_bricks',name:'石砖',hard:1.5,tool:'pickaxe',tier:1},
+  {id:'sandstone',name:'砂岩',hard:.8,tool:'pickaxe',tier:1},
+  {id:'iron_block',name:'铁块',hard:5,tool:'pickaxe',tier:2},
+  {id:'diamond_block',name:'钻石块',hard:5,tool:'pickaxe',tier:3},
+  {id:'coal_block',name:'煤炭块',hard:5,tool:'pickaxe',tier:1},
+  {id:'smooth_stone',name:'平滑石头',hard:2,tool:'pickaxe',tier:1},
 ];
+// Preserve all existing block IDs. New catalogue blocks are append-only in sorted ID order.
+for(const entry of CATALOG)if(entry.cube&&!BLOCKS.some(b=>b.id===entry.id)){
+  const wood=/planks|log|wood|stem|hyphae/.test(entry.id);
+  BLOCKS.push({id:entry.id,name:entry.name,hard:wood?2:1.5,tool:wood?'axe':'pickaxe',tier:wood?0:1});
+}
 export const ITEMS = Object.fromEntries(BLOCKS.slice(1).map((b,i)=>[b.id,{...b,block:i+1,stack:64}]));
 Object.assign(ITEMS,{
-  stick:{name:'木棍'},coal:{name:'煤炭'},raw_iron:{name:'粗铁'},iron_ingot:{name:'铁锭'},diamond:{name:'钻石'},
+  charcoal:{name:'木炭'},stick:{name:'木棍'},coal:{name:'煤炭'},raw_iron:{name:'粗铁'},iron_ingot:{name:'铁锭'},diamond:{name:'钻石'},
   apple:{name:'苹果',food:4},porkchop:{name:'生猪排',food:3},cooked_porkchop:{name:'熟猪排',food:8},
   beef:{name:'生牛肉',food:3},cooked_beef:{name:'牛排',food:8},chicken:{name:'生鸡肉',food:2},cooked_chicken:{name:'熟鸡肉',food:6},mutton:{name:'生羊肉',food:2},cooked_mutton:{name:'熟羊肉',food:6},feather:{name:'羽毛'},leather:{name:'皮革'},egg:{name:'鸡蛋'},bucket:{name:'桶',stack:16},water_bucket:{name:'水桶',stack:1},
 });
 for (const [material,tier,speed,durability] of [['wooden',1,2,59],['stone',2,4,131],['iron',3,6,250],['diamond',4,8,1561]]) {
   for (const [tool,name] of [['pickaxe','镐'],['axe','斧'],['sword','剑'],['shovel','锹']]) {
-    if(material==='diamond'&&tool!=='pickaxe') continue;
     ITEMS[`${material}_${tool}`]={name:({wooden:'木',stone:'石',iron:'铁',diamond:'钻石'})[material]+name,tool,tier,speed,durability,stack:1,damage:tool==='sword'?tier+3:tool==='axe'?tier+2:2};
   }
 }
-for (const [id,item] of Object.entries(ITEMS)) {item.id=id;item.stack??=64;}
+for(const entry of CATALOG){
+  if(!ITEMS[entry.id])ITEMS[entry.id]={name:entry.name,catalogOnly:true};
+  ITEMS[entry.id].category=entry.category;ITEMS[entry.id].cubeIcon=entry.cube;
+  if(/sword|bow|helmet|chestplate|leggings|boots|shield|trident/.test(entry.id))ITEMS[entry.id].category='combat';
+  if(/crafting_table|furnace|chest$|barrel|anvil|enchanting_table|loom|smithing_table|cartography_table|stonecutter/.test(entry.id))ITEMS[entry.id].category='functional';
+}
+for(const [mat,tier,speed,durability]of [['golden',1,12,32],['netherite',5,9,2031]])for(const tool of ['pickaxe','axe','sword','shovel']){
+  const item=ITEMS[`${mat}_${tool}`];if(item)Object.assign(item,{catalogOnly:false,tool,tier,speed,durability,stack:1,damage:tool==='sword'?tier+3:tool==='axe'?tier+2:2});
+}
+for(const [id,food]of Object.entries({bread:5,carrot:3,potato:1,baked_potato:5,beetroot:1,cookie:2,melon_slice:2,sweet_berries:2,glow_berries:2,dried_kelp:1,cod:2,cooked_cod:5,salmon:2,cooked_salmon:6,rabbit:3,cooked_rabbit:5,golden_carrot:6}))if(ITEMS[id])Object.assign(ITEMS[id],{food,catalogOnly:false});
+for(const mob of ['pig','cow','sheep','chicken','zombie'])if(ITEMS[mob+'_spawn_egg'])Object.assign(ITEMS[mob+'_spawn_egg'],{mob,catalogOnly:false});
+/* ── 原版堆叠上限 ──────────────────────────────────────────────
+   绝大多数物品是 64，这里只判定「原版就是 1」的那几类。
+   ★ 上面 47~59 行虽然给工具写死了 stack:1，但两轮循环只覆盖
+     pickaxe/axe/sword/shovel × 6 种材质，且完全没有盔甲 ——
+     剩下的 hoe、盔甲、弓弩、盾、鞘翅等 catalogOnly 物品会落到默认 64，
+     创造栏拿一次就是 64 个钻石胸甲，背包里也能叠成一摞。
+   ★ 判定按 id 模式而不是 category：catalog 的分类有污染
+     （bowl 被分成 equipment，waxed_* 铜块也在 equipment 里），
+     按 category 判定会把这堆可堆叠方块一起误伤成 1。 */
+const STACK_ONE=new Set([
+  'bow','crossbow','trident','shield','elytra','fishing_rod',
+  'carrot_on_a_stick','warped_fungus_on_a_stick','shears','flint_and_steel',
+  'saddle','totem_of_undying','cake','writable_book',
+]);
+function defaultStack(id){
+  if(STACK_ONE.has(id))return 1;
+  if(/_(sword|axe|pickaxe|shovel|hoe)$/.test(id))return 1;                 // 工具与武器
+  if(/_(helmet|chestplate|leggings|boots|horse_armor)$/.test(id))return 1; // 盔甲（含马铠、海龟壳）
+  if(/^(potion|splash_potion|lingering_potion)$/.test(id))return 1;        // 药水原版也叠不了
+  if(/^music_disc_/.test(id))return 1;
+  if(/(^|_)(boat|minecart|bed|shulker_box|stew|soup)$/.test(id))return 1;  // 船/矿车/床/潜影盒/汤
+  if(/_bucket$/.test(id))return 1;                                        // 空桶 16 已在上面单独设过
+  return 64;
+}
+for (const [id,item] of Object.entries(ITEMS)) {item.id=id;item.stack??=defaultStack(id);}
 export const RECIPES = [
   {out:'oak_planks',n:4,needs:{oak_log:1}},
   {out:'stick',n:4,needs:{oak_planks:2}},
@@ -49,18 +95,29 @@ export const RECIPES = [
 ];
 for(const [material,ingredient] of [['wooden','oak_planks'],['stone','cobblestone'],['iron','iron_ingot'],['diamond','diamond']]) {
   for(const [tool,amount,sticks] of [['pickaxe',3,2],['axe',3,2],['sword',2,1],['shovel',1,2]]) {
-    if(material==='diamond'&&tool!=='pickaxe') continue;
     RECIPES.push({out:`${material}_${tool}`,n:1,needs:{[ingredient]:amount,stick:sticks},station:true});
   }
 }
+RECIPES.push(
+  {out:'torch',n:4,needs:{charcoal:1,stick:1}},
+  {out:'stone_bricks',n:4,needs:{stone:4}},
+  {out:'sandstone',n:1,needs:{sand:4}},
+);
+for(const [block,item] of [['iron_block','iron_ingot'],['diamond_block','diamond'],['coal_block','coal']]){
+  RECIPES.push({out:block,n:1,needs:{[item]:9},station:true},{out:item,n:9,needs:{[block]:1}});
+}
+for(const wood of ['spruce','birch','jungle','acacia','dark_oak','mangrove','cherry']){
+  if(ITEMS[wood+'_log']&&ITEMS[wood+'_planks'])RECIPES.push({out:wood+'_planks',n:4,needs:{[wood+'_log']:1}},{out:'stick',n:4,needs:{[wood+'_planks']:2}});
+}
+const FUELS={coal:80,charcoal:80,coal_block:800,oak_planks:15,oak_log:15,stick:5};
 const material=b=>b?.id==='glass'?'glass':b?.id==='sand'?'sand':b?.id==='dirt'?'gravel':b?.tool==='axe'?'wood':b?.tool==='pickaxe'?'stone':'grass';
-const SMELTS={raw_iron:'iron_ingot',sand:'glass',porkchop:'cooked_porkchop',beef:'cooked_beef',chicken:'cooked_chicken',mutton:'cooked_mutton'};
+const SMELTS={potato:'baked_potato',cod:'cooked_cod',salmon:'cooked_salmon',rabbit:'cooked_rabbit',oak_log:'charcoal',cobblestone:'stone',stone:'smooth_stone',raw_iron:'iron_ingot',sand:'glass',porkchop:'cooked_porkchop',beef:'cooked_beef',chicken:'cooked_chicken',mutton:'cooked_mutton'};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const overlap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
 function hash(s){let n=2166136261;for(const c of String(s)) n=Math.imul(n^c.charCodeAt(0),16777619);return n>>>0;}
 function random(seed){let a=seed>>>0;return()=>{a+=0x6D2B79F5;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};}
-/* 存档压缩：blocks / natural / water 都是 W*H = 102400 长的数组。
-   直接 JSON 出来每个数字至少 2 个字符（逗号+数字）→ 一份 200KB 以上，
+/* 存档压缩：blocks / natural / water 都是 W*H = 1048576 长的数组（4096×256）。
+   直接 JSON 出来每个数字至少 2 个字符（逗号+数字）→ 一份 2MB 以上，
    自动保存每 20 秒现算一次会明显卡顿。RLE（值,重复次数）之后地形类数据
    通常只剩几 KB。 */
 function rle(arr){
@@ -73,18 +130,19 @@ function rle(arr){
   out.push(run,count);
   return out;
 }
-function unrle(flat,length){
-  const out=new Uint8Array(length);
-  if(!Array.isArray(flat))return out;
-  let o=0;
-  for(let i=0;i+1<flat.length&&o<length;i+=2){
-    const v=flat[i]|0,n=flat[i+1]|0;
-    for(let k=0;k<n&&o<length;k++)out[o++]=v;
+function unrle(flat,length,Type=Uint16Array){
+  if(!Array.isArray(flat)||flat.length%2)throw Error('存档方块压缩数据损坏');
+  const out=new Type(length);let o=0;
+  for(let i=0;i<flat.length;i+=2){
+    const v=flat[i],n=flat[i+1];
+    if(!Number.isInteger(v)||v<0||v>65535||!Number.isInteger(n)||n<1||o+n>length)throw Error('存档方块压缩数据损坏');
+    out.fill(v,o,o+n);o+=n;
   }
+  if(o!==length)throw Error('存档方块压缩长度损坏');
   return out;
 }
 export function generate(seed){
-  const rng=random(hash(seed)), blocks=new Uint8Array(W*H), surface=new Int16Array(W);
+  const rng=random(hash(seed)), blocks=new Uint16Array(W*H), surface=new Int16Array(W);
   // natural[i]=1 表示这一格是「世界自带的树木」。玩家可以穿过去，也挖得动；
   // 一旦玩家动过（挖掉/自己放回去），这一位就清 0，方块恢复成实心。
   const natural=new Uint8Array(W*H);
@@ -156,8 +214,8 @@ export class World {
     for(let i=0;i<this.blocks.length;i++)if(this.blocks[i]===17){this.water[i]=8;if(i<W||this.blocks[i-W]!==17)this.waterSources.add(i);}
     if(mode==='creative') ['grass_block_side','dirt','stone','oak_log','oak_planks','glass','torch','crafting_table_front','furnace_front'].forEach(id=>this.add(id,64));
     // 生物铺满整张地图，而不是只挤在出生点附近
-    for(let i=0;i<28;i++){
-      const type=['pig','cow','sheep','chicken'][i%4];let x=18+i*Math.floor((W-40)/28);
+    for(let i=0;i<128;i++){
+      const type=['pig','cow','sheep','chicken'][i%4];let x=18+i*Math.floor((W-40)/128);
       for(let retry=0;retry<14;retry++,x++){if(x<2||x>=W-2)break;if(this.get(x,this.surface[x])===1&&this.get(x,this.surface[x]-1)===0){const mob=this.makeMob(type,x,0);mob.y=this.surface[x]-mob.h;if(!this.collides(mob)){this.mobs.push(mob);break;}}}
     }
     /* ★ 让水先流到稳态再开玩。
@@ -176,6 +234,7 @@ export class World {
    * 否则水会横着长到悬崖外，变成悬空的水板。
    */
   stepWater(){
+    if(this.fluidStableRevision===this.revision)return;
     const size=W*H, next=new Uint8Array(size), queue=[];
     for(const i of this.waterSources)if(this.blocks[i]===17){next[i]=8;queue.push(i);}
     for(let head=0;head<queue.length;head++){
@@ -211,7 +270,7 @@ export class World {
         this.blocks[i]=0;this.water[i]=0;changed=true;
       }
     }
-    if(changed)this.revision++;
+    if(changed)this.revision++;else this.fluidStableRevision=this.revision;
   }
   /* 自然生成的树木（原木 id=5 / 树叶 id=6）不参与碰撞 —— 玩家能直接走过去，
      这就是用户要的「自然生成的树可以自由穿过」。玩家自己放下的原木/树叶
@@ -308,6 +367,7 @@ export class World {
   }
   place(x,y){
     x=Math.floor(x);y=Math.floor(y);const slot=this.held(),item=ITEMS[slot?.id];
+    if(item?.mob&&this.reachable(x,y)&&!this.solid(x,y)){const mob=this.makeMob(item.mob,x,y);if(this.collides(mob))return false;this.mobs.push(mob);if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;this.swing();return true;}
     if(slot?.id==='water_bucket'&&this.reachable(x,y)&&[0,17].includes(this.get(x,y))){this.setWaterSource(x,y);if(this.mode!=='creative')this.inventory[this.selected]={id:'bucket',n:1};this.sound('splash',x,.6);this.swing();return true;}
     if(slot?.id==='bucket'&&this.reachable(x,y)&&this.waterSources.has(y*W+x)){this.setWaterSource(x,y,false);if(this.mode!=='creative'){if(slot.n===1)this.inventory[this.selected]={id:'water_bucket',n:1};else{slot.n--;if(this.add('water_bucket'))this.drop('water_bucket',1,this.player.x,this.player.y);}}this.sound('splash',x,.5);this.swing();return true;}
     if(!item?.block||!this.reachable(x,y)||![0,17].includes(this.get(x,y)))return false;
@@ -321,7 +381,16 @@ export class World {
     if(!station||!out||!this.count(input))return false;
     const f=this.furnaces[station.key]??={fuel:0,input:null,output:null,count:0,progress:0};
     if(f.input||f.output&&f.output!==out||f.count>=64)return false;
-    if(f.fuel<10){const fuel=['coal','oak_planks','oak_log','stick'].find(id=>this.count(id)>0);if(!fuel){this.notify('需要煤炭、木板、原木或木棍作为燃料');return false;}this.remove(fuel,1);f.fuel+=fuel==='coal'?80:fuel==='stick'?10:15;}
+    // Reserve the input first: a single log cannot be both the ingredient and its fuel.
+    const needed=Math.max(0,10-f.fuel),plan=[];let supplied=0;
+    for(const [id,seconds] of Object.entries(FUELS)){
+      const available=this.count(id)-(id===input?1:0);
+      const n=Math.min(Math.max(0,available),Math.ceil(Math.max(0,needed-supplied)/seconds));
+      if(n){plan.push([id,n]);supplied+=n*seconds;}
+    }
+    if(supplied<needed){this.notify('燃料不足：可用煤炭、木炭、木材或两根木棍');return false;}
+    for(const [id,n] of plan)this.remove(id,n);
+    f.fuel+=supplied;
     this.remove(input,1);f.input=input;f.result=out;f.progress=0;return true;
   }
   collectSmelt(){const station=this.nearBlock(14),f=station&&this.furnaces[station.key];if(!f?.output)return;const rest=this.add(f.output,f.count);f.count=rest;if(!rest)f.output=null;}
@@ -392,7 +461,7 @@ export class World {
     if(this.mobClock>9){this.mobClock=0;if(this.night()&&this.mobs.filter(m=>m.type==='zombie').length<9){const x=Math.floor(clamp(p.x+(this.rng()<.5?-1:1)*(15+this.rng()*15),2,W-3)),y=this.surface[x]-2;if(!this.nearTorch(x,y,7))this.mobs.push(this.makeMob('zombie',x,y));}}
     for(const m of this.mobs){
       /* ★ 远处的生物「挂起」，不模拟也不删除（原版就是这样：出了模拟距离只是冻住）。
-         以前这里在末尾按「距玩家 95 格」直接 filter 掉，世界放大到 640 后
+         以前这里在末尾按「距玩家 95 格」直接 filter 掉，世界放大后
          等于一走开就把大半张图的动物清空 —— 玩家永远只能在身边看到零星几只。 */
       if(Math.abs(m.x-p.x)>64){m.vx=0;continue;}
       m.clock+=dt;m.hurt=Math.max(0,m.hurt-dt);
@@ -414,7 +483,7 @@ export class World {
   nearTorch(x,y,r){for(let yy=Math.max(0,Math.floor(y-r));yy<=Math.min(H-1,y+r);yy++)for(let xx=Math.max(0,Math.floor(x-r));xx<=Math.min(W-1,x+r);xx++)if(this.get(xx,yy)===16&&Math.hypot(xx-x,yy-y)<r)return true;return false;}
   serialize(){
     return{
-      version:3,
+      version:4,width:W,height:H,
       blocks:rle(this.blocks),natural:rle(this.natural),water:rle(this.water),
       waterSources:[...this.waterSources],seed:this.seed,mode:this.mode,
       surface:Array.from(this.surface),spawn:this.spawn,player:this.player,
@@ -424,10 +493,15 @@ export class World {
     };
   }
   static restore(data){
-    if(!data||![1,2,3].includes(data.version)||typeof data.seed!=='string'||data.seed.length>100||!['survival','creative'].includes(data.mode))throw Error('存档格式不受支持');
+    if(!data||![1,2,3,4].includes(data.version)||typeof data.seed!=='string'||data.seed.length>100||!['survival','creative'].includes(data.mode))throw Error('存档格式不受支持');
     const p=data.player;
     if(!p||![p.x,p.y,p.health,p.food].every(Number.isFinite)||p.health<0||p.health>20||p.food<0||p.food>20)throw Error('玩家数据损坏');
-    if(!Array.isArray(data.inventory)||data.inventory.length!==36||data.inventory.some(s=>s&&(!ITEMS[s.id]||!Number.isInteger(s.n)||s.n<1||s.n>ITEMS[s.id].stack||ITEMS[s.id].durability&&(!Number.isInteger(s.dur)||s.dur<1||s.dur>ITEMS[s.id].durability))))throw Error('背包数据损坏');
+    // ★ 数量上限这里故意放宽到 64（而不是 ITEMS[id].stack）：
+    //   旧版本的装备是可以叠 64 的（现在改成 1），线上玩家手里可能存着这种档。
+    //   按新上限严格校验会直接抛错 → 整个玩家数据被丢弃。放宽后由下面第 483 行
+    //   的 clamp 截到新上限，最多损失超出部分，不会丢整档。
+    //   历史上任何物品都不可能超过 64，所以 64 作为「明显非法」的判据是安全的。
+    if(!Array.isArray(data.inventory)||data.inventory.length!==36||data.inventory.some(s=>s&&(!ITEMS[s.id]||!Number.isInteger(s.n)||s.n<1||s.n>64||ITEMS[s.id].durability&&(!Number.isInteger(s.dur)||s.dur<1||s.dur>ITEMS[s.id].durability))))throw Error('背包数据损坏');
     if(!Number.isFinite(data.time)||data.time<0||!Number.isFinite(data.elapsed)||data.elapsed<0)throw Error('时间数据损坏');
     const w=new World(data.seed,data.mode);
     const readGrid=(value,len)=>{
@@ -442,38 +516,53 @@ export class World {
     /* 世界尺寸在 v3 从 384×144 放大到 640×160，旧存档的方块数组长度必然对不上。
        这时候不报错、也不丢东西：用同一个 seed 重新生成地形，把背包、时间、
        玩家位置、熔炉这些「玩家的东西」搬过去。等于世界变大了，家当还在。 */
-    const blocks=data.version===3?unrle(data.blocks,W*H):null;
-    let sizeOk=!!blocks&&blocks.length===W*H;
-    if(sizeOk)for(let i=0;i<blocks.length;i++)if(blocks[i]>=BLOCKS.length){sizeOk=false;break;}
-    if(sizeOk){
-      w.blocks=blocks;
-      w.natural=data.version>=3?unrle(data.natural,W*H):new Uint8Array(W*H);
-      w.surface=Int16Array.from({length:W},(_,x)=>{for(let y=0;y<H;y++)if(w.blocks[y*W+x])return y;return H-1;});
-      w.water=new Uint8Array(W*H);w.waterSources=new Set();
-      const level=data.version===3?unrle(data.water,W*H):null;
-      for(let i=0;i<w.blocks.length;i++)if(w.blocks[i]===17){
-        w.water[i]=level?Math.max(1,level[i]):8;
-        if(!level&&(i<W||w.blocks[i-W]!==17))w.waterSources.add(i);
-      }
-      if(Array.isArray(data.waterSources))for(const i of data.waterSources)if(Number.isInteger(i)&&i>=0&&i<W*H&&w.blocks[i]===17)w.waterSources.add(i);
-    }else{
-      w.migrated=true;   // 地形是新的，只要保住玩家数据
+    const oldW=data.version===4?data.width:(data.surface?.length||384);
+    const oldH=data.version===4?data.height:(oldW===640?160:144);
+    if(!Number.isInteger(oldW)||!Number.isInteger(oldH)||oldW<1||oldW>W||oldH<1||oldH>H)throw Error('存档地图尺寸无效');
+    const size=oldW*oldH;
+    const read=(a,Type=Uint16Array)=>data.version>=3?unrle(a,size,Type):Type.from(a||[]);
+    const blocks=read(data.blocks),natural=data.natural?read(data.natural,Uint8Array):new Uint8Array(size),water=data.water?read(data.water,Uint8Array):new Uint8Array(size);
+    if(blocks.length!==size||blocks.some(id=>id>=BLOCKS.length))throw Error('存档方块数据损坏');
+    for(let y=0;y<oldH;y++){
+      w.blocks.set(blocks.subarray(y*oldW,(y+1)*oldW),y*W);
+      w.natural.set(natural.subarray(y*oldW,(y+1)*oldW),y*W);
+      w.water.set(water.subarray(y*oldW,(y+1)*oldW),y*W);
     }
+    for(const i of w.waterSources)if(i%W<oldW&&Math.floor(i/W)<oldH)w.waterSources.delete(i);
+    if(Array.isArray(data.waterSources))for(const i of data.waterSources){
+      const x=i%oldW,y=Math.floor(i/oldW);if(Number.isInteger(i)&&i>=0&&y<oldH&&w.get(x,y)===17)w.waterSources.add(y*W+x);
+    }
+    for(let x=0;x<oldW;x++)if(Number.isInteger(data.surface?.[x]))w.surface[x]=clamp(data.surface[x],0,H-1);
+    if(data.spawn&&Number.isFinite(data.spawn.x)&&Number.isFinite(data.spawn.y))w.spawn={x:clamp(data.spawn.x,0,W-1),y:clamp(data.spawn.y,0,H-2)};
+    w.migrated=oldW!==W||oldH!==H;w.fluidStableRevision=-1;
     Object.assign(w.player,{x:clamp(p.x,0,W-1),y:clamp(p.y,-20,H-2),health:p.health,food:p.food,crouch:false});
-    w.inventory=structuredClone(data.inventory);
+    /* ★ 背包不能直接 structuredClone：装备的堆叠上限从 64 改成了 1，
+       线上老档里可能存着「32 个钻石胸甲一摞」这种（当时合法）。
+       这里按新上限拆开 —— 原格留到上限，多出来的逐个 add 到空格，
+       放不下的才丢弃。既不会因为一格超限就丢掉整档，也不会让 32 个胸甲
+       继续挤在同一格里（那样背包 UI 会显示成一个没有角标的怪格子）。 */
+    const overflow=[];
+    w.inventory=Array(36).fill(null);
+    for(let i=0;i<36;i++){
+      const s=data.inventory[i];if(!s)continue;
+      const lim=ITEMS[s.id].stack;
+      w.inventory[i]={id:s.id,n:Math.min(s.n,lim),...(s.dur?{dur:s.dur}:{})};
+      if(s.n>lim)overflow.push({id:s.id,n:s.n-lim,dur:s.dur});
+    }
+    for(const o of overflow)w.add(o.id,o.n,o.dur);
     w.craftGrid=readGrid(data.craftGrid,4);w.tableGrid=readGrid(data.tableGrid,9);
     w.time=data.time;w.elapsed=data.elapsed;
     w.selected=Number.isInteger(data.selected)?clamp(data.selected,0,8):0;
     w.exhaustion=Number.isFinite(data.exhaustion)?clamp(data.exhaustion,0,1):0;
     w.weather=['clear','rain','thunder'].includes(data.weather)?data.weather:'clear';
-    w.drops=[];w.mobs=[];
+    w.drops=[];w.mobs=w.migrated?w.mobs.filter(m=>m.x>=oldW):[];
     if(Array.isArray(data.drops))for(const d of data.drops.slice(0,1000)){if(ITEMS[d.id]&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&d.x>=0&&d.x<W&&d.y>=0&&d.y<H&&Number.isInteger(d.n)&&d.n>0&&d.n<=64){w.drop(d.id,d.n,d.x,d.y,ITEMS[d.id].durability?clamp(Math.floor(d.dur)||1,1,ITEMS[d.id].durability):undefined);}}
-    if(Array.isArray(data.mobs))for(const m of data.mobs.slice(0,40)){if(['pig','cow','sheep','chicken','zombie'].includes(m.type)&&Number.isFinite(m.x)&&Number.isFinite(m.y)&&m.x>=0&&m.x<W&&m.y>=0&&m.y<H&&Number.isFinite(m.health)&&m.health>0){const mob=w.makeMob(m.type,m.x,m.y);mob.health=Math.min(mob.health,m.health);w.mobs.push(mob);}}
+    if(Array.isArray(data.mobs))for(const m of data.mobs.slice(0,512)){if(['pig','cow','sheep','chicken','zombie'].includes(m.type)&&Number.isFinite(m.x)&&Number.isFinite(m.y)&&m.x>=0&&m.x<W&&m.y>=0&&m.y<H&&Number.isFinite(m.health)&&m.health>0){const mob=w.makeMob(m.type,m.x,m.y);mob.health=Math.min(mob.health,m.health);w.mobs.push(mob);}}
     if(data.furnaces&&typeof data.furnaces==='object')for(const [key,f] of Object.entries(data.furnaces).slice(0,W*H)){
-      if(!/^\d{1,3},\d{1,3}$/.test(key))continue;const [x,y]=key.split(',').map(Number);if(w.get(x,y)!==14||!f)continue;
+      if(!/^\d{1,4},\d{1,3}$/.test(key))continue;const [x,y]=key.split(',').map(Number);if(w.get(x,y)!==14||!f)continue;
       const outputs=SMELTS;
       if(f.input&&!outputs[f.input]||f.output&&!Object.values(outputs).includes(f.output)||!Number.isFinite(f.fuel)||!Number.isFinite(f.progress)||!Number.isInteger(f.count))continue;
-      w.furnaces[key]={fuel:clamp(f.fuel,0,80),progress:clamp(f.progress,0,10),count:clamp(f.count,0,64),input:f.input||null,result:outputs[f.input]||null,output:f.output||null};
+      w.furnaces[key]={fuel:clamp(f.fuel,0,809),progress:clamp(f.progress,0,10),count:clamp(f.count,0,64),input:f.input||null,result:outputs[f.input]||null,output:f.output||null};
     }
     while(w.collides(w.player)&&w.player.y>0)w.player.y--;
     return w;
@@ -565,6 +654,29 @@ export function meshBounds(parts){
   return{lo,hi,height:Math.max(1,hi-lo)};
 }
 
+// Tool pixels are extruded into a thin model. The handle grip is anchored in the palm,
+// with a fixed scale in model units rather than an oversized inventory icon.
+export function toolVertex(u,v,depth,angle){
+  const du=(u-4.5)*.75,dv=(12.5-v)*.75,c=Math.SQRT1_2;
+  const y=-10+(dv-du)*c,z=(du+dv)*c;
+  return {x:STEVE_ARM.x+depth,y:STEVE_ARM.shoulder+y*Math.cos(angle)-z*Math.sin(angle),z:y*Math.sin(angle)+z*Math.cos(angle)};
+}
+const toolFaceCache=new WeakMap();
+function toolFaces(img){
+  if(toolFaceCache.has(img))return toolFaceCache.get(img);
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=16;
+  const c=canvas.getContext('2d',{willReadFrequently:true});c.drawImage(img,0,0,16,16);
+  const data=c.getImageData(0,0,16,16).data;
+  const opaque=(x,y)=>x>=0&&y>=0&&x<16&&y<16&&data[(y*16+x)*4+3]>0;
+  const faces=[];
+  for(const d of [-.45,.45])faces.push({vertices:[[0,0,d],[16,0,d],[16,16,d],[0,16,d]],uv:[0,0,16,16],shade:0,cutout:true});
+  for(let y=0;y<16;y++)for(let x=0;x<16;x++)if(opaque(x,y)){
+    const edges=[[-1,0,x,y,x,y+1],[1,0,x+1,y,x+1,y+1],[0,-1,x,y,x+1,y],[0,1,x,y+1,x+1,y+1]];
+    for(const [dx,dy,a,b,e,f]of edges)if(!opaque(x+dx,y+dy))faces.push({vertices:[[a,b,-.45],[e,f,-.45],[e,f,.45],[a,b,.45]],uv:[x,y,1,1],shade:.24});
+  }
+  toolFaceCache.set(img,faces);return faces;
+}
+
 /** 把一只生物画到画布上。cx = 身体中线屏幕 x，groundY = 脚底屏幕 y。
  *  hold（可选）= {id, swing}：把物品画在右手上，swing 是 0..1 的挥击进度（null=不挥）。 */
 export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw,hold=null){
@@ -598,14 +710,19 @@ export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw,hold=null
       faces.push({q,uv,shade,image,depth:(q[0].z+q[1].z+q[2].z+q[3].z)/4});
     }
   }
-  faces.sort((a,b)=>a.depth-b.depth);
   // ── 手上的物品 ──
   // 不走立方体那套：物品在 MC 里本来就是一张 16×16 的平面图。
   // 位置直接取「手臂末端再往外延伸 25%」，所以挥手时自然跟着手臂走；
   // 旋转角用肩→手两点的屏幕向量反推，比套用三维角度近似准得多。
   const proj=(x,y,z)=>{const r=rot(x,y,z);return{x:cx+r.x*scale,y:groundY-(r.y-lo)*scale,z:r.z};};
   const holdImg=hold?(hold.img||images[hold.id]):null;
-  if(holdImg){
+  if(holdImg && ITEMS[hold.id]?.tool){
+    const angle=steveArmAngle(time,mob.vx||0,hold.swing);
+    for(const face of toolFaces(holdImg)){
+      const q=face.vertices.map(([u,v,d])=>{const h=toolVertex(u,v,d,angle);return proj(h.x,h.y,h.z);});
+      faces.push({q,uv:face.uv,shade:face.shade,cutout:face.cutout,image:holdImg,depth:q.reduce((n,p)=>n+p.z,0)/4});
+    }
+  }else if(holdImg){
     const a=steveArmAngle(time,mob.vx||0,hold.swing);
     const hand=steveHand(a);
     const sh=proj(STEVE_ARM.x,STEVE_ARM.shoulder,0);
@@ -613,6 +730,7 @@ export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw,hold=null
     faces.push({sprite:holdImg,x:hd.x,y:hd.y,size:11*scale,
       ang:Math.atan2(hd.y-sh.y,hd.x-sh.x)-Math.PI/2,depth:hd.z+.01});
   }
+  faces.sort((a,b)=>a.depth-b.depth);
   const hurt=(mob.hurt||0)>0;
   for(const f of faces){
     if(f.sprite){
@@ -635,7 +753,7 @@ export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw,hold=null
     ctx.transform((p1.x-p0.x)/w,(p1.y-p0.y)/w,(p3.x-p0.x)/h,(p3.y-p0.y)/h,p0.x,p0.y);
     ctx.drawImage(img,u,v,w,h,0,0,w,h);
     if(f.shade){ctx.fillStyle=`rgba(0,0,0,${f.shade})`;ctx.fillRect(0,0,w,h);}
-    if(hurt){ctx.fillStyle='rgba(255,64,64,.42)';ctx.fillRect(0,0,w,h);}
+    if(hurt&&!f.cutout){ctx.fillStyle='rgba(255,64,64,.42)';ctx.fillRect(0,0,w,h);}
     ctx.restore();
   }
   return faces.length;
@@ -700,7 +818,7 @@ async function boot(){
   let press=null;                    // 按下未松开 {area,index,button,x,y}
   let dragStarted=false;
   let sprintHeld=false,lastDirCode='',lastDirAt=0;
-  let audioReady=false;
+  let audioReady=false;let enhancedLight=localStorage.getItem('zfsn.mc.light')!=='off';
   // 雨滴粒子的存储放在这里：resize() 在天空模块之前就会被调用一次，
   // 如果数组声明在下面，那次调用会撞上 TDZ。
   const rainDrops=[];
@@ -774,8 +892,14 @@ async function boot(){
   /* 所有方块、明暗层、选中框都用同一套整数像素坐标（camX/camY 是唯一取整点），
      并且都画 tile+1 宽来盖住缩放造成的亚像素缝。以前贴图用 Math.round、
      阴影用 Math.floor，差 1px 就是那道细缝。 */
+  const pendingTextures=new Set();
+  function ensureTexture(id){
+    if(!id||images[id]||pendingTextures.has(id))return;
+    pendingTextures.add(id);const img=new Image();img.onload=()=>{images[id]=img;};
+    img.src=new URL(`${id}.png`,textureBase).href;
+  }
   function spriteAt(name,sx,sy,w,h,srcY=0){
-    const image=tinted[name]||images[name];if(!image)return;
+    const image=tinted[name]||images[name];if(!image){ensureTexture(name);return;}
     const sw=Math.min(16,image.width),sh=Math.min(16,image.height);
     ctx.drawImage(image,0,srcY,sw,sh,sx,sy,w,h);
   }
@@ -979,13 +1103,20 @@ async function boot(){
       // 贴图要过一遍 tinted：树叶在原版是灰度图靠生物群系染色，直接取 images 会是一坨灰
       const heldId=world.held()?.id;
       drawEntity(ctx,images,{...p,type:'steve'},world.elapsed,pc,py,p.h*tile,p.face>0?0.95:-0.95,
-        {img:heldId?(tinted[heldId]||images[heldId]):null,swing:swingPhase});
+        {id:heldId,img:heldId?(tinted[heldId]||images[heldId]):null,swing:swingPhase});
       ctx.globalAlpha=1;
     }
 
     // 明暗：一次整片贴图，和方块共用 camX/camY，没有重叠也就没有缝
     drawShade(minX,minY,maxX,maxY,torches,p,light);
 
+    if(enhancedLight){
+      ctx.save();ctx.globalCompositeOperation='screen';
+      for(const t of torches){const x=(t.x+.5)*tile-camX,y=(t.y+.4)*tile-camY,r=tile*2.4;
+        const glow=ctx.createRadialGradient(x,y,0,x,y,r);glow.addColorStop(0,'rgba(255,174,70,.2)');glow.addColorStop(1,'rgba(255,130,30,0)');ctx.fillStyle=glow;ctx.fillRect(x-r,y-r,r*2,r*2);}
+      ctx.globalCompositeOperation='source-over';const vignette=ctx.createRadialGradient(viewW/2,viewH/2,viewH*.2,viewW/2,viewH/2,Math.max(viewW,viewH)*.7);
+      vignette.addColorStop(0,'transparent');vignette.addColorStop(1,'rgba(12,20,40,.22)');ctx.fillStyle=vignette;ctx.fillRect(0,0,viewW,viewH);ctx.restore();
+    }
     // 雨幕：纯视觉，画在方块与实体之上，不参与光照
     if(world.weather!=='clear'){
       const slant=world.weather==='thunder'?6:4;
@@ -1009,11 +1140,14 @@ async function boot(){
   }
 
   // ── 槽位 ──────────────────────────────────────────────────────
-  function iconImg(id){const img=document.createElement('img');img.src=new URL(`${id}.png`,textureBase).href;img.alt='';img.draggable=false;return img;}
+  function iconImg(id){ensureTexture(id);const img=document.createElement('img');img.src=new URL(ITEMS[id]?.cubeIcon?`../icons/${id}.png`:`${id}.png`,textureBase).href;img.alt='';img.draggable=false;return img;}
   function slotNode(stack,area,index,hotbar){
     const b=document.createElement('button');
     b.type='button';b.className='slot';
     b.setAttribute('aria-label',stack?`${ITEMS[stack.id].name} × ${stack.n}`:'空');
+    // 名字挂到 data-tip 上，由统一的 tooltip 显示（原版那种深紫框）。
+    // 不用原生 title：浏览器要悬停约 1 秒才弹，而且样式是系统菜单风，和原版差太远。
+    if(stack)b.dataset.tip=ITEMS[stack.id].name;
     if(hotbar){
       b.style.position='absolute';b.style.left=(6+40*index)+'px';b.style.top='6px';
       b.onclick=()=>{world.selected=index;showItemName();hud(true);};
@@ -1021,7 +1155,6 @@ async function boot(){
       // 容器里的格子走 pointerdown/pointerup 那一套（拖拽、右键、分堆），不用 onclick：
       // onclick 只能表达「点了一下」，表达不了按下-拖动-松开。
       b.dataset.area=area;b.dataset.index=index;
-      if(stack)b.title=ITEMS[stack.id].name;
     }
     if(stack){
       b.append(iconImg(stack.id));
@@ -1136,17 +1269,70 @@ async function boot(){
     renderHeld();
   }
 
+  /* ── 物品名提示框 ──────────────────────────────────────────────
+     原版行为：鼠标移到格子上立刻出名字，不延迟、跟手走、贴边翻到另一侧。
+     ★ 宿主必须按「当前有没有打开的 dialog」动态切换，理由同 #held-cursor：
+       showModal() 的 dialog 在浏览器 top layer，外面再高的 z-index 也盖不住它。
+     ★ 也不能塞进 .inv-root —— 那个容器窄屏下带 zoom，fixed 坐标会跟着缩放。 */
+  const tipEl=$('#mc-tooltip');
+  let tipHostEl=null,tipText='';
+  function tipHost(){
+    const host=document.querySelector('dialog[open]')||$('#game');
+    if(tipHostEl!==host){host.append(tipEl);tipHostEl=host;}
+  }
+  function tipShow(text){
+    if(!text)return;
+    tipHost();
+    if(tipText!==text){
+      tipText=text;
+      // 原版 tooltip 是一行一个元素，这里用 \n 分隔多行（第二行起是灰色说明）
+      tipEl.replaceChildren(...text.split('\n').map((line,i)=>{
+        const d=document.createElement('div');
+        if(i)d.className='tip-sub';
+        d.textContent=line;
+        return d;
+      }));
+    }
+    tipEl.hidden=false;
+    tipMove(pointerPos.x,pointerPos.y);        // 首次显示时就摆到位，不等下一次 pointermove
+  }
+  function tipHide(){tipEl.hidden=true;tipText='';}
+  function tipMove(x,y){
+    if(tipEl.hidden)return;
+    const w=tipEl.offsetWidth,h=tipEl.offsetHeight,pad=8;
+    let left=x+14,top=y+16;
+    if(left+w>innerWidth-pad)left=x-14-w;      // 贴右边就翻到指针左侧
+    if(top+h>innerHeight-pad)top=y-12-h;       // 贴底边就翻到指针上方
+    tipEl.style.left=Math.max(pad,left)+'px';
+    tipEl.style.top=Math.max(pad,top)+'px';
+  }
+  document.addEventListener('pointerover',e=>{
+    // 触屏没有悬停：点击时浏览器照样会补一个 pointerover，不挡住的话名字会闪一下
+    if(e.pointerType==='touch'){tipHide();return;}
+    const el=e.target.closest?.('[data-tip]');
+    if(el)tipShow(el.dataset.tip);else tipHide();
+  },true);
+  document.addEventListener('pointerout',e=>{
+    const el=e.target.closest?.('[data-tip]');
+    if(!el)return;
+    // 在父子元素之间移动也会触发 pointerout，只有真的离开带提示的元素才隐藏
+    if(e.relatedTarget?.closest?.('[data-tip]')!==el)tipHide();
+  },true);
+  addEventListener('scroll',tipHide,true);
+
   document.addEventListener('pointerdown',e=>{
     const el=e.target.closest?.('.slot[data-area]');
     if(!el||!$('#inventory-dialog').open)return;
     if(e.button!==0&&e.button!==2)return;
     e.preventDefault();
+    tipHide();                                 // 按住开始拖塔时别让名字挡着
     press={area:el.dataset.area,index:Number(el.dataset.index),button:e.button,x:e.clientX,y:e.clientY};
     dragStarted=false;drag=null;
   },true);
   addEventListener('pointermove',e=>{
     pointerPos={x:e.clientX,y:e.clientY};
     if(heldItem){heldCursor.style.left=e.clientX+'px';heldCursor.style.top=e.clientY+'px';}
+    tipMove(e.clientX,e.clientY);
     if(!press)return;
     if(!dragStarted){
       const slot=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('.slot[data-area]');
@@ -1291,7 +1477,7 @@ async function boot(){
       b.type='button';b.className='slot';
       b.append(iconImg(result.out));
       if(result.n>1){const c=document.createElement('span');c.className='count';c.textContent=result.n;b.append(c);}
-      b.title=`取得 ${ITEMS[result.out].name}`;
+      b.dataset.tip=`取得 ${ITEMS[result.out].name}`;
       b.onclick=takeResult;
       out.append(b);
     }
@@ -1299,24 +1485,41 @@ async function boot(){
     // 生存模式要的是原版 176×166 背包：只有 2×2 合成格 + 物品栏，没有侧边列表。
     // 创造模式才需要物品来源，那块列表只在创造模式露出来。
     const creative=world.mode==='creative';
-    const side=document.querySelector('.recipe-panel');
-    if(side)side.hidden=!creative;
-    // 文案统一在这里出，别在交互函数里另写一份，否则会被这次渲染覆盖
-    $('#slot-description').textContent=heldItem
-      ?`已拿起 ${ITEMS[heldItem.id].name} × ${heldItem.n} · 左键放下 / 右键放一个`
-      :creative?'创造模式：点右侧物品直接放进快捷栏'
-      :isTable?'左键拿起 · 右键拿一半 · 按住拖动可以分配'
-      :`左键拿起、右键拿一半 · 按住拖动分配到多个格子${table?'（点工作台可用 3×3）':''}`;
-    renderHeld();
-    if(!creative)return;
-    $('#station-status').textContent='创造模式：点物品直接放进快捷栏';
-    const list=$('#recipes');list.replaceChildren();
-    $('#recipe-title').textContent='创造物品栏';
-    for(const[id,item]of Object.entries(ITEMS)){
-      if(['bedrock','water_still'].includes(id))continue;
-      list.append(recipeRow(id,item.name,'点击放入快捷栏',false,()=>{world.giveCreative(id);inventory();hud(true);}));
-    }
+    document.querySelector('.recipe-panel').hidden=true;
+    $('#inventory-dialog').classList.toggle('creative',creative&&!isTable);
+    $('#inventory-dialog').classList.toggle('personal',creativeTab==='inventory');
+    $('#creative-browser').hidden=!creative||isTable;
+    $('#slot-description').textContent=heldItem?`${ITEMS[heldItem.id].name} × ${heldItem.n}`:'';
+    renderHeld();if(creative&&!isTable)renderCreative();
   }
+  let creativeTab='building',creativeRow=0;
+  const categories=[['building','建筑方块','bricks'],['colored','染色方块','red_wool'],['nature','自然方块','grass_block'],['functional','功能方块','crafting_table'],['redstone','红石方块','redstone'],['search','搜索','compass'],['equipment','工具与实用物品','diamond_pickaxe'],['combat','战斗用品','diamond_sword'],['food','食物与饮品','apple'],['ingredients','原材料','iron_ingot'],['spawn','刷怪蛋','pig_spawn_egg'],['inventory','生存物品栏','chest']];
+  function renderCreative(){
+    $('#inventory-dialog').classList.toggle('personal',creativeTab==='inventory');
+    for(const [sel,entries]of [['#creative-tabs-top',categories.slice(0,6)],['#creative-tabs-bottom',categories.slice(6)]]){
+      const tabs=$(sel);tabs.replaceChildren();
+      for(const [id,name,icon]of entries){const b=document.createElement('button');b.type='button';b.dataset.tip=name;b.setAttribute('aria-label',name);b.setAttribute('role','tab');b.setAttribute('aria-selected',String(id===creativeTab));b.append(iconImg(icon));b.onclick=()=>{creativeTab=id;creativeRow=0;inventory();if(id==='search')$('#creative-search').focus();};tabs.append(b);}
+    }
+    $('#creative-title').textContent=categories.find(x=>x[0]===creativeTab)?.[1]||'';
+    const search=$('#creative-search');search.hidden=creativeTab!=='search';
+    const query=search.value.trim().toLowerCase();
+    const entries=Object.entries(ITEMS).filter(([id,item])=>!['water_still','bedrock'].includes(id)&&(creativeTab==='search'?(id.includes(query)||item.name.toLowerCase().includes(query)):(item.category||'ingredients')===creativeTab));
+    const max=Math.max(0,Math.ceil(entries.length/9)-5);creativeRow=clamp(creativeRow,0,max);
+    const grid=$('#creative-grid');grid.replaceChildren();
+    for(let i=0;i<45;i++){
+      const b=document.createElement('button');b.type='button';b.className='slot';const entry=entries[creativeRow*9+i];
+      if(entry){const[id,item]=entry;b.append(iconImg(id));
+        // 多行：主行是名字，副行用 \n 分隔（原版收藏物品也是这么显示的）
+        b.dataset.tip=item.name+(item.catalogOnly?'\n收藏物品 · 特殊机制尚未实现':'');
+        b.setAttribute('aria-label',item.name);b.onclick=()=>{returnHeld();heldItem={id,n:item.stack,...(item.durability?{dur:item.durability}:{})};renderHeld();};}
+      else b.disabled=true;grid.append(b);
+    }
+    $('#creative-hotbar').replaceChildren(...world.inventory.slice(0,9).map((s,i)=>slotNode(s,'inv',i,false)));
+    const scroll=$('#creative-scroll');scroll.max=max;scroll.value=creativeRow;scroll.disabled=max===0;
+  }
+  $('#creative-search').oninput=()=>{creativeRow=0;renderCreative();};
+  $('#creative-scroll').oninput=e=>{creativeRow=Number(e.target.value);renderCreative();};
+  $('#creative-grid').onwheel=e=>{e.preventDefault();creativeRow+=Math.sign(e.deltaY);renderCreative();};
   function recipeRow(icon,title,sub,disabled,onclick){
     const b=document.createElement('button');
     b.type='button';b.className='recipe';b.disabled=disabled;b.onclick=onclick;
@@ -1333,7 +1536,8 @@ async function boot(){
     const near=world.nearBlock(14),f=near&&world.furnaces[near.key];
     const put=(sel,id)=>{
       const node=$(sel);node.replaceChildren();
-      if(id)node.append(iconImg(id));
+      if(id){node.append(iconImg(id));node.dataset.tip=ITEMS[id].name;}
+      else delete node.dataset.tip;
     };
     put('#furnace-input',f?.input||null);
     put('#furnace-fuel',f?.fuel>0?'coal':null);
@@ -1444,6 +1648,7 @@ async function boot(){
   $('#respawn').onclick=()=>{world.respawn();$('#death-dialog').close();deadShown=false;save();};
   $('#death-dialog').addEventListener('cancel',e=>e.preventDefault());
   document.querySelectorAll('[data-smelt]').forEach(b=>b.onclick=()=>{world.smelt(b.dataset.smelt);furnaceUI();hud(true);});
+  const lightButton=$('#light-button');const lightLabel=()=>lightButton.textContent='柔和光影：'+(enhancedLight?'开':'关');lightLabel();lightButton.onclick=()=>{enhancedLight=!enhancedLight;localStorage.setItem('zfsn.mc.light',enhancedLight?'on':'off');lightLabel();};
   $('#collect-smelt').onclick=()=>{world.collectSmelt();furnaceUI();hud(true);};
 
   function use(){
@@ -1456,19 +1661,19 @@ async function boot(){
 
   // ── 聊天 / 指令 ────────────────────────────────────────────────
   const chatRoot=$('#chat'),chatLog=$('#chat-log'),chatBar=$('#chat-bar'),chatInput=$('#chat-input');
-  let chatOpen=false;
+  let chatOpen=false;const sentHistory=[];let historyPos=0;
 
   function pushChat(text,cls=''){
     const line=document.createElement('div');
     line.className='chat-line'+(cls?' '+cls:'');
     line.textContent=text;
     chatLog.append(line);
-    while(chatLog.childElementCount>10)chatLog.firstElementChild.remove();
-    setTimeout(()=>{line.style.opacity='0';setTimeout(()=>line.remove(),900);},7000);
+    while(chatLog.childElementCount>200)chatLog.firstElementChild.remove();
+    setTimeout(()=>line.classList.add('expired'),7000);chatLog.scrollTop=chatLog.scrollHeight;
   }
   function openChat(prefill=''){
     if(!playing||chatOpen)return;
-    chatOpen=true;clearInput();
+    chatOpen=true;clearInput();chatRoot.classList.add('open');chatLog.scrollTop=chatLog.scrollHeight;historyPos=sentHistory.length;
     chatRoot.hidden=false;chatBar.hidden=false;
     chatInput.value=prefill;
     chatInput.focus();
@@ -1476,7 +1681,7 @@ async function boot(){
   }
   function closeChat(){
     if(!chatOpen)return;
-    chatOpen=false;chatBar.hidden=true;chatInput.value='';
+    chatOpen=false;chatRoot.classList.remove('open');chatBar.hidden=true;chatInput.value='';
     chatInput.blur();canvas.focus();
   }
   function sendChat(raw){
@@ -1571,7 +1776,8 @@ async function boot(){
   // 输入框自己吃掉键盘事件，否则会冒泡到游戏那边触发移动、切换快捷栏
   chatInput.addEventListener('keydown',e=>{
     e.stopPropagation();
-    if(e.key==='Enter'){const value=chatInput.value;closeChat();sendChat(value);}
+    if(e.key==='Enter'){const value=chatInput.value;if(value.trim()){sentHistory.push(value);if(sentHistory.length>100)sentHistory.shift();}closeChat();sendChat(value);}
+    else if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();historyPos=clamp(historyPos+(e.key==='ArrowUp'?-1:1),0,sentHistory.length);chatInput.value=sentHistory[historyPos]||'';}
     else if(e.key==='Escape'){e.preventDefault();closeChat();}
   });
   chatInput.addEventListener('keyup',e=>e.stopPropagation());
@@ -1635,7 +1841,15 @@ async function boot(){
   });
   canvas.addEventListener('pointerup',()=>{mouseDown=false;world.mining=null;});
   canvas.addEventListener('pointercancel',clearInput);
-  canvas.addEventListener('contextmenu',e=>e.preventDefault());
+  // 右键菜单：整个游戏区域一律屏蔽。
+  // 以前只在 canvas 上挡，于是「背包里右键拿一半」「熔炉右键」还会弹出浏览器菜单，
+  // 直接盖住界面，右键放置也常被它打断。绑在 #game 上靠冒泡就能覆盖所有 dialog
+  // （dialog 走 top layer 但 DOM 位置没变，事件仍按 DOM 树冒泡）。
+  // 只放行输入框：聊天、种子、创造栏搜索里右键粘贴是正常需求。
+  $('#game').addEventListener('contextmenu',e=>{
+    if(e.target.closest?.('input,textarea'))return;
+    e.preventDefault();
+  });
   canvas.addEventListener('wheel',e=>{
     if(!paused()){e.preventDefault();world.selected=(world.selected+Math.sign(e.deltaY)+9)%9;hud(true);showItemName();}
   },{passive:false});
@@ -1705,6 +1919,9 @@ async function boot(){
   bindWorld(world);
   // 给验证脚本留一个只读探针（不影响游戏本身）
   window.zfsnMC={get world(){return world;},audio,images,drawEntity,entityMesh,W,H,steveArmAngle,steveHand,
+    /* 目录与数据表：探针要断言「原版目录接进来了」只能从这里读，
+       它们是模块内 const，页面上没有别的入口。 */
+    CATALOG,get blocks(){return BLOCKS;},get items(){return ITEMS;},get recipes(){return RECIPES;},
     get playing(){return playing;},get held(){return heldItem;},get chatOpen(){return chatOpen;},runCommand,refreshInv(){inventory();hud(true);},
     /* 世界坐标 → 屏幕像素。探针要靠它把鼠标精确点到某个方块上，
        不然只能靠猜屏幕位置（相机跟随玩家，位置一直在变）。 */

@@ -173,10 +173,14 @@ async function main() {
 
   // ── 真实点击：拿起 → 放下 ────────────────────────────────────
   await clickSel('#slots .slot', 0);   // 第 1 格（原木）
+  // ★ 不再断言提示文字里出现「已拿起」：新版提示改成显示「物品名 × 数量」，更贴近原版。
+  //   真正的不变量是「手上拿到东西 + 原格被清空」，比文案抗改动。
   const afterPick = await ev(`(()=>{const t=document.querySelector('#slot-description').textContent;
-    return {text:t, firstSlotEmpty:!window.zfsnMC.world.inventory[9]};})()`);
+    const h=window.zfsnMC.held;
+    return {text:t, firstSlotEmpty:!window.zfsnMC.world.inventory[9],
+            held:h?{id:h.id,n:h.n}:null};})()`);
   console.log('   ', JSON.stringify(afterPick));
-  check(/已拿起/.test(afterPick.text || ''), '★ 点物品能拿起来（提示显示已拿起）', afterPick.text);
+  check(afterPick.held && afterPick.firstSlotEmpty, '★ 点物品能拿起来（手上拿到 + 原格清空）', afterPick);
 
   await clickSel('#slots .slot', 4);   // 放到第 5 格
   const afterDrop = await ev(`(()=>{const w=window.zfsnMC.world;
@@ -291,7 +295,7 @@ async function main() {
   await stowHeld();
   const pick = await ev(`(()=>{const b=document.querySelector('#craft-result .slot');const w=window.zfsnMC.world;
     return {has:!!b,icon:b?b.querySelector('img')?.getAttribute('src'):null,
-      title:b?b.title:null,grid:w.tableGrid.filter(Boolean).length,
+      title:b?b.dataset.tip:null,grid:w.tableGrid.filter(Boolean).length,
       cells:w.tableGrid.map(x=>x?x.id+'x'+x.n:null).filter(Boolean),
       recipe:w.findTableRecipe()?w.findTableRecipe().out:null,
       dbg:(()=>{const m={};for(const c of w.tableGrid)if(c)m[c.id]=(m[c.id]||0)+1;
@@ -352,14 +356,18 @@ async function main() {
   const cre = await ev(`(async()=>{
     document.querySelector('#touch-inventory').click();
     await new Promise(r=>setTimeout(r,400));
-    const p=document.querySelector('.recipe-panel');
-    return {mode:window.zfsnMC?.world?.mode,panelHidden:p.hidden,
-      rows:document.querySelectorAll('#recipes .recipe').length,
+    // ★ 创造模式的物品来源已经从旧「配方书面板」换成原版创造物品栏（#creative-browser），
+    //   旧断言还在找 .recipe-panel / #recipes .recipe，所以永远读到 0。改成测新面板。
+    const br=document.querySelector('#creative-browser');
+    return {mode:window.zfsnMC?.world?.mode,browserHidden:br?br.hidden:null,
+      cells:document.querySelectorAll('#creative-grid button').length,
+      tabs:document.querySelectorAll('#creative-tabs-top button,#creative-tabs-bottom button').length,
       slots:document.querySelectorAll('#slots .slot').length};})()`);
   console.log('   ', JSON.stringify(cre));
   check(cre.mode === 'creative', '创造模式已进入', cre.mode);
-  check(cre.panelHidden === false, '创造模式仍能看到物品列表（否则创造模式没物品来源）', cre.panelHidden);
-  check(cre.rows > 5, '创造模式物品列表有内容', cre.rows);
+  check(cre.browserHidden === false, '创造模式露出创造物品栏（否则创造模式没物品来源）', cre);
+  check(cre.cells > 5, '创造物品栏里有东西', cre.cells);
+  check(cre.tabs >= 6, '创造物品栏有分类标签', cre.tabs);
   check(cre.slots === 27, '创造模式物品栏也是 27 格', cre.slots);
   await shot('inv-5-creative.png');
 

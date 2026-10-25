@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- 黄金律法光标：发光的赐福箭头（热点 4,2.5） -->
+  <defs>
+    <filter id="g" x="-70%" y="-70%" width="240%" height="240%">
+      <feGaussianBlur stdDeviation="1.4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="gold" x1="4" y1="2" x2="22" y2="21" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8ecc9"/><stop offset=".55" stop-color="#e0bd7c"/><stop offset="1" stop-color="#9c7638"/>
+    </linearGradient>
+  </defs>
+  <path d="M4 2.5 22.8 11.4 13.2 20.8Z" fill="#d9b978" fill-opacity=".16"
+        stroke="url(#gold)" stroke-width="1.6" stroke-linejoin="round" filter="url(#g)"/>
+  <path d="M6.4 5.6 18.2 11 12.4 16.8Z" fill="#f8ecc9" fill-opacity=".22"/>
+  <circle cx="4" cy="2.5" r="1.25" fill="#f8ecc9"/>
+</svg>

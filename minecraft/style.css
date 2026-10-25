@@ -3,12 +3,12 @@
    方块世界 2D · 界面样式
    目标：所有面板、按钮、槽位都用 Java 版原始贴图，坐标按原版
    176×166 的 GUI 设计稿整体放大 2 倍，文字用客户端自带的位图字体
-   （mc-font.woff2 由 tools/build_minecraft_font.py 从官方 jar 生成）。
+   （mc-font.woff2?v=5a3e2e56 由 tools/build_minecraft_font.py 从官方 jar 生成）。
    ───────────────────────────────────────────────────────────── */
 
 @font-face{
   font-family:'MCBitmap';
-  src:url('mc-font.woff2') format('woff2');
+  src:url('mc-font.woff2?v=5a3e2e56') format('woff2');
   font-display:block;
   font-weight:400;
 }
@@ -135,6 +135,21 @@ dialog::backdrop{background:transparent}
 }
 #held-cursor .dur{position:absolute;left:0;bottom:0;width:32px;height:4px;background:#000}
 #held-cursor .dur i{display:block;height:100%;background:#3ce63c;font-style:normal}
+/* ── 物品名提示框（原版 tooltip）─────────────────────────────────
+   颜色照 Java 版：内层 #100010 近黑紫，外层边框从 #5000ff 渐变到 #28007f。
+   ★ 必须显式写 [hidden]{display:none}：下面的 display:block 特异性比 [hidden]
+     的 UA 规则高，只靠 hidden 属性藏不住，提示框会一直挂在左上角。 */
+#mc-tooltip{
+  position:fixed;left:0;top:0;z-index:950;pointer-events:none;
+  display:block;padding:3px 6px 4px;border:2px solid transparent;border-radius:3px;
+  background:linear-gradient(#100010,#100010) padding-box,
+             linear-gradient(#5000ff,#28007f) border-box;
+  font-family:inherit;font-size:15px;line-height:1.25;color:#fff;
+  text-shadow:2px 2px 0 rgba(0,0,0,.55);
+  white-space:nowrap;
+}
+#mc-tooltip[hidden]{display:none}
+#mc-tooltip .tip-sub{color:#a8a8b8;font-size:13px}
 /* 产物格：只能在有配方时出现，不做 hover 高亮以免和普通格子混淆 */
 #craft-result .slot{position:relative;width:36px;height:36px}
 #craft-result .slot img{left:2px;top:2px}
@@ -352,3 +367,58 @@ dialog::backdrop{background:transparent}
 @media (pointer:coarse){
   #chat{bottom:156px}
 }
+
+/* 320px 小屏：保留原版 HUD 比例；动作分两行，跳跃仍在右端。 */
+@media (max-width:360px){
+  #hotbar-wrap{zoom:.84;flex-shrink:0}
+  .inv-root{zoom:.84;transform:none}
+  #touch-controls>.touch-act{display:grid;grid-template-columns:repeat(3,44px)}
+  #touch-controls .touch-jump{grid-column:3;grid-row:1 / 3;height:94px}
+}
+@media (max-width:360px) and (pointer:coarse){
+  #chat{bottom:206px}
+}
+
+/* More smelting recipes must remain reachable on short phone screens. */
+@media (max-width:760px){
+  .furnace-wrap{width:min(352px,96vw);max-height:94dvh;overflow-y:auto;overflow-x:hidden}
+  .furnace-actions{width:100%}
+}
+@media (max-width:360px){
+  .furnace-panel{zoom:.84;flex-shrink:0}
+}
+
+/* Java creative inventory: 195x136, 9x5 catalogue and separate hotbar. */
+#inventory-dialog.creative .inv-root{width:390px;height:272px;flex-shrink:0}
+#inventory-dialog.creative:not(.personal) .inv-panel{display:none}
+#inventory-dialog.creative.personal .inv-root{height:332px}
+#inventory-dialog.creative.personal .inv-panel{margin:auto}
+#inventory-dialog.personal #creative-panel{visibility:hidden}
+#creative-browser{position:absolute;inset:0}
+#creative-panel{position:relative;width:390px;height:272px;background:url('textures/creative_tab_items.png') 0 0/512px 512px no-repeat;color:#404040}
+#creative-title{position:absolute;left:18px;top:8px;font-size:16px;text-shadow:none}
+#creative-grid{position:absolute;left:16px;top:34px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#creative-hotbar{position:absolute;left:16px;top:222px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#creative-search{position:absolute;right:52px;top:6px;width:170px;height:24px;background:#8b8b8b;color:white;border:0;font:inherit;padding:2px 4px;outline:1px solid #373737}
+#creative-scroll{position:absolute;right:12px;top:36px;width:24px;height:174px;writing-mode:vertical-lr;direction:ltr;accent-color:#c6c6c6;margin:0}
+#creative-tabs-top,#creative-tabs-bottom{position:absolute;left:0;display:flex;gap:4px;height:56px;z-index:2}
+#creative-tabs-top{bottom:100%}#creative-tabs-bottom{top:100%}
+#creative-browser [role=tab]{width:56px;height:56px;background:url('textures/creative_tab_top_unselected_1.png') center/100% 100%;padding:10px}
+#creative-browser [role=tab][aria-selected=true]{background-image:url('textures/creative_tab_top_selected_1.png')}
+#creative-browser [role=tab] img{width:32px;height:32px}
+#inventory-dialog.creative #slot-description{display:none}
+#chat-log{display:block;overflow-y:hidden}
+.chat-line{width:fit-content}.chat-line.expired{display:none}
+#chat.open{pointer-events:auto}#chat.open #chat-log{overflow-y:auto;max-height:46vh}
+#chat.open .chat-line.expired{display:block;opacity:1}
+@media(max-width:760px){#inventory-dialog.creative .inv-root{zoom:.85;transform:none}}
+@media(max-width:360px){#inventory-dialog.creative .inv-root{zoom:.76}}
+
+#creative-tabs-bottom [role=tab]{background-image:url('textures/creative_tab_bottom_unselected_1.png')}
+#creative-tabs-bottom [role=tab][aria-selected=true]{background-image:url('textures/creative_tab_bottom_selected_1.png')}
+#creative-scroll{appearance:none;background:none;outline:none;border:0}
+#creative-scroll::-webkit-slider-runnable-track{background:transparent;width:24px}
+#creative-scroll::-webkit-slider-thumb{appearance:none;width:24px;height:30px;border:0;border-radius:0;background:url('textures/creative_scroller.png') center/100% 100%}
+
+button.mobile-inventory-close{display:none}
+@media(max-width:760px){button.mobile-inventory-close{display:flex;position:absolute;right:12px;top:12px;width:40px;height:40px;z-index:5}}

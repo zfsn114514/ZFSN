@@ -1,0 +1,45 @@
+接手 D:/ZFSNwebsite 这个网站里「网页版我的世界」模块（minecraft/），继续往下做。
+
+**先读这个文件，它有你需要的一切**：D:/ZFSNwebsite/docs/minecraft-codex-handoff.md
+里面写了：代码地图、17 条已经踩过的坑、测试工具箱、还没做的事、不要动的地方。
+读它比读代码快，也能避免重复踩坑。
+
+一句话背景：这是个浏览器里跑的 2D 沙盒 MC，本站自制。界面必须走原版 Java 1.21.1
+的贴图和布局，不要自己设计 UI —— 这是明确的长期要求。线上地址
+https://www.zfsnnb.dpdns.org/minecraft/ ，推 GitHub 后 Cloudflare 自动重建，约 1 分钟生效。
+
+**当前状态（重要）**：最后一次提交 d79dd2c 已推送、线上已生效。但工作区里还有一批
+未提交的改动 ——「挥手动画 + 手上显示物品」：
+
+    M  _headers
+    M  minecraft/game.js
+    M  minecraft/index.html
+    D  minecraft/game.50b353b2.js      （旧哈希文件，被删）
+    ?? minecraft/game.5bfd2573.js      （新哈希文件，未跟踪）
+    ?? tools/dev/probe_swing.cjs       （新测试脚本，未跟踪）
+
+这批本地验证全过（probe_swing 18 项 + 四个回归 0 问题），但**没跑线上回归**（因为没推）。
+
+**你接手后按这个顺序做**：
+
+1. 先跑一遍确认现状，别急着改东西：
+       taskkill //F //IM msedge.exe
+       sh tools/dev/mc_shot.sh tools/dev/probe_swing.cjs
+       sh tools/dev/mc_shot.sh tools/dev/check_mc_full.cjs
+2. 确认无误后提交并推送这批改动。提交前先 `git fetch origin`，按路径显式 `git add`
+   （别用 `git add .`，会吞中间产物）。
+3. 等约 80 秒，对线上再跑一次完整回归：
+       MC_URL=https://www.zfsnnb.dpdns.org/minecraft/ sh tools/dev/mc_shot.sh tools/dev/check_mc_full.cjs
+   本地 mock 通过 ≠ 线上通过，这一步不能省。
+4. 然后按交接文档第 7 节「还没做 / 已知薄弱的地方」挑下一件事做。
+
+**三条最容易犯的错，提前说**：
+- 改完 game.js 或 style.css，**必须**跑 `python tools/hash_assets.py` 再跑
+  `python tools/dev/to_crlf.py minecraft/index.html _headers`。
+  index.html 引用的是 `game.<哈希>.js` 不是 `game.js`，漏了这步浏览器加载的还是旧代码，
+  你会对着「明明改了却没生效」调半天。
+- 跑浏览器测试前先 `taskkill //F //IM msedge.exe`，残留进程会占住调试端口。
+- 这台机器装了 IDM，会把 audio/ogg 请求静默改写成 204 空体。看到「fetch 拿到空响应」
+  先怀疑它，别先怀疑代码。
+
+开始前先跟我确认你要做的第一件事，别直接大改。

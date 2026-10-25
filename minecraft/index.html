@@ -7,8 +7,8 @@
   <meta name="description" content="ZFSN 的 2D 方块生存世界：挖掘、合成、建造，浏览器直接游玩。">
   <title>方块世界 · ZFSN</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="../minecraft/style.fa0bf866.css">
-  <script type="module" src="../minecraft/game.5bfd2573.js"></script>
+  <link rel="stylesheet" href="../minecraft/style.73525746.css">
+  <script type="module" src="../minecraft/game.a175d960.js"></script>
 </head>
 <body>
 <main id="game">
@@ -86,6 +86,15 @@
   <!-- ── 背包（原版 inventory.png 布局）── -->
   <dialog id="inventory-dialog" class="mc-screen">
     <div class="inv-root">
+      <div id="creative-browser" hidden>
+        <div id="creative-tabs-top" role="tablist" aria-label="物品分类"></div>
+        <div id="creative-panel">
+          <span id="creative-title"></span><input id="creative-search" aria-label="搜索物品" placeholder="搜索" hidden>
+          <div id="creative-grid"></div><input id="creative-scroll" type="range" min="0" max="0" step="1" aria-label="滚动物品">
+          <div id="creative-hotbar"></div>
+        </div>
+        <div id="creative-tabs-bottom" role="tablist" aria-label="更多分类"></div>
+      </div>
       <div class="mc-panel inv-panel">
         <div class="craft-area">
           <div id="craft-grid" aria-label="2×2 合成网格"></div>
@@ -100,13 +109,20 @@
         <h2 id="recipe-title">配方书</h2>
         <p id="station-status"></p>
         <div id="recipes"></div>
-        <button class="mc-btn narrow" id="close-inventory">完成</button>
+
       </div>
     </div>
     <!-- 手上拿着的物品必须放在 dialog 内部：<dialog> 用 showModal() 打开会进入
          浏览器 top layer，那一层永远盖住普通元素的 z-index，放在外面会被整个挡住。 -->
     <div id="held-cursor" hidden aria-hidden="true"></div>
+    <button id="close-inventory" class="mc-btn mobile-inventory-close" aria-label="关闭背包">×</button>
   </dialog>
+
+  <!-- 物品名提示框（原版那种深紫底 + 紫边框）。
+       初始挂在 #game 下，运行时按「有没有打开的 dialog」动态搬家 —— 道理同 #held-cursor：
+       只要 dialog 是 showModal() 开的，它就待在浏览器 top layer，外面任何 z-index 都盖不住。
+       放在 .inv-root 外面还有第二个原因：那个容器在窄屏上带 zoom，fixed 定位的坐标会跟着缩放。 -->
+  <div id="mc-tooltip" hidden aria-hidden="true"></div>
 
   <!-- ── 熔炉（原版 furnace.png 布局）── -->
   <dialog id="furnace-dialog" class="mc-screen">
@@ -123,6 +139,9 @@
            放在面板内 top:266px 会被物品格压住（截图上文字和格子叠在一起）。 -->
       <p id="furnace-status">把矿石放进去，再用煤或木板点火。</p>
       <div class="furnace-actions">
+        <button class="mc-btn narrow" data-smelt="oak_log">原木</button>
+        <button class="mc-btn narrow" data-smelt="cobblestone">圆石</button>
+        <button class="mc-btn narrow" data-smelt="stone">石头</button>
         <button class="mc-btn narrow" data-smelt="raw_iron">铁矿</button>
         <button class="mc-btn narrow" data-smelt="sand">沙子</button>
         <button class="mc-btn narrow" data-smelt="porkchop">生猪排</button>
@@ -143,6 +162,7 @@
       <button id="save-button" class="mc-btn">保存世界</button>
       <button id="export-button" class="mc-btn">导出存档</button>
       <button id="import-button" class="mc-btn">导入存档</button>
+      <button id="light-button" class="mc-btn">柔和光影</button>
       <button id="fullscreen-button" class="mc-btn">切换全屏</button>
       <button id="return-title" class="mc-btn">保存并退出</button>
       <p id="save-status" class="mc-note">世界保存在当前浏览器中。</p>
@@ -157,8 +177,8 @@
         <li><b>移动</b> A / D 或方向键，空格跳跃。连按两下左右方向键疾跑。</li>
         <li><b>潜行</b> 按住 Shift 蹲下：碰撞盒变矮、移动变慢，走到方块边缘也不会掉下去。</li>
         <li><b>挖掘与放置</b> 按住左键挖掘，右键放置。数字 1–9 或滚轮切换快捷栏。</li>
-        <li><b>背包</b> 按 E。左键整叠拿起／放下，右键拿一半或只放一个；<b>按住左键拖过格子</b>会把手上的方块均分过去，<b>按住右键拖过格子</b>则每格只放一个。2×2 合成格可以手工合成，高级配方需要附近有工作台。</li>
-        <li><b>熔炉</b> 靠近放置的熔炉按 F 打开。煤、木板、原木都能当燃料。</li>
+        <li><b>背包</b> 按 E。左键整叠拿起／放下，右键拿一半或只放一个；<b>按住左键拖过格子</b>会把手上的方块均分过去，<b>按住右键拖过格子</b>则每格只放一个。鼠标停在物品或分类标签上会显示名字。2×2 合成格可以手工合成，高级配方需要附近有工作台。</li>
+        <li><b>熔炉</b> 靠近放置的熔炉按 F 打开。煤、木炭、煤炭块和木材都能当燃料，两根木棍可烧一件。原木烧木炭，圆石烧石头，再烧成平滑石头。</li>
         <li><b>聊天与指令</b> 按 T 聊天，按 / 直接进入指令。可用：<code>/gamemode</code> <code>/weather</code> <code>/time</code> <code>/tp</code> <code>/give</code> <code>/clear</code> <code>/spawn</code> <code>/kill</code> <code>/seed</code> <code>/help</code>。</li>
         <li><b>生存</b> 一昼夜 20 分钟，天气会自己晴雨交替。饱食度足够时会缓慢回血，饿死或摔死都会掉落物品。</li>
         <li><b>调试</b> 按 F3 显示坐标与目标方块。</li>

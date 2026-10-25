@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {World, DAY, W, H, RECIPES} from '../../minecraft/game.js';
+import {World, DAY, W, H, RECIPES, ITEMS, BLOCKS, toolVertex} from '../../minecraft/game.js';
 
 function advance(world,seconds,controls={}) {
   for(let i=0;i<Math.round(seconds*60);i++) world.update(1/60,controls);
@@ -62,4 +62,65 @@ test('save roundtrip preserves terrain, inventory, furnace progress and dropped 
 test('death drops inventory, respawn restores life and does not duplicate items',()=>{
   const w=fixture();w.add('diamond',3);w.damage(20,'test');assert.equal(w.player.health,0);assert.equal(w.count('diamond'),0);
   assert.equal(w.drops.reduce((sum,d)=>sum+d.n,0),3);w.respawn();assert.equal(w.player.health,20);assert.equal(w.count('diamond'),0);
+});
+
+
+test('tool handle stays in the palm at every swing angle with a fixed model scale',()=>{
+  for(const a of [-.3,-.8,-1.72,0,.3]){
+    const p=toolVertex(4.5,12.5,0,a);
+    assert.equal(p.x,-6);assert.ok(Math.abs(p.y-(24-10*Math.cos(a)))<1e-9);
+    assert.ok(Math.abs(p.z+10*Math.sin(a))<1e-9);
+    const tip=toolVertex(12.5,4.5,0,a);
+    assert.ok(Math.abs(Math.hypot(tip.y-p.y,tip.z-p.z)-Math.sqrt(72))<1e-9);
+  }
+});
+test('new diamond tools and reversible resource blocks have real recipes',()=>{
+  const w=fixture();w.set(41,49,13);
+  for(const tool of ['axe','sword','shovel']){
+    w.add('diamond',3);w.add('stick',2);assert.equal(w.craft(recipe('diamond_'+tool)),true);
+    assert.equal(ITEMS['diamond_'+tool].durability,1561);
+  }
+  for(const [block,item]of [['iron_block','iron_ingot'],['diamond_block','diamond'],['coal_block','coal']]){
+    w.inventory.fill(null);w.add(item,9);assert.equal(w.craft(recipe(block)),true);
+    assert.equal(w.count(item),0);assert.equal(w.count(block),1);
+    assert.equal(w.craft(RECIPES.find(r=>r.out===item&&r.needs[block])),true);
+    assert.equal(w.count(item),9);assert.equal(w.count(block),0);
+  }
+  for(const id of ['stone_bricks','sandstone','smooth_stone'])assert.ok(BLOCKS.some(b=>b.id===id));
+});
+test('charcoal reserves input, consumes enough fuel and survives save/reload',()=>{
+  const w=fixture();w.set(41,49,14);w.add('oak_log');
+  assert.equal(w.smelt('oak_log'),false);assert.equal(w.count('oak_log'),1);
+  w.add('stick');assert.equal(w.smelt('oak_log'),false);assert.equal(w.count('stick'),1);
+  w.add('stick');assert.equal(w.smelt('oak_log'),true);assert.equal(w.count('stick'),0);assert.equal(w.count('oak_log'),0);
+  advance(w,10.2);assert.equal(w.furnaces['41,49'].output,'charcoal');w.collectSmelt();
+  w.add('cobblestone');assert.equal(w.smelt('cobblestone'),true);advance(w,10.2);w.collectSmelt();
+  assert.equal(w.count('stone'),1);assert.equal(w.smelt('stone'),true);advance(w,10.2);w.collectSmelt();assert.equal(w.count('smooth_stone'),1);
+  w.furnaces['41,49'].fuel=0;w.add('coal_block');w.add('sand');assert.equal(w.smelt('sand'),true);
+  const saved=World.restore(JSON.parse(JSON.stringify(w.serialize())));
+  assert.equal(saved.furnaces['41,49'].fuel,800);
+});
+
+
+test('v3 expansion preserves buildings, water sources and player inventory in place',()=>{
+  const w=fixture(),data=w.serialize(),width=640,height=160;
+  const encode=arr=>{const a=[];let v=arr[0],n=0;for(const x of arr){if(x===v)n++;else{a.push(v,n);v=x;n=1;}}a.push(v,n);return a;};
+  const blocks=new Uint16Array(width*height),natural=new Uint8Array(width*height),water=new Uint8Array(width*height);
+  for(let x=0;x<width;x++)blocks[50*width+x]=3;
+  blocks[49*width+42]=21;blocks[49*width+44]=17;water[49*width+44]=8;
+  Object.assign(data,{version:3,blocks:encode(blocks),natural:encode(natural),water:encode(water),surface:Array(width).fill(50),waterSources:[49*width+44],inventory:Array(36).fill(null)});
+  data.inventory[0]={id:'diamond',n:17};delete data.width;delete data.height;
+  const restored=World.restore(data);
+  assert.equal(restored.get(42,49),21);assert.equal(restored.get(44,49),17);assert.ok(restored.waterSources.has(49*W+44));assert.equal(restored.count('diamond'),17);
+  assert.equal(restored.surface[400],50);assert.equal(restored.blocks.length,4096*256);assert.equal(restored.migrated,true);
+});
+test('catalog blocks above 255 survive placement, mining and v4 saves',()=>{
+  const w=fixture();const index=BLOCKS.findIndex((b,i)=>i>255&&b.hard<Infinity);assert.ok(index>255);
+  w.set(2000,49,index);w.add(BLOCKS[index].id,4);
+  const restored=World.restore(JSON.parse(JSON.stringify(w.serialize())));assert.equal(restored.get(2000,49),index);assert.equal(restored.count(BLOCKS[index].id),4);
+  assert.ok(Object.keys(ITEMS).length>1300);
+});
+test('supported spawn eggs spawn a live mob and consume the item',()=>{
+  const w=fixture();w.add('cow_spawn_egg');w.selected=0;
+  assert.equal(w.place(42,48),true);assert.equal(w.mobs[0].type,'cow');assert.equal(w.count('cow_spawn_egg'),0);
 });

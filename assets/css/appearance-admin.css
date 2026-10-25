@@ -2,3 +2,4 @@
 
 .appearance-swatch.nightcity{border-radius:0;background:linear-gradient(180deg,#071523 0 55%,#ff4d5c 55% 60%,#071523 60% 75%,#67f1ef 75% 80%,#071523 80%);border:1px solid #ff4d5c}
 .appearance-swatch.deepdive{border-radius:0;border:1px solid #ff6a63;background:linear-gradient(135deg,#ff6a63 25%,#221018 25%,#221018 70%,#72e5ec 70%)}
+.appearance-swatch.eldenring{border-radius:0;border:1px solid #d8b46a;background:radial-gradient(circle at 50% 44%,transparent 28%,#e6c68b 29% 35%,transparent 36%),radial-gradient(circle at 50% 44%,transparent 44%,#8a6630 45% 48%,transparent 49%),linear-gradient(160deg,#1a130a,#0a0704)}

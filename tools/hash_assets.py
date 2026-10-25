@@ -52,7 +52,8 @@ ASSETS = [
     "assets/js/site-settings-browser.js", "assets/js/visitor-theme.js",
     "assets/js/markdown.js", "assets/js/work-editor.js", "assets/js/admin-studio.js",
     "assets/css/app.css", "assets/css/markdown.css", "assets/css/cyberpunk.css",
-    "assets/css/nightcity.css", "assets/css/deepdive.css", "assets/css/site-experience.css",
+    "assets/css/nightcity.css", "assets/css/deepdive.css", "assets/css/eldenring.css",
+    "assets/css/site-experience.css",
     "assets/css/guestbook-themes.css", "assets/css/visitor-theme.css",
     "assets/css/work-editor.css", "assets/css/appearance-admin.css", "assets/css/admin-studio.css",
 ]

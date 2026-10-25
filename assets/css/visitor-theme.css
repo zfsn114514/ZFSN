@@ -7,3 +7,4 @@
 @media(max-width:760px){#visitor-theme-toggle{left:16px;bottom:calc(84px + env(safe-area-inset-bottom,0px));padding:10px 13px}#visitor-theme-panel{left:16px;right:16px;bottom:calc(140px + env(safe-area-inset-bottom,0px));width:auto;max-height:calc(100dvh - 175px);padding:20px}}
 @media(prefers-reduced-motion:reduce){#visitor-theme-toggle,.vt-option{transition:none}}
 [data-theme=deepdive]>.vt-swatch{background:linear-gradient(135deg,#ff6a63 25%,#221018 25%,#221018 70%,#72e5ec 70%);border:1px solid #ff6a63;border-radius:0}
+[data-theme=eldenring]>.vt-swatch{background:radial-gradient(circle at 50% 45%,transparent 27%,#e6c68b 28% 34%,transparent 35%),radial-gradient(circle at 50% 45%,transparent 42%,#8a6630 43% 46%,transparent 47%),linear-gradient(160deg,#1a130a,#0a0704);border:1px solid #8a6630;border-radius:0;box-shadow:inset 0 0 12px rgba(216,180,106,.18)}

@@ -68,6 +68,18 @@
   Content-Type: image/avif
   Cache-Control: public, max-age=2592000
 
+# —— 我的世界的贴图与创造栏图标 ——
+# 1300+ 张贴图 + 390 个图标，如果不加缓存，每次进游戏都要逐个回源验证一遍
+# （默认 public, max-age=0, must-revalidate），首屏会被拖慢一个数量级。
+# 这些图来自原版客户端，几乎不会变；真换了贴图需要用户强刷一次。
+# ★ 不用 30 天而用 7 天：万一某个图标画错了要重发，一周内能自然过期，
+#   不用等一个月，也不必给文件名加哈希（那会让 game.js 的动态引用全要改）。
+/minecraft/textures/*.png
+  Cache-Control: public, max-age=604800
+
+/minecraft/icons/*.png
+  Cache-Control: public, max-age=604800
+
 /assets/*.gif
   Cache-Control: public, max-age=2592000
 
@@ -161,10 +173,10 @@
 # `public, max-age=0, must-revalidate`，也就是每次回源协商。
 # 新加脚本/样式后请填进 hash_assets.py 顶部的 ASSETS 列表再跑一次。
 
-/minecraft/game.5bfd2573.js
+/minecraft/game.a175d960.js
   Cache-Control: public, max-age=31536000, immutable
 
-/minecraft/style.fa0bf866.css
+/minecraft/style.73525746.css
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/guest-media.4168334e.js
@@ -179,13 +191,13 @@
 /assets/js/danmaku.de1add44.js
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/js/appearance.c3fb6b36.js
+/assets/js/appearance.d51a7529.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/site-settings-browser.c033daa5.js
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/js/visitor-theme.28875866.js
+/assets/js/visitor-theme.6ca1e859.js
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/js/markdown.42400e06.js
@@ -212,19 +224,22 @@
 /assets/css/deepdive.5c260820.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/site-experience.049edf21.css
+/assets/css/eldenring.a3543f81.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/guestbook-themes.462c020c.css
+/assets/css/site-experience.70ccfd78.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/visitor-theme.a16ce5e2.css
+/assets/css/guestbook-themes.36e66c77.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/css/visitor-theme.b00d998c.css
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/css/work-editor.f25be757.css
   Cache-Control: public, max-age=31536000, immutable
 
-/assets/css/appearance-admin.8f659c7e.css
+/assets/css/appearance-admin.5f36a6c1.css
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/css/admin-studio.3908d4c5.css

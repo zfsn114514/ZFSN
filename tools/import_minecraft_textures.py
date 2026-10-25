@@ -14,11 +14,11 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1] / 'minecraft'
 BLOCKS = ('grass_block_side grass_block_side_overlay dirt stone cobblestone bedrock '
           'oak_log oak_planks oak_leaves sand coal_ore iron_ore diamond_ore '
-          'crafting_table_front furnace_front furnace_front_on glass torch water_still water_flow white_wool').split()
+          'crafting_table_front furnace_front furnace_front_on glass torch water_still water_flow white_wool stone_bricks sandstone iron_block diamond_block coal_block smooth_stone').split()
 ITEMS = ('stick coal raw_iron iron_ingot diamond apple porkchop cooked_porkchop '
          'wooden_pickaxe stone_pickaxe iron_pickaxe diamond_pickaxe '
          'wooden_axe stone_axe iron_axe wooden_sword stone_sword iron_sword '
-         'wooden_shovel stone_shovel iron_shovel beef cooked_beef chicken cooked_chicken mutton cooked_mutton feather leather bucket water_bucket egg').split()
+         'wooden_shovel stone_shovel iron_shovel beef cooked_beef chicken cooked_chicken mutton cooked_mutton feather leather bucket water_bucket egg charcoal diamond_axe diamond_sword diamond_shovel').split()
 
 
 def main():

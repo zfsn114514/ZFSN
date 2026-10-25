@@ -31,3 +31,37 @@ html[data-theme=deepdive] #page-guest .glist .gitem.clamped::after{color:var(--c
 #page-guest .glist .gitem::after{content:none;position:static;inset:auto;transform:none;background:none;box-shadow:none;border:0;clip-path:none;pointer-events:none;width:auto;height:auto;padding:0;opacity:1}
 #page-guest .glist .gitem.clamped::after{content:'展开全文';display:block;margin-top:10px;color:var(--gb-tag);font-size:11px;line-height:1.6}
 #page-guest .glist .gitem.clamped.open::after{content:'收起'}
+
+/* 黄金律法：留言卡当作黑金石碑，铭文用金线分隔 */
+html[data-theme=eldenring] #page-guest{
+  --gb-radius:0px;
+  --gb-surface:linear-gradient(165deg,rgba(26,19,11,.94),rgba(10,8,5,.97));
+  --gb-border:rgba(216,180,106,.30);
+  --gb-signal:var(--c1);
+  --gb-tag:#d9c29b;
+  --gb-tag-bg:rgba(216,180,106,.06);
+  --gb-tag-border:rgba(216,180,106,.28);
+  --gb-avatar-radius:50%;
+  --gb-avatar-ink:#171006;
+  --gb-shadow:inset 3px 0 rgba(216,180,106,.40);
+  --gb-body:#d9c9ab;
+}
+html[data-theme=eldenring] #page-guest .gbar{border-top:1px solid rgba(216,180,106,.55)}
+html[data-theme=eldenring] #page-guest .glist .gitem{border-top-color:rgba(216,180,106,.5);padding:18px 20px 17px 22px}
+html[data-theme=eldenring] #page-guest .glist .gitem .who{
+  color:var(--gold-hi);font-family:var(--er-display);font-size:13px;letter-spacing:.08em;
+}
+html[data-theme=eldenring] #page-guest .glist .gitem .av{
+  background:linear-gradient(150deg,#f0d69c,#a97f3e);color:#171006;
+  border-color:rgba(246,232,198,.55);box-shadow:0 0 14px rgba(216,180,106,.25);
+}
+html[data-theme=eldenring] #page-guest .glist .gitem .loc{letter-spacing:.1em}
+html[data-theme=eldenring] #page-guest .glist .gitem .when{color:var(--gold-lo);letter-spacing:.1em}
+html[data-theme=eldenring] #page-guest .glist .gitem header{padding-bottom:9px;border-bottom:1px solid rgba(216,180,106,.22)}
+html[data-theme=eldenring] #page-guest .glist .gitem:hover{
+  border-color:rgba(216,180,106,.62);
+  box-shadow:inset 3px 0 rgba(216,180,106,.6),0 14px 36px rgba(0,0,0,.55),0 0 26px rgba(216,180,106,.10);
+  transform:translateY(-2px);
+}
+html[data-theme=eldenring] #page-guest .glist .gitem.clamped::after{color:var(--gold);letter-spacing:.16em}
+html[data-theme=eldenring] #page-guest .glist .gitem .msg-voice{border-radius:0;background:rgba(216,180,106,.06);border-color:rgba(216,180,106,.28)}

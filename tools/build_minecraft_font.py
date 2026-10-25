@@ -30,7 +30,7 @@ with zipfile.ZipFile(Path(tempfile.gettempdir())/'zfsn-minecraft-1.21.1.jar') as
                 pixels=[[im.getpixel((col*8+x,row*8+y))[3]>0 for x in range(8)] for y in range(8)]
                 glyphs[ord(c)]=(pixels,8)
 chars=set(range(32,127))
-for file in [ROOT/'index.html',ROOT/'game.js']:
+for file in [ROOT/'index.html',ROOT/'game.js',ROOT/'catalog.js']:
     chars.update(ord(c) for c in file.read_text(encoding='utf-8') if ord(c)>=127)
 font=FontBuilder(1024,isTTF=True);names=['.notdef']+[f'u{c:04X}' for c in sorted(chars) if c in glyphs]
 font.setupGlyphOrder(names);out={};metrics={};cmap={}

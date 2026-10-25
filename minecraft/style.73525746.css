@@ -1,0 +1,424 @@
+@charset "UTF-8";
+/* ─────────────────────────────────────────────────────────────
+   方块世界 2D · 界面样式
+   目标：所有面板、按钮、槽位都用 Java 版原始贴图，坐标按原版
+   176×166 的 GUI 设计稿整体放大 2 倍，文字用客户端自带的位图字体
+   （mc-font.woff2?v=5a3e2e56 由 tools/build_minecraft_font.py 从官方 jar 生成）。
+   ───────────────────────────────────────────────────────────── */
+
+@font-face{
+  font-family:'MCBitmap';
+  src:url('mc-font.woff2?v=5a3e2e56') format('woff2');
+  font-display:block;
+  font-weight:400;
+}
+
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;overflow:hidden;background:#000;
+  font-family:'MCBitmap',monospace;font-size:16px;line-height:1.15;
+  color:#fff;-webkit-font-smoothing:none;
+}
+/* 原版文字一律带右下 2px 深色投影（等价于 MC 的 shadow 加倍率） */
+#game,#game *{text-shadow:2px 2px 0 rgba(0,0,0,.55)}
+img,canvas{image-rendering:pixelated}
+
+#game{position:relative;height:100dvh;min-height:320px;isolation:isolate}
+#world{position:absolute;inset:0;width:100%;height:100%;outline:none;touch-action:none;cursor:crosshair}
+
+/* ── 通用按钮：gui_button.png 九宫格（3px 边）── */
+button{
+  -webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;background:none;
+  font:inherit;color:inherit;cursor:pointer;
+}
+button.mc-btn,a.mc-btn{
+  -webkit-appearance:none;appearance:none;margin:0;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  width:400px;height:40px;padding:0 8px;
+  font-family:inherit;font-size:16px;line-height:1;color:#fff;text-decoration:none;
+  background:transparent;border:6px solid transparent;
+  border-image:url('textures/gui_button.png') 3 fill stretch;
+  border-image-width:6px;
+}
+button.mc-btn:hover:not(:disabled),a.mc-btn:hover{
+  color:#ffffa0;
+  border-image-source:url('textures/gui_button_hover.png');
+}
+button:disabled,a.mc-btn[aria-disabled="true"]{
+  cursor:not-allowed;color:#a0a0a0;
+  border-image-source:url('textures/gui_button_disabled.png');
+}
+button:focus-visible,a:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.mc-btn.narrow{width:auto;min-width:132px;height:36px;font-size:16px}
+
+/* ── 输入框 / 单选 ── */
+.mc-input{
+  width:400px;height:40px;padding:0 12px;
+  font-family:inherit;font-size:16px;color:#e0e0e0;
+  background:#000;border:2px solid #a0a0a0;border-radius:0;
+}
+.mc-input::placeholder{color:#707070}
+.mc-input:focus{outline:none;border-color:#fff}
+.mc-label{display:block;margin-bottom:6px;color:#a0a0a0;align-self:flex-start}
+.mc-choice{display:flex;gap:24px;justify-content:center;color:#fff}
+.mc-choice label{display:flex;align-items:center;gap:8px;cursor:pointer}
+.mc-choice input{accent-color:#5a8f3d;width:16px;height:16px}
+
+/* ── 屏幕容器（全屏遮罩 + 居中）── */
+.screen,.mc-screen{
+  position:fixed;inset:0;z-index:20;
+  display:grid;place-items:center;
+  background:rgba(0,0,0,.62);
+}
+dialog.mc-screen{
+  margin:0;padding:0;border:0;width:100%;height:100%;max-width:none;max-height:none;
+  color:inherit;
+}
+dialog.mc-screen:not([open]){display:none}
+dialog::backdrop{background:transparent}
+
+/* ── 标题画面 ── */
+#start-screen{background:linear-gradient(rgba(0,0,0,.42),rgba(0,0,0,.72));z-index:15}
+.title-stack{display:flex;flex-direction:column;align-items:center;gap:10px;width:400px;position:relative}
+#title-logo{width:400px;height:100px;object-fit:fill;margin-bottom:2px}
+.splash{
+  position:absolute;right:-6px;top:78px;transform:rotate(-18deg);transform-origin:center;
+  color:#ffff00;font-size:16px;animation:splashPulse 1s ease-in-out infinite alternate;
+  pointer-events:none;
+}
+@keyframes splashPulse{from{transform:rotate(-18deg) scale(1)}to{transform:rotate(-18deg) scale(1.08)}}
+.menu-buttons,#new-world{display:flex;flex-direction:column;align-items:center;gap:8px;width:400px}
+#new-world{gap:10px}
+#new-world .mc-choice{margin:2px 0 6px}
+.title-foot{
+  position:absolute;bottom:-72px;left:-100px;width:600px;
+  display:flex;justify-content:space-between;font-size:16px;color:#fff;opacity:.9;
+}
+
+/* ── HUD ── */
+#hud{position:absolute;inset:auto 0 0;display:flex;justify-content:center;pointer-events:none;z-index:6}
+#hotbar-wrap{position:relative;width:364px;height:44px;margin-bottom:6px;pointer-events:auto}
+#hotbar{
+  position:absolute;left:0;bottom:0;width:364px;height:44px;
+  background:url('textures/gui_hotbar.png') 0 0/100% 100% no-repeat;
+}
+/* ★ .slot 绝对不能写 position:absolute —— 那是给 HUD 快捷栏用的，
+   而 #slots / #inv-hotbar / #craft-grid 都是 display:grid。
+   绝对定位的 grid 子项会脱离网格、全部堆在容器左上角：27 格物品栏 + 9 格快捷栏
+   + 4 格合成格全叠成一坨，视觉上"物品叠在一起"，点击也永远只命中同一格
+   → 表现就是"物品拿不起来、放不到别处"。HUD 那边由 slotNode() 内联 absolute。 */
+.slot{
+  position:relative;width:100%;height:100%;padding:0;border:0;background:transparent;
+  cursor:pointer;display:block;box-sizing:border-box;
+}
+/* 36px 格子（原版 18×18 ×2）：32px 图标居中偏移 2px */
+.slot img{position:absolute;left:2px;top:2px;width:32px;height:32px;pointer-events:none}
+.slot .count{
+  position:absolute;right:2px;bottom:0;font-size:16px;line-height:1;
+  color:#fff;text-shadow:2px 2px 0 #3f3f3f;pointer-events:none;
+}
+.slot .dur{position:absolute;left:2px;bottom:2px;width:32px;height:4px;background:#000;pointer-events:none}
+.slot .dur i{display:block;height:100%;background:#3ce63c;font-style:normal}
+.slot:hover{background:rgba(255,255,255,.22)}
+/* 手持物品跟随鼠标。用 fixed 定位，JS 每帧写 clientX/clientY，
+   translate(-16px,-16px) 让图标中心压在指针上（原版也是这样偏左上一点）。 */
+#held-cursor{
+  position:fixed;left:0;top:0;width:32px;height:32px;z-index:900;
+  pointer-events:none;transform:translate(-16px,-16px);
+}
+#held-cursor img{position:absolute;left:0;top:0;width:32px;height:32px;image-rendering:pixelated}
+#held-cursor .count{
+  position:absolute;right:0;bottom:-2px;font-size:16px;line-height:1;
+  color:#fff;text-shadow:2px 2px 0 #3f3f3f;
+}
+#held-cursor .dur{position:absolute;left:0;bottom:0;width:32px;height:4px;background:#000}
+#held-cursor .dur i{display:block;height:100%;background:#3ce63c;font-style:normal}
+/* ── 物品名提示框（原版 tooltip）─────────────────────────────────
+   颜色照 Java 版：内层 #100010 近黑紫，外层边框从 #5000ff 渐变到 #28007f。
+   ★ 必须显式写 [hidden]{display:none}：下面的 display:block 特异性比 [hidden]
+     的 UA 规则高，只靠 hidden 属性藏不住，提示框会一直挂在左上角。 */
+#mc-tooltip{
+  position:fixed;left:0;top:0;z-index:950;pointer-events:none;
+  display:block;padding:3px 6px 4px;border:2px solid transparent;border-radius:3px;
+  background:linear-gradient(#100010,#100010) padding-box,
+             linear-gradient(#5000ff,#28007f) border-box;
+  font-family:inherit;font-size:15px;line-height:1.25;color:#fff;
+  text-shadow:2px 2px 0 rgba(0,0,0,.55);
+  white-space:nowrap;
+}
+#mc-tooltip[hidden]{display:none}
+#mc-tooltip .tip-sub{color:#a8a8b8;font-size:13px}
+/* 产物格：只能在有配方时出现，不做 hover 高亮以免和普通格子混淆 */
+#craft-result .slot{position:relative;width:36px;height:36px}
+#craft-result .slot img{left:2px;top:2px}
+/* HUD 快捷栏是 20×20 格子（×2 = 40），由 slotNode() 内联 left/top 定位 */
+#hotbar .slot{position:absolute;width:40px;height:40px}
+#hotbar .slot img{left:4px;top:4px}
+#hotbar .slot .count{right:3px;bottom:1px}
+#hotbar .slot .dur{left:4px;bottom:5px}
+#hotbar-selection{
+  position:absolute;width:48px;height:46px;top:-2px;
+  background:url('textures/gui_hotbar_selection.png') 0 0/100% 100% no-repeat;
+  pointer-events:none;
+}
+.stats{
+  position:absolute;left:0;bottom:48px;width:364px;height:18px;
+  display:flex;justify-content:space-between;
+}
+#health,#hunger{display:flex}
+#health i,#hunger i{display:block;width:18px;height:18px;background-size:100% 100%;margin-right:-2px}
+#item-name{
+  position:absolute;left:0;right:0;bottom:66px;text-align:center;font-size:16px;
+  opacity:0;transition:opacity .35s;pointer-events:none;
+}
+#item-name.show{opacity:1}
+
+/* ── F3 调试信息 ── */
+#debug{
+  position:absolute;left:4px;top:4px;z-index:8;padding:2px 6px;
+  font-size:16px;line-height:1.25;color:#e0e0e0;background:rgba(0,0,0,.45);
+  white-space:pre;pointer-events:none;
+}
+
+/* ── 提示条 ── */
+#toast{
+  position:absolute;left:50%;top:14%;transform:translateX(-50%);z-index:30;
+  max-width:80vw;padding:8px 14px;background:rgba(16,0,16,.86);
+  border:2px solid #2d0a63;text-align:center;font-size:16px;
+  opacity:0;transition:opacity .25s;pointer-events:none;
+}
+#toast.show{opacity:1}
+
+/* ── 聊天栏（原版：左下角一行行堆着，输入框横跨下方）── */
+#chat{
+  position:absolute;left:0;bottom:52px;width:min(600px,74vw);z-index:8;
+  display:flex;flex-direction:column;justify-content:flex-end;
+  pointer-events:none;
+}
+#chat-log{display:flex;flex-direction:column;justify-content:flex-end;gap:1px;padding:0 0 4px 4px;max-height:46vh;overflow:hidden}
+.chat-line{
+  align-self:flex-start;max-width:100%;padding:2px 6px;
+  background:rgba(0,0,0,.42);color:#fff;font-size:16px;line-height:1.24;
+  overflow-wrap:anywhere;text-shadow:2px 2px 0 rgba(0,0,0,.6);
+  transition:opacity .8s;
+}
+.chat-line.system{color:#ffff55}
+.chat-line.error{color:#ff6b6b}
+#chat-bar{
+  display:flex;align-items:center;padding:2px 8px;
+  background:rgba(0,0,0,.56);border-bottom:2px solid rgba(255,255,255,.22);
+  pointer-events:auto;
+}
+#chat-bar[hidden]{display:none}
+#chat-input{
+  flex:1 1 auto;min-width:0;background:none;border:0;outline:none;
+  font-family:inherit;font-size:16px;line-height:1.3;color:#fff;
+  caret-color:#fff;padding:2px 0;
+}
+
+/* ── 容器面板 ── */
+.mc-panel{
+  position:relative;color:#404040;text-shadow:none;
+  background:#c6c6c6;
+  box-shadow:inset -4px -4px 0 #555, inset 4px 4px 0 #fff, 0 0 0 2px #000;
+  padding:8px;
+}
+.mc-panel h2{margin:0 0 6px;font-size:16px;font-weight:400;color:#404040;text-shadow:none}
+.mc-panel .mc-btn{width:100%}
+.mc-note{font-size:16px;color:#c0c0c0;text-align:center;margin:8px 0 0}
+
+/* 背包：176×166 设计稿 ×2 = 352×332，背景取 inventory.png 左上角区域 */
+.inv-root{display:flex;align-items:flex-start;gap:12px;position:relative}
+.inv-panel{
+  width:352px;height:332px;padding:0;
+  background:url('textures/gui_inventory.png') 0 0/512px 512px no-repeat;
+  box-shadow:none;
+}
+#inv-player{position:absolute;left:52px;top:16px;width:96px;height:128px;image-rendering:pixelated}
+/* ★ 坐标全部按「贴图里格子左边框/上边框」量出来再 ×2（见 tools/dev/probe_guigeom.cjs）：
+   物品栏首格边框 x=7,y=83 → 14,166；快捷栏 y=141 → 282。
+   之前写成 16/168 是按「格内」算的，整体偏右下 2px，图标看起来就不在格子正中。 */
+#slots{position:absolute;left:14px;top:166px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#inv-hotbar{position:absolute;left:14px;top:282px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#craft-grid{position:absolute;left:194px;top:34px;display:grid;grid-template-columns:repeat(2,36px);grid-auto-rows:36px}
+#craft-result{position:absolute;left:306px;top:54px;width:36px;height:36px}
+/* 贴图里两个界面都自带箭头图案，HTML 里那个 "→" 元素已经删掉，
+   不要再加回来（会画重） */
+/* 工作台 3×3：同一个 dialog 换贴图 + 换网格位置（gui_crafting.png 里 3×3 首格
+   边框 x=29,y=16 → 58,32；产物格 x=119,y=30 → 238,60）。
+   物品栏/快捷栏两个界面位置相同，所以不用动。 */
+.inv-panel.is-table{background-image:url('textures/gui_crafting.png')}
+.inv-panel.is-table #craft-grid{left:58px;top:32px;grid-template-columns:repeat(3,36px)}
+.inv-panel.is-table #craft-result{left:238px;top:60px}
+/* 提示文字挂在面板下方，不能放面板里：hotbar 占到 y=320，面板 332 高、
+   底部只剩 12px，16px 字放在 bottom:4px 会直接压在快捷栏格子上。
+   脱离 flex 流（absolute）避免它变成 .inv-root 的第三列；
+   面板外是 .62 黑遮罩，字色必须转浅才看得见。 */
+#slot-description{
+  position:absolute;left:0;right:0;top:calc(100% + 10px);text-align:center;
+  font-size:16px;color:#c0c0c0;margin:0;
+}
+.recipe-panel{width:300px;height:332px;display:flex;flex-direction:column;gap:6px}
+/* display:flex 会压过 [hidden] 的 display:none，必须显式补一条，
+   否则生存模式下面板"隐藏"了却照样占位。 */
+.recipe-panel[hidden]{display:none}
+.recipe-panel h2{flex:0 0 auto}
+#station-status{flex:0 0 auto;margin:0;font-size:16px;color:#404040;text-shadow:none}
+#recipes{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding-right:4px}
+#recipes::-webkit-scrollbar{width:12px}
+#recipes::-webkit-scrollbar-thumb{background:#8b8b8b;border:2px solid #c6c6c6}
+.recipe{
+  display:flex;align-items:center;gap:8px;width:100%;min-height:46px;height:auto;padding:2px 6px;
+  background:#8b8b8b;border:2px solid;border-color:#373737 #fff #fff #373737;
+  color:#fff;font-family:inherit;font-size:16px;text-align:left;cursor:pointer;
+}
+.recipe:hover:not(:disabled){background:#a0a0a0;color:#ffffa0}
+.recipe:disabled{opacity:.55;cursor:not-allowed}
+.recipe img{width:32px;height:32px;flex:0 0 32px}
+.recipe span{display:flex;flex-direction:column;justify-content:center;line-height:1.1;min-width:0}
+.recipe small{font-size:16px;color:#e8e8e8}
+
+/* 熔炉：176×166 ×2 */
+.furnace-wrap{display:flex;flex-direction:column;align-items:center;gap:10px}
+.furnace-panel{
+  position:relative;width:352px;height:332px;color:#404040;
+  background:url('textures/gui_furnace.png') 0 0/512px 512px no-repeat;
+}
+.furnace-panel h2{position:absolute;left:18px;top:4px;margin:0;font-size:16px;font-weight:400;color:#404040;text-shadow:none}
+.fslot{position:absolute;width:36px;height:36px}
+.fslot img{position:absolute;left:2px;top:2px;width:32px;height:32px}
+#furnace-input{left:112px;top:34px}
+#furnace-fuel{left:112px;top:106px}
+#furnace-output{left:232px;top:62px}
+.flame{position:absolute;left:114px;top:73px;width:28px;height:28px;background:radial-gradient(circle at 50% 70%,#ffb43a,#e05a12 60%,transparent 70%);opacity:0}
+.flame.on{opacity:1}
+.progress-arrow{position:absolute;left:166px;top:74px;width:44px;height:16px;background:#8b8b8b}
+.progress-arrow i{display:block;height:100%;width:0;background:#e8e8e8}
+/* 状态文字已移到 .furnace-panel 外面（面板内 top:266px 会压在物品格上），
+   这里改成普通流式排版，不再绝对定位。 */
+#furnace-status{
+  margin:0;text-align:center;max-width:352px;
+  font-size:14px;color:#e8e8e8;text-shadow:2px 2px 0 #000;
+}
+.furnace-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;width:352px}
+.furnace-actions .mc-btn.narrow{width:100%;min-width:0;height:36px}
+
+/* ── 暂停 / 死亡 ── */
+.pause-stack{display:flex;flex-direction:column;align-items:center;gap:8px;width:400px}
+.pause-stack h2{margin:0 0 6px;font-size:16px;font-weight:400}
+.pause-stack .dead{color:#ff5555;font-size:32px}
+#death-dialog{background:rgba(112,0,0,.62)}
+
+/* ── 说明面板 ── */
+.help-panel{width:min(560px,92vw);max-height:86vh;overflow-y:auto}
+.help-panel .guide{margin:0 0 8px;padding-left:22px;font-size:16px;line-height:1.35;color:#404040;text-shadow:none}
+.help-panel .guide b{color:#000}
+.help-panel .mc-note{color:#606060;text-shadow:none}
+.help-panel .mc-btn{width:100%}
+
+/* ── 触屏 ── */
+/* ★ 底部这条 0~70px 是 HUD 的地盘（快捷栏 44 + 下边距 6 + 血条/饥饿条 ≈ 20）。
+   这里原来写 bottom:60px，触屏键（高 64）就落在 60~124，正好把血条和饥饿条盖住 ——
+   375 宽实测「挖掘/放置/使用/背包」四个键压在爱心上。抬到 HUD 顶边之上。 */
+#touch-controls{position:absolute;inset:auto 0 84px;z-index:9;display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
+#touch-controls>div{display:flex;gap:8px;pointer-events:auto}
+#touch-controls button{
+  width:64px;height:64px;padding:0;font-family:inherit;font-size:16px;color:#fff;
+  background:rgba(0,0,0,.42);border:2px solid rgba(255,255,255,.6);border-radius:0;
+  display:flex;align-items:center;justify-content:center;
+}
+#touch-controls button:active{background:rgba(255,255,255,.35)}
+/* 跳跃键：和动作键区分开（基岩版的跳跃也长得不一样），
+   不然一排五个方按钮里认不出哪个是跳。 */
+#touch-controls .touch-jump{background:rgba(40,110,60,.5);border-color:rgba(190,255,200,.85);font-size:20px}
+#touch-controls .touch-jump:active{background:rgba(150,255,180,.4)}
+
+/* 窄屏整体缩小，保证背包不溢出 */
+/* ★ 这里必须写 button.mc-btn 而不是 button：基础规则是 button.mc-btn{width:400px}，
+   特异性 (0,1,1) 高于 button (0,0,1)，只写 button 的话媒体查询完全不生效，
+   手机 375px 宽下按钮仍然 400px → 横向溢出、按钮点不到。 */
+@media (max-width:760px){
+  .inv-root{transform:scale(.86);transform-origin:center}
+  .title-stack,.menu-buttons,#new-world,.pause-stack{width:min(340px,86vw)}
+  button.mc-btn,a.mc-btn,.mc-input{width:min(340px,86vw)}
+  #title-logo{width:min(340px,86vw);height:auto;aspect-ratio:4/1}
+  /* 触屏键：3 个移动键 + 4 个动作键，64px 时总共需要 ≈516px，375 屏塞不下，
+     右边「使用/背包」会被挤出屏幕。窄屏缩到 44px（Apple 最小可点尺寸），
+     总宽 3*44+4*44+间距 ≈ 354px，刚好放得下一行。 */
+  #touch-controls{padding:0 8px;bottom:104px;gap:6px}
+  #touch-controls>div{gap:6px}
+  #touch-controls button{width:44px;height:44px;font-size:11px;border-width:1px}
+  /* 底部版本文本是 left:-100px;width:600px 的绝对定位（模拟原版底栏比菜单宽），
+     窄屏会整个溢到屏幕左边外，只剩半截 "D · 1.21.1 材质"。 */
+  .title-foot{left:0;width:100%;bottom:-52px;font-size:11px;line-height:1.5;
+    flex-wrap:wrap;justify-content:center;gap:0 10px}
+}
+@media (max-height:520px){
+  .inv-root{transform:scale(.72)}
+  #title-logo{width:300px;height:75px}
+}
+
+/* ── 触屏下聊天栏要避开触屏键 ──
+   ★ 手机实测：黄色系统提示和底部「挖掘 / 放置 / 使用 / 背包」四个键叠在一起，两行字都糊了。
+   触屏键顶边 = bottom + 按钮高度：宽屏 84+64=148，窄屏 104+44=148（两者巧合相同），
+   所以聊天栏底边统一抬到 156px，留 8px 缝。改触屏键高度时这条要跟着改。 */
+@media (pointer:coarse){
+  #chat{bottom:156px}
+}
+
+/* 320px 小屏：保留原版 HUD 比例；动作分两行，跳跃仍在右端。 */
+@media (max-width:360px){
+  #hotbar-wrap{zoom:.84;flex-shrink:0}
+  .inv-root{zoom:.84;transform:none}
+  #touch-controls>.touch-act{display:grid;grid-template-columns:repeat(3,44px)}
+  #touch-controls .touch-jump{grid-column:3;grid-row:1 / 3;height:94px}
+}
+@media (max-width:360px) and (pointer:coarse){
+  #chat{bottom:206px}
+}
+
+/* More smelting recipes must remain reachable on short phone screens. */
+@media (max-width:760px){
+  .furnace-wrap{width:min(352px,96vw);max-height:94dvh;overflow-y:auto;overflow-x:hidden}
+  .furnace-actions{width:100%}
+}
+@media (max-width:360px){
+  .furnace-panel{zoom:.84;flex-shrink:0}
+}
+
+/* Java creative inventory: 195x136, 9x5 catalogue and separate hotbar. */
+#inventory-dialog.creative .inv-root{width:390px;height:272px;flex-shrink:0}
+#inventory-dialog.creative:not(.personal) .inv-panel{display:none}
+#inventory-dialog.creative.personal .inv-root{height:332px}
+#inventory-dialog.creative.personal .inv-panel{margin:auto}
+#inventory-dialog.personal #creative-panel{visibility:hidden}
+#creative-browser{position:absolute;inset:0}
+#creative-panel{position:relative;width:390px;height:272px;background:url('textures/creative_tab_items.png') 0 0/512px 512px no-repeat;color:#404040}
+#creative-title{position:absolute;left:18px;top:8px;font-size:16px;text-shadow:none}
+#creative-grid{position:absolute;left:16px;top:34px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#creative-hotbar{position:absolute;left:16px;top:222px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#creative-search{position:absolute;right:52px;top:6px;width:170px;height:24px;background:#8b8b8b;color:white;border:0;font:inherit;padding:2px 4px;outline:1px solid #373737}
+#creative-scroll{position:absolute;right:12px;top:36px;width:24px;height:174px;writing-mode:vertical-lr;direction:ltr;accent-color:#c6c6c6;margin:0}
+#creative-tabs-top,#creative-tabs-bottom{position:absolute;left:0;display:flex;gap:4px;height:56px;z-index:2}
+#creative-tabs-top{bottom:100%}#creative-tabs-bottom{top:100%}
+#creative-browser [role=tab]{width:56px;height:56px;background:url('textures/creative_tab_top_unselected_1.png') center/100% 100%;padding:10px}
+#creative-browser [role=tab][aria-selected=true]{background-image:url('textures/creative_tab_top_selected_1.png')}
+#creative-browser [role=tab] img{width:32px;height:32px}
+#inventory-dialog.creative #slot-description{display:none}
+#chat-log{display:block;overflow-y:hidden}
+.chat-line{width:fit-content}.chat-line.expired{display:none}
+#chat.open{pointer-events:auto}#chat.open #chat-log{overflow-y:auto;max-height:46vh}
+#chat.open .chat-line.expired{display:block;opacity:1}
+@media(max-width:760px){#inventory-dialog.creative .inv-root{zoom:.85;transform:none}}
+@media(max-width:360px){#inventory-dialog.creative .inv-root{zoom:.76}}
+
+#creative-tabs-bottom [role=tab]{background-image:url('textures/creative_tab_bottom_unselected_1.png')}
+#creative-tabs-bottom [role=tab][aria-selected=true]{background-image:url('textures/creative_tab_bottom_selected_1.png')}
+#creative-scroll{appearance:none;background:none;outline:none;border:0}
+#creative-scroll::-webkit-slider-runnable-track{background:transparent;width:24px}
+#creative-scroll::-webkit-slider-thumb{appearance:none;width:24px;height:30px;border:0;border-radius:0;background:url('textures/creative_scroller.png') center/100% 100%}
+
+button.mobile-inventory-close{display:none}
+@media(max-width:760px){button.mobile-inventory-close{display:flex;position:absolute;right:12px;top:12px;width:40px;height:40px;z-index:5}}
