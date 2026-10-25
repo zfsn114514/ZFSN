@@ -7,8 +7,8 @@
   <meta name="description" content="ZFSN 的 2D 方块生存世界：挖掘、合成、建造，浏览器直接游玩。">
   <title>方块世界 · ZFSN</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="../minecraft/style.73525746.css">
-  <script type="module" src="../minecraft/game.9ac5199d.js"></script>
+  <link rel="stylesheet" href="../minecraft/style.3009d345.css">
+  <script type="module" src="../minecraft/game.c42b26eb.js"></script>
 </head>
 <body>
 <main id="game">
@@ -100,6 +100,7 @@
           <div id="craft-grid" aria-label="2×2 合成网格"></div>
           <div id="craft-result" aria-label="合成产物"></div>
         </div>
+        <div id="armor-slots" aria-label="盔甲栏"></div>
         <canvas id="inv-player" width="96" height="128" aria-hidden="true"></canvas>
         <div id="slots" aria-label="物品栏"></div>
         <div id="inv-hotbar" aria-label="快捷栏"></div>
@@ -177,7 +178,9 @@
         <li><b>移动</b> A / D 或方向键，空格跳跃。连按两下左右方向键疾跑。</li>
         <li><b>潜行</b> 按住 Shift 蹲下：碰撞盒变矮、移动变慢，走到方块边缘也不会掉下去。</li>
         <li><b>挖掘与放置</b> 按住左键挖掘，右键放置。数字 1–9 或滚轮切换快捷栏。</li>
-        <li><b>背包</b> 按 E。左键整叠拿起／放下，右键拿一半或只放一个；<b>按住左键拖过格子</b>会把手上的方块均分过去，<b>按住右键拖过格子</b>则每格只放一个。鼠标停在物品或分类标签上会显示名字。2×2 合成格可以手工合成，高级配方需要附近有工作台。</li>
+        <li><b>背包</b> 按 E。左键整叠拿起／放下，右键拿一半或只放一个；<b>按住左键拖过格子</b>会把手上的方块均分过去，<b>按住右键拖过格子</b>则每格只放一个。<b>双击物品</b>把散落各格的同名物品一口气收进手里；<b>Shift+点击</b>在背包和快捷栏之间快速移动。鼠标停在物品或分类标签上会显示名字。2×2 合成格可以手工合成，高级配方需要附近有工作台，<b>Shift+点击产物格</b>一键合成。</li>
+        <li><b>盔甲</b> 背包左侧是穿戴栏。Shift+点击头盔、胸甲、护腿、靴子自动穿上，再 Shift+点击取下。护甲按点数减伤，被打时会磨损，磨完就碎。</li>
+        <li><b>弓</b> 手持弓<b>按住左键拉弓</b>蓄力（需要背包里有箭），蓄力越满箭飞得越快越痛，松开发射。箭沿抛物线飞行：插进方块后走近可捡回，射中生物会造成伤害。</li>
         <li><b>熔炉</b> 靠近放置的熔炉按 F 打开。煤、木炭、煤炭块和木材都能当燃料，两根木棍可烧一件。原木烧木炭，圆石烧石头，再烧成平滑石头。</li>
         <li><b>聊天与指令</b> 按 T 聊天，按 / 直接进入指令。可用：<code>/gamemode</code> <code>/weather</code> <code>/time</code> <code>/tp</code> <code>/give</code> <code>/clear</code> <code>/spawn</code> <code>/kill</code> <code>/seed</code> <code>/help</code>。</li>
         <li><b>生存</b> 一昼夜 20 分钟，天气会自己晴雨交替。饱食度足够时会缓慢回血，饿死或摔死都会掉落物品。</li>

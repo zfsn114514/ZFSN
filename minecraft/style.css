@@ -237,6 +237,11 @@ dialog::backdrop{background:transparent}
   box-shadow:none;
 }
 #inv-player{position:absolute;left:52px;top:16px;width:96px;height:128px;image-rendering:pixelated}
+/* 盔甲栏：原版在玩家预览左侧竖排 4 格（176 稿 x=8,y=8..74，槽 18px、间距 2px）。
+   ×2 后 left:16 top:16，槽 36px、间距 4px —— 右缘 52px 恰好贴住玩家画布左缘。
+   ★ .slot 是 width:100%/height:100%，容器必须显式给出行列尺寸，
+   否则绝对定位的 grid 收缩成 0 宽 —— 格子看得见（tip 有值）却点不中。 */
+#armor-slots{position:absolute;left:16px;top:16px;display:grid;grid-template-columns:36px;grid-auto-rows:36px;gap:4px}
 /* ★ 坐标全部按「贴图里格子左边框/上边框」量出来再 ×2（见 tools/dev/probe_guigeom.cjs）：
    物品栏首格边框 x=7,y=83 → 14,166；快捷栏 y=141 → 282。
    之前写成 16/168 是按「格内」算的，整体偏右下 2px，图标看起来就不在格子正中。 */

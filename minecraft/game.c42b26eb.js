@@ -85,6 +85,58 @@ function defaultStack(id){
   return 64;
 }
 for (const [id,item] of Object.entries(ITEMS)) {item.id=id;item.stack??=defaultStack(id);}
+
+/* 盔甲与弓的原版耐久。以前这些 id 没有 durability 字段：穿戴后磨不了损、
+   存档往返也会把耐久丢掉（restore 只在 ITEMS.durability 存在时才保留 dur）。 */
+const ARMOR_DURABILITY={
+  leather:{helmet:55,chestplate:80,leggings:75,boots:65},
+  chainmail:{helmet:165,chestplate:240,leggings:225,boots:195},
+  gold:{helmet:77,chestplate:112,leggings:105,boots:91},
+  golden:{helmet:77,chestplate:112,leggings:105,boots:91},
+  iron:{helmet:165,chestplate:240,leggings:225,boots:195},
+  diamond:{helmet:363,chestplate:528,leggings:495,boots:429},
+  netherite:{helmet:407,chestplate:592,leggings:555,boots:481},
+  turtle:{helmet:275},
+};
+for(const[id,item]of Object.entries(ITEMS)){
+  if(item.durability)continue;
+  const m=id.match(/^(leather|chainmail|golden|gold|iron|diamond|netherite|turtle)_(helmet|chestplate|leggings|boots)$/);
+  if(m)item.durability=ARMOR_DURABILITY[m[1]][m[2]];
+  else if(id==='bow')item.durability=384;
+  else if(id==='crossbow')item.durability=465;
+  else if(id==='trident')item.durability=250;
+  else if(id==='shield')item.durability=336;
+  else if(id==='elytra')item.durability=432;
+  else if(id==='fishing_rod')item.durability=64;
+  else if(id==='flint_and_steel')item.durability=64;
+  else if(id==='shears')item.durability=238;
+}
+
+/* ── 盔甲 ──
+   每件护甲的防御点数（原版数值）。damage() 按 4%/点减伤，上限 80%。 */
+const ARMOR_SLOT_POINTS={
+  leather:{helmet:1,chestplate:3,leggings:2,boots:1},
+  chainmail:{helmet:2,chestplate:5,leggings:4,boots:1},
+  gold:{helmet:2,chestplate:5,leggings:3,boots:1},
+  golden:{helmet:2,chestplate:5,leggings:3,boots:1},
+  iron:{helmet:2,chestplate:6,leggings:5,boots:2},
+  diamond:{helmet:3,chestplate:8,leggings:6,boots:3},
+  netherite:{helmet:3,chestplate:8,leggings:6,boots:3},
+  turtle:{helmet:2},
+};
+function armorSlotPoints(id){
+  const m=id.match(/^(leather|chainmail|golden|gold|iron|diamond|netherite|turtle)_/);
+  const part=id.match(/_(helmet|chestplate|leggings|boots)$/);
+  return m&&part?(ARMOR_SLOT_POINTS[m[1]]?.[part[1]]??0):0;
+}
+/* 盔甲部位 → 穿戴模型层贴图（tools/import_minecraft_extras.py 导出的
+   原版 models/armor/*_layer_*）。layer_1 覆盖头/胸/靴，layer_2 是护腿。 */
+function armorTexture(id,part){
+  const m=id.match(/^(leather|chainmail|golden|gold|iron|diamond|netherite|turtle)_/);
+  if(!m)return null;
+  const mat=m[1]==='golden'?'gold':m[1];
+  return `armor/${mat}_${part==='leggings'?2:1}`;
+}
 export const RECIPES = [
   {out:'oak_planks',n:4,needs:{oak_log:1}},
   {out:'stick',n:4,needs:{oak_planks:2}},
@@ -203,11 +255,12 @@ export class World {
   constructor(seed='ZFSN',mode='survival'){
     this.seed=String(seed);this.mode=mode;const terrain=generate(this.seed);this.blocks=terrain.blocks;this.surface=terrain.surface;
     this.natural=terrain.natural;
-    this.spawn={x:40,y:this.surface[40]-2};this.player={...this.spawn,w:.65,h:1.8,vx:0,vy:0,ground:false,health:20,food:20,invuln:0,face:1,crouch:false,swing:0,swingDur:.26};
+    this.spawn={x:40,y:this.surface[40]-2};this.player={...this.spawn,w:.65,h:1.8,vx:0,vy:0,ground:false,health:20,food:20,invuln:0,face:1,crouch:false,swing:0,swingDur:.26,armor:{helmet:null,chestplate:null,leggings:null,boots:null}};
     this.inventory=Array(36).fill(null);this.craftGrid=Array(4).fill(null);
     // 工作台 3×3 与背包 2×2 是两个独立容器（原版就是这样，互不串味）
     this.tableGrid=Array(9).fill(null);
     this.selected=0;this.time=120;this.elapsed=0;this.drops=[];this.mobs=[];this.furnaces={};this.mining=null;this.attackCooldown=0;this.exhaustion=0;this.regen=0;this.mobClock=0;this.gravityClock=0;this.deathReason='';this.revision=0;this.notify=()=>{};
+    this.arrows=[];this.drawBow=null;   // 弓：拉弓状态 {t} 与空中/插住的箭
     // 天气：clear / rain / thunder。rain 会压暗天空并下粒子，thunder 额外打闪电。
     this.weather='clear';this.weatherTimer=0;this.lightning=0;this.rainDrops=[];
     this.rng=random(hash(seed)^0xabcd);this.sound=()=>{};this.water=new Uint8Array(W*H);this.waterSources=new Set();this.fluidClock=0;this.stepClock=0;this.ambientClock=0;this.wasInWater=false;
@@ -395,7 +448,34 @@ export class World {
   }
   collectSmelt(){const station=this.nearBlock(14),f=station&&this.furnaces[station.key];if(!f?.output)return;const rest=this.add(f.output,f.count);f.count=rest;if(!rest)f.output=null;}
   makeMob(type,x,y){const size={pig:[1.05,.95,10],cow:[1.2,1.4,10],sheep:[1.1,1.25,8],chicken:[.55,.8,4],zombie:[.65,1.8,20]}[type]||[.65,1.8,20];return{type,x,y,w:size[0],h:size[1],vx:0,vy:0,ground:false,health:size[2],clock:0,face:1,yaw:.65,hurt:0,panic:0};}
-  damage(amount,reason){const p=this.player;if(this.mode==='creative'||p.invuln>0||p.health<=0)return;p.health=Math.max(0,p.health-amount);p.invuln=1;this.sound('hurt',p.x,.6);if(!p.health){this.deathReason=reason;for(const s of this.inventory)if(s)this.drop(s.id,s.n,p.x,p.y,s.dur);this.inventory.fill(null);this.notify('你倒下了，物品掉落在原地');}}
+  damage(amount,reason){const p=this.player;if(this.mode==='creative'||p.invuln>0||p.health<=0)return;
+    /* 盔甲减伤：原版是每点护甲挡 4% 伤害，上限 80%。挡下的同时磨耐久。 */
+    const points=this.armorPoints();
+    p.health=Math.max(0,p.health-Math.max(.5,amount*(1-Math.min(.8,points*.04))));
+    if(points)this.wearArmor();
+    p.invuln=1;this.sound('hurt',p.x,.6);if(!p.health){this.deathReason=reason;for(const s of this.inventory)if(s)this.drop(s.id,s.n,p.x,p.y,s.dur);this.inventory.fill(null);this.notify('你倒下了，物品掉落在原地');}}
+  armorPoints(){let n=0;for(const s of Object.values(this.player.armor))if(s)n+=armorSlotPoints(s.id);return n;}
+  /* 受伤时每件护甲磨 1 点耐久（原版 1 点伤害磨 1 耐久，简化成每件固定 1） */
+  wearArmor(){if(this.mode==='creative')return;
+    for(const[k,s]of Object.entries(this.player.armor)){
+      if(!s?.dur)continue;
+      if(--s.dur<=0){this.notify(`${ITEMS[s.id].name} 破碎了`);this.sound('break_tool',this.player.x,.5);this.player.armor[k]=null;}
+    }}
+  /* ── 弓 ── */
+  hasArrow(){return this.mode==='creative'||this.inventory.some(s=>s&&s.id==='arrow');}
+  shootBow(power){
+    if(!this.hasArrow())return false;
+    if(this.mode!=='creative'){
+      const i=this.inventory.findIndex(s=>s&&s.id==='arrow');
+      if(i<0)return false;
+      if(--this.inventory[i].n<=0)this.inventory[i]=null;
+    }
+    const p=this.player,speed=10+40*power,dir=p.face;
+    this.arrows.push({x:p.x+p.w/2+dir*.55,y:p.y+p.h*.68,vx:dir*speed,vy:-2-3*power,
+      ang:dir>0?0:Math.PI,age:0,stuck:false,damage:Math.max(1,Math.round(2+7*power)),dead:false});
+    this.swing(.25);this.wear();
+    return true;
+  }
   respawn(){const p=this.player;Object.assign(p,{...this.spawn,vx:0,vy:0,health:20,food:20,invuln:3});while(this.collides(p)&&p.y>1)p.y--;this.mining=null;}
   attack(x,y){if(this.attackCooldown>0)return false;const p=this.player;const mob=this.mobs.find(m=>x>=m.x-.4&&x<=m.x+m.w+.4&&y>=m.y-.3&&y<=m.y+m.h+.3&&Math.hypot(m.x-p.x,m.y-p.y)<3.5&&this.reachable(Math.floor(m.x),Math.floor(m.y)));if(!mob)return false;
     this.attackCooldown=.55;this.swing(.3);mob.health-=ITEMS[this.held()?.id]?.damage??1;mob.hurt=.25;this.sound(mob.type,mob.x,.65);
@@ -464,6 +544,38 @@ export class World {
     }
     for(const d of this.drops){d.age+=dt;this.move(d,dt);d.vx*=.97;if(d.age>.4&&Math.hypot(d.x-p.x,d.y-p.y-.7)<1.7){const before=d.n;d.n=this.add(d.id,d.n,d.dur);if(d.n<before)this.sound('pickup',p.x,.35);}}
     this.drops=this.drops.filter(d=>d.n>0&&d.age<300);
+    /* ── 箭：抛物线飞行，插进方块后留在原地，玩家走近自动拾取；
+       命中生物按伤害结算并击退（动物同样 panic 逃跑）。 ── */
+    for(const a of this.arrows){
+      a.age+=dt;
+      if(a.stuck){
+        /* ★ add() 返回的是「没塞进去的剩余量」，0 才是成功 ——
+           写成 if(this.add(...)) 会在成功的帧继续留在数组里，
+           接下来每一帧都再塞一支，玩家走过去一次就凭空多出 58 支箭。 */
+        if(Math.hypot(a.x-p.x,a.y-p.y-.9)<1.5&&!this.add('arrow',1)){a.dead=true;this.sound('pickup',p.x,.35);}
+        continue;
+      }
+      a.vy+=22*dt;
+      const steps=Math.max(1,Math.ceil(Math.hypot(a.vx,a.vy)*dt/.2));
+      for(let i=0;i<steps&&!a.stuck&&!a.dead;i++){
+        const nx=a.x+a.vx*dt/steps,ny=a.y+a.vy*dt/steps;
+        const m=this.mobs.find(m=>m.health>0&&nx>=m.x-.15&&nx<=m.x+m.w+.15&&ny>=m.y&&ny<=m.y+m.h);
+        if(m){
+          m.health-=a.damage;m.hurt=.25;m.vx=Math.sign(a.vx||1)*2.5;m.vy=-2.5;
+          if(m.type!=='zombie')m.panic=2.6;
+          this.sound(m.type,m.x,.6);a.dead=true;break;
+        }
+        if(this.solid(nx,ny)||this.get(nx,ny)===1){
+          a.stuck=true;a.vx=0;a.vy=0;
+          a.x-=Math.cos(a.ang)*.3;a.y-=Math.sin(a.ang)*.3;   // 往回退一点，箭头露在方块外
+          break;
+        }
+        a.x=nx;a.y=ny;
+        if(Math.abs(a.vx)+Math.abs(a.vy)>.5)a.ang=Math.atan2(a.vy,a.vx);
+      }
+      if(a.x<-4||a.x>W+4||a.y>H+4)a.dead=true;
+    }
+    this.arrows=this.arrows.filter(a=>!a.dead&&a.age<180);
     for(const f of Object.values(this.furnaces))if(f.input&&f.fuel>0){f.progress+=dt;f.fuel=Math.max(0,f.fuel-dt);if(f.progress>=10){f.output=f.result;f.count++;f.input=null;f.progress=0;}}
     this.mobClock+=dt;
     if(this.mobClock>9){this.mobClock=0;if(this.night()&&this.mobs.filter(m=>m.type==='zombie').length<9){const x=Math.floor(clamp(p.x+(this.rng()<.5?-1:1)*(15+this.rng()*15),2,W-3)),y=this.surface[x]-2;if(!this.nearTorch(x,y,7))this.mobs.push(this.makeMob('zombie',x,y));}}
@@ -508,6 +620,7 @@ export class World {
       surface:Array.from(this.surface),spawn:this.spawn,player:this.player,
       inventory:this.inventory,selected:this.selected,time:this.time,elapsed:this.elapsed,
       weather:this.weather,drops:this.drops,mobs:this.mobs,furnaces:this.furnaces,
+      arrows:this.arrows.map(a=>({x:a.x,y:a.y,vx:a.vx,vy:a.vy,ang:a.ang,age:a.age,stuck:a.stuck,damage:a.damage})),
       exhaustion:this.exhaustion,craftGrid:this.craftGrid,tableGrid:this.tableGrid,
     };
   }
@@ -520,7 +633,10 @@ export class World {
     //   按新上限严格校验会直接抛错 → 整个玩家数据被丢弃。放宽后由下面第 483 行
     //   的 clamp 截到新上限，最多损失超出部分，不会丢整档。
     //   历史上任何物品都不可能超过 64，所以 64 作为「明显非法」的判据是安全的。
-    if(!Array.isArray(data.inventory)||data.inventory.length!==36||data.inventory.some(s=>s&&(!ITEMS[s.id]||!Number.isInteger(s.n)||s.n<1||s.n>64||ITEMS[s.id].durability&&(!Number.isInteger(s.dur)||s.dur<1||s.dur>ITEMS[s.id].durability))))throw Error('背包数据损坏');
+    /* ★ 耐久校验允许缺失：盔甲/弓的 durability 是后来才补进 ITEMS 的，
+       线上老档里「没有 dur 的铁头盔」是合法数据 —— 严格校验会把整档丢掉。
+       缺失的一律按满耐久补齐（下面的拆格循环里做）。 */
+    if(!Array.isArray(data.inventory)||data.inventory.length!==36||data.inventory.some(s=>s&&(!ITEMS[s.id]||!Number.isInteger(s.n)||s.n<1||s.n>64||ITEMS[s.id].durability&&s.dur!==undefined&&(!Number.isInteger(s.dur)||s.dur<1||s.dur>ITEMS[s.id].durability))))throw Error('背包数据损坏');
     if(!Number.isFinite(data.time)||data.time<0||!Number.isFinite(data.elapsed)||data.elapsed<0)throw Error('时间数据损坏');
     const w=new World(data.seed,data.mode);
     const readGrid=(value,len)=>{
@@ -555,6 +671,21 @@ export class World {
     if(data.spawn&&Number.isFinite(data.spawn.x)&&Number.isFinite(data.spawn.y))w.spawn={x:clamp(data.spawn.x,0,W-1),y:clamp(data.spawn.y,0,H-2)};
     w.migrated=oldW!==W||oldH!==H;w.fluidStableRevision=-1;
     Object.assign(w.player,{x:clamp(p.x,0,W-1),y:clamp(p.y,-20,H-2),health:p.health,food:p.food,crouch:false});
+    /* 穿着的盔甲逐部位校验：部位不匹配或当前版本不认识的 id 一律丢弃成空槽，
+       耐久缺字段时按满耐久补 —— 老档没有 armor 字段就保持初始全空。 */
+    const armorIn=data.player?.armor;
+    if(armorIn&&typeof armorIn==='object'){
+      const out={};
+      for(const part of ['helmet','chestplate','leggings','boots']){
+        const s=armorIn[part];
+        const ok=s&&ITEMS[s.id]&&(`${s.id}`.endsWith(`_${part}`)||(part==='helmet'&&s.id==='turtle_helmet'));
+        out[part]=ok?{id:s.id,n:1,...(ITEMS[s.id].durability?{dur:clamp(Number.isFinite(s.dur)?Math.floor(s.dur):ITEMS[s.id].durability,1,ITEMS[s.id].durability)}:{})}:null;
+      }
+      w.player.armor=out;
+    }
+    if(Array.isArray(data.arrows))for(const a of data.arrows.slice(0,256)){
+      if([a.x,a.y,a.vx,a.vy,a.ang].every(Number.isFinite))w.arrows.push({x:a.x,y:a.y,vx:a.vx,vy:a.vy,ang:a.ang,age:Number.isFinite(a.age)?a.age:0,stuck:!!a.stuck,damage:Number.isFinite(a.damage)?a.damage:6,dead:false});
+    }
     /* ★ 背包不能直接 structuredClone：装备的堆叠上限从 64 改成了 1，
        线上老档里可能存着「32 个钻石胸甲一摞」这种（当时合法）。
        这里按新上限拆开 —— 原格留到上限，多出来的逐个 add 到空格，
@@ -565,8 +696,9 @@ export class World {
     for(let i=0;i<36;i++){
       const s=data.inventory[i];if(!s)continue;
       const lim=ITEMS[s.id].stack;
-      w.inventory[i]={id:s.id,n:Math.min(s.n,lim),...(s.dur?{dur:s.dur}:{})};
-      if(s.n>lim)overflow.push({id:s.id,n:s.n-lim,dur:s.dur});
+      const dur=ITEMS[s.id].durability?(Number.isInteger(s.dur)?s.dur:ITEMS[s.id].durability):undefined;
+      w.inventory[i]={id:s.id,n:Math.min(s.n,lim),...(dur?{dur}:{})};
+      if(s.n>lim)overflow.push({id:s.id,n:s.n-lim,dur});
     }
     for(const o of overflow)w.add(o.id,o.n,o.dur);
     w.craftGrid=readGrid(data.craftGrid,4);w.tableGrid=readGrid(data.tableGrid,9);
@@ -615,7 +747,7 @@ export function steveHand(a){
   return{x:STEVE_ARM.x,y:STEVE_ARM.shoulder-STEVE_ARM.len*Math.cos(a),z:-STEVE_ARM.len*Math.sin(a)};
 }
 
-export function entityMesh(type,time=0,velocity=0,swing=null){
+export function entityMesh(type,time=0,velocity=0,swing=null,armor=null,armOverride=null){
   const boxes=[],walk=Math.sin(time*9)*Math.min(1,Math.abs(velocity)/2)*.65;
   const box=(texture,uv,center,size,angle=0,pivot=center)=>boxes.push({texture,uv,center,size,angle,pivot});
   if(type==='steve'||type==='zombie'){
@@ -623,7 +755,8 @@ export function entityMesh(type,time=0,velocity=0,swing=null){
     // 右手（朝镜头那条，x=-6）：拿东西、挖、打都用这只手。
     // ★ 必须无条件走 steveArmAngle：物品的位置也是它算的，两处走不同分支
     //   就会出现「手臂在 0、物品按 -0.3 摆」——手和物品错开半个手臂。
-    const rightArm=zombie?armSwing:steveArmAngle(time,velocity,swing);
+    //   拉弓时走 armOverride（手臂随蓄力后拉），物品和手臂共用同一角度。
+    const rightArm=zombie?armSwing:(armOverride!=null?armOverride:steveArmAngle(time,velocity,swing));
     box(type,[0,0],[0,28,0],[8,8,8]);
     box(type,[16,16],[0,18,0],[8,12,4]);
     box(type,[0,16],[-2,6,0],[4,12,4],walk,[-2,12,0]);
@@ -633,6 +766,31 @@ export function entityMesh(type,time=0,velocity=0,swing=null){
     box(type,[40,16],[-6,18,0],[4,12,4],rightArm,[-6,24,0]);
     box(type,zombie?[40,16]:[32,48],[6,18,0],[4,12,4],zombie?armSwing:walk,[6,24,0]);
     if(!zombie)box(type,[32,0],[0,28,0],[8.5,8.5,8.5]);   // 帽子/外套层
+    // ── 穿着的盔甲（2D 侧视只画朝镜头的层）──
+    // 尺寸在身体各部件上外扩 0.5（原版 CubeDeformation 同款），盖在贴图外层。
+    if(armor&&type==='steve'){
+      if(armor.helmet){
+        ensureTexture(armorTexture(armor.helmet.id,'helmet'));
+        box(armorTexture(armor.helmet.id,'helmet'),[0,0],[0,28,0],[9,9,9]);
+      }
+      if(armor.chestplate){
+        const t=armorTexture(armor.chestplate.id,'chestplate');ensureTexture(t);
+        box(t,[16,16],[0,18,0],[8.5,12.5,4.5]);
+        box(t,[40,16],[-6,18,0],[4.5,12.5,4.5],rightArm,[-6,24,0]);   // 朝镜头的手臂跟着挥
+        box(t,[40,16],[6,18,0],[4.5,12.5,4.5],walk,[6,24,0]);
+      }
+      if(armor.leggings){
+        const t=armorTexture(armor.leggings.id,'leggings');ensureTexture(t);
+        box(t,[16,16],[0,18,0],[8.5,12.5,4.5]);
+        box(t,[0,16],[-2,6,0],[4.5,12,4.5],walk,[-2,12,0]);
+        box(t,[0,16],[2,6,0],[4.5,12,4.5],-walk,[2,12,0]);
+      }
+      if(armor.boots){
+        const t=armorTexture(armor.boots.id,'boots');ensureTexture(t);
+        box(t,[0,0],[-2,6,0],[4.75,12,4.75],walk,[-2,12,0]);
+        box(t,[0,0],[2,6,0],[4.75,12,4.75],-walk,[2,12,0]);
+      }
+    }
   }else if(type==='chicken'){
     box('chicken_mob',[0,9],[0,8,0],[6,8,6]);
     box('chicken_mob',[0,0],[0,13,4],[4,6,3]);
@@ -699,7 +857,7 @@ function toolFaces(img){
 /** 把一只生物画到画布上。cx = 身体中线屏幕 x，groundY = 脚底屏幕 y。
  *  hold（可选）= {id, swing}：把物品画在右手上，swing 是 0..1 的挥击进度（null=不挥）。 */
 export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw,hold=null){
-  const parts=entityMesh(mob.type||'steve',time,mob.vx||0,hold?hold.swing:null);
+  const parts=entityMesh(mob.type||'steve',time,mob.vx||0,hold?hold.swing:null,mob.armor||null,hold?.draw??null);
   if(!parts.length)return 0;
   const{lo,hi}=meshBounds(parts);
   const scale=heightPx/Math.max(1,hi-lo);
@@ -736,13 +894,13 @@ export function drawEntity(ctx,images,mob,time,cx,groundY,heightPx,yaw,hold=null
   const proj=(x,y,z)=>{const r=rot(x,y,z);return{x:cx+r.x*scale,y:groundY-(r.y-lo)*scale,z:r.z};};
   const holdImg=hold?(hold.img||images[hold.id]):null;
   if(holdImg && ITEMS[hold.id]?.tool){
-    const angle=steveArmAngle(time,mob.vx||0,hold.swing);
+    const angle=hold.draw!=null?hold.draw:steveArmAngle(time,mob.vx||0,hold.swing);
     for(const face of toolFaces(holdImg)){
       const q=face.vertices.map(([u,v,d])=>{const h=toolVertex(u,v,d,angle);return proj(h.x,h.y,h.z);});
       faces.push({q,uv:face.uv,shade:face.shade,cutout:face.cutout,image:holdImg,depth:q.reduce((n,p)=>n+p.z,0)/4});
     }
   }else if(holdImg){
-    const a=steveArmAngle(time,mob.vx||0,hold.swing);
+    const a=hold.draw!=null?hold.draw:steveArmAngle(time,mob.vx||0,hold.swing);
     const hand=steveHand(a);
     const sh=proj(STEVE_ARM.x,STEVE_ARM.shoulder,0);
     const hd=proj(hand.x,STEVE_ARM.shoulder+(hand.y-STEVE_ARM.shoulder)*1.12,hand.z*1.12);
@@ -820,6 +978,11 @@ class GameAudio {
   setVolume(value){this.volume=clamp(value,0,1);if(this.gain)this.gain.gain.value=this.volume;}
 }
 
+/* entityMesh（模块顶层纯函数）在画盔甲层时要按需加载 armor/*贴图，
+   boot 启动时把真正的实现挂进来；node 测试环境里是 no-op。
+   ★ 声明必须放在 boot() 调用之前 —— boot 的同步段就会经过这条路径，
+   放后面会撞 TDZ（Cannot access 'ensureTexture' before initialization）。 */
+let ensureTexture=()=>{};
 if(typeof document!=='undefined') boot();
 
 async function boot(){
@@ -835,8 +998,9 @@ async function boot(){
   let panelSig='';                   // 上一次「背包面板」渲染时的内容指纹（见 hud 末尾）
   let heldItem=null;                 // 手上拿着的物品（独立栈，跟随鼠标）
   let drag=null;                     // 拖拽状态 {button,slots:[]}
-  let press=null;                    // 按下未松开 {area,index,button,x,y}
+  let press=null;                    // 按下未松开 {area,index,button,x,y,shift}
   let dragStarted=false;
+  let lastClick={key:'',t:0};        // 双击收集同名的判定（endPointer）
   let sprintHeld=false,lastDirCode='',lastDirAt=0;
   let audioReady=false;let enhancedLight=localStorage.getItem('zfsn.mc.light')!=='off';
   // 雨滴粒子的存储放在这里：resize() 在天空模块之前就会被调用一次，
@@ -913,11 +1077,11 @@ async function boot(){
      并且都画 tile+1 宽来盖住缩放造成的亚像素缝。以前贴图用 Math.round、
      阴影用 Math.floor，差 1px 就是那道细缝。 */
   const pendingTextures=new Set();
-  function ensureTexture(id){
+  ensureTexture=(id)=>{   // 赋值给模块级 let（见文件顶部说明）
     if(!id||images[id]||pendingTextures.has(id))return;
     pendingTextures.add(id);const img=new Image();img.onload=()=>{images[id]=img;};
     img.src=new URL(`${id}.png`,textureBase).href;
-  }
+  };
   function spriteAt(name,sx,sy,w,h,srcY=0){
     const image=tinted[name]||images[name];if(!image){ensureTexture(name);return;}
     const sw=Math.min(16,image.width),sh=Math.min(16,image.height);
@@ -1110,6 +1274,17 @@ async function boot(){
     for(const d of world.drops)if(d.x>=minX-1&&d.x<=maxX+1)
       spriteAt(d.id,Math.round(d.x*tile-camX),Math.round(d.y*tile-camY+Math.sin(world.elapsed*3+d.x)*2),Math.round(tile*.46),Math.round(tile*.46));
 
+    // 箭：贴图按飞行方向旋转；插住时保持最后角度
+    if(world.arrows.length)ensureTexture('arrow_projectile');
+    for(const a of world.arrows){
+      if(a.x<minX-2||a.x>maxX+2)continue;
+      const img=images['arrow_projectile'];
+      const sx=Math.round(a.x*tile-camX),sy=Math.round(a.y*tile-camY);
+      if(!img){continue;}
+      ctx.save();ctx.translate(sx,sy);ctx.rotate(a.ang);ctx.imageSmoothingEnabled=false;
+      ctx.drawImage(img,-tile*.45,-tile*.15,tile*.9,tile*.3);ctx.restore();
+    }
+
     for(const m of world.mobs)if(m.x>=minX-2&&m.x<=maxX+2){
       const mc=Math.round((m.x+m.w/2)*tile-camX),gy=Math.round((m.y+m.h)*tile-camY);
       drawEntity(ctx,images,m,world.elapsed,mc,gy,m.h*tile,m.yaw??0.95);
@@ -1122,8 +1297,17 @@ async function boot(){
                       :(p.swing>0?1-p.swing/p.swingDur:null);
       // 贴图要过一遍 tinted：树叶在原版是灰度图靠生物群系染色，直接取 images 会是一坨灰
       const heldId=world.held()?.id;
+      // 拉弓：贴图切到原版三帧拉弓模型，手臂角度按蓄力比例后拉
+      let holdImg=heldId?(tinted[heldId]||images[heldId]):null,armOverride=null;
+      if(world.drawBow&&heldId==='bow'){
+        const power=Math.min(1,world.drawBow.t/1);
+        const frame=power<.3?'bow_pulling_0':power<.65?'bow_pulling_1':'bow_pulling_2';
+        ensureTexture(frame);
+        holdImg=images[frame]||holdImg;
+        armOverride=-.3-.85*power;
+      }
       drawEntity(ctx,images,{...p,type:'steve'},world.elapsed,pc,py,p.h*tile,p.face>0?0.95:-0.95,
-        {id:heldId,img:heldId?(tinted[heldId]||images[heldId]):null,swing:swingPhase});
+        {id:heldId,img:holdImg,swing:swingPhase,draw:armOverride});
       ctx.globalAlpha=1;
     }
 
@@ -1198,9 +1382,17 @@ async function boot(){
        右键长按拖   经过的每格各放一个，剩余留在手上 */
   const heldCursor=$('#held-cursor');
   let craftMode='inv';
+  /* 盔甲槽：世界数据 world.player.armor[part]，UI 侧当第四个「容器区域」。
+     area 取值：'inv' 背包+快捷栏 / 'grid' 合成格 / 'armor' 穿戴位。 */
+  const ARMOR_PARTS=['helmet','chestplate','leggings','boots'];
+  const partOf=id=>{const m=String(id).match(/_(helmet|chestplate|leggings|boots)$/);return m?m[1]:null;};
   const gridRef=()=>craftMode==='table'?world.tableGrid:world.craftGrid;
-  const stackAt=(area,index)=>area==='inv'?world.inventory[index]:gridRef()[index];
-  const setStack=(area,index,stack)=>{if(area==='inv')world.inventory[index]=stack;else gridRef()[index]=stack;};
+  const stackAt=(area,index)=>area==='inv'?world.inventory[index]:area==='armor'?world.player.armor[ARMOR_PARTS[index]]:gridRef()[index];
+  const setStack=(area,index,stack)=>{
+    if(area==='inv')world.inventory[index]=stack;
+    else if(area==='armor')world.player.armor[ARMOR_PARTS[index]]=stack;
+    else gridRef()[index]=stack;
+  };
   const stackLimit=id=>ITEMS[id]?.stack??64;
   // ★ 合成格每格只能放 1 个（原版 SlotCrafting 的堆叠上限就是 1）。
   //   recipeIn() 数的是「有几格放着该物品」，一格堆 12 个木板永远凑不出需要 3 格的镐子。
@@ -1212,7 +1404,7 @@ async function boot(){
      world.inventory，不会重画面板。于是面板里的快捷栏一行会和屏幕底部那条
      快捷栏对不上（用户截图就是这种「两处内容不一样」）。
      hud() 每 120ms 都在跑，顺手拿这个指纹比一下就能把面板补画回来。 */
-  const panelSignature=()=>JSON.stringify([world.inventory,craftMode,world.craftGrid,world.tableGrid,heldItem]);
+  const panelSignature=()=>JSON.stringify([world.inventory,craftMode,world.craftGrid,world.tableGrid,heldItem,world.player.armor]);
 
   function renderHeld(){
     heldCursor.replaceChildren();
@@ -1242,6 +1434,7 @@ async function boot(){
   }
   function canDropOne(area,index){
     if(!heldItem)return false;
+    if(area==='armor')return partOf(heldItem.id)===ARMOR_PARTS[index]&&!stackAt(area,index);
     const t=stackAt(area,index);
     return !t||(t.id===heldItem.id&&t.n<slotLimit(area,t.id));
   }
@@ -1261,6 +1454,8 @@ async function boot(){
       else dropOne(area,index);
       return;
     }
+    // 盔甲槽：只收对应部位的穿戴件（异类交换也不行 —— 帽子槽塞不进胸甲）
+    if(area==='armor'&&heldItem&&partOf(heldItem.id)!==ARMOR_PARTS[index])return;
     if(!heldItem){if(target)pickAll(area,index);return;}
     // 合成格每格 1 个：左键点空格就是「放一个」，点满格就是交换
     if(area==='grid'){
@@ -1357,7 +1552,7 @@ async function boot(){
     if(e.button!==0&&e.button!==2)return;
     e.preventDefault();
     tipHide();                                 // 按住开始拖塔时别让名字挡着
-    press={area:el.dataset.area,index:Number(el.dataset.index),button:e.button,x:e.clientX,y:e.clientY};
+    press={area:el.dataset.area,index:Number(el.dataset.index),button:e.button,x:e.clientX,y:e.clientY,shift:e.shiftKey};
     dragStarted=false;drag=null;
   },true);
   addEventListener('pointermove',e=>{
@@ -1382,6 +1577,77 @@ async function boot(){
     const slot=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('.slot[data-area]');
     if(slot){applyDrag(slot.dataset.area,Number(slot.dataset.index));syncInv();}
   });
+  /* ── Shift 快捷操作（原版语义）────────────────────────────────
+     Shift+点击背包/快捷栏：快速移动到另一半（快捷栏↔主背包）；
+     Shift+点击穿戴件：自动穿上对应部位；Shift+点击已穿盔甲：摘回背包；
+     Shift+点击合成材料格：拿回背包；Shift+点击合成产物：一键合成到材料用完/背包满。 */
+  function shiftMove(area,index){
+    const s=stackAt(area,index);if(!s)return;
+    if(area==='armor'){
+      const rest=world.add(s.id,1,s.dur);
+      setStack(area,index,rest>0?{...s,n:rest}:null);
+      if(rest>0)notify('背包满了');
+      return;
+    }
+    if(area==='grid'){                        // 合成格材料拿回背包
+      const rest=world.add(s.id,s.n,s.dur);
+      setStack(area,index,rest>0?{...s,n:rest}:null);
+      if(rest>0)notify('背包满了');
+      return;
+    }
+    // 穿戴件：Shift 直接穿上（对应部位为空才行；穿了就留给手动换）
+    const part=partOf(s.id);
+    if(part&&!world.player.armor[part]){
+      world.player.armor[part]={id:s.id,n:1,...(s.dur?{dur:s.dur}:{})};
+      const left=s.n-1;
+      setStack(area,index,left>0?{...s,n:left}:null);
+      world.sound('click',world.player.x,.4);
+      return;
+    }
+    // 背包 ↔ 快捷栏 快速移动
+    const [from,to]=index<9?[9,36]:[0,9];
+    let left=s.n;
+    const lim=stackLimit(s.id);
+    for(let i=from;i<to&&left>0;i++){         // 先并入已有的同类叠
+      const t=world.inventory[i];
+      if(t&&t.id===s.id&&t.n<lim&&!t.dur&&!s.dur){
+        const move=Math.min(lim-t.n,left);
+        t.n+=move;left-=move;
+      }
+    }
+    if(left>0)for(let i=from;i<to&&left>0;i++){
+      if(!world.inventory[i]){
+        world.inventory[i]={...s,n:left};
+        left=0;
+      }
+    }
+    if(left>0)notify('背包满了');
+    setStack(area,index,left>0?{...s,n:left}:null);
+  }
+  /* 双击：把散落各格的同名物品全部收到手上（上限=堆叠上限，原版语义）。
+     双击判定在 endPointer 里做（两次 <350ms 点同一格）。 */
+  function collectSame(area,index){
+    if(!heldItem){const s=stackAt(area,index);if(s)pickAll(area,index);}
+    if(!heldItem)return;
+    const lim=stackLimit(heldItem.id);
+    for(let i=0;i<36&&heldItem.n<lim;i++){
+      const t=world.inventory[i];
+      if(!t||t.id!==heldItem.id)continue;
+      if(t.dur||heldItem.dur)continue;        // 有耐久的装备不并摞
+      const move=Math.min(lim-heldItem.n,t.n);
+      heldItem.n+=move;t.n-=move;
+      if(t.n<=0)world.inventory[i]=null;
+    }
+  }
+  /* Shift+点击产物格：反复吃掉网格里的材料，直到配方不成立或背包满 */
+  function craftAll(){
+    const take=craftMode==='table'?()=>world.takeTableRecipe():()=>world.takeGridRecipe();
+    let made=0,guard=0;
+    while(guard++<64&&take())made++;
+    notify(made?`一键合成了 ${made} 次`:'材料不够合成');
+    world.sound('click',world.player.x,.4);
+    syncInv();
+  }
   function endPointer(){
     if(!press)return;
     const started=dragStarted,info=press;
@@ -1402,6 +1668,23 @@ async function boot(){
       return;
     }
     drag=null;
+    // ★ 双击判定：350ms 内两次点中同一格 = 收集同名到手上。
+    //   必须拦在 clickSlot 之前 —— 第二次点击时格子已经空了，
+    //   走 clickSlot 会把手上的东西原样放回去，收集永远触发不了。
+    const key=`${info.area}:${info.index}`,now=performance.now();
+    if(info.button===0&&!info.shift&&key===lastClick.key&&now-lastClick.t<350){
+      lastClick={key:'',t:0};
+      collectSame(info.area,info.index);
+      syncInv();
+      return;
+    }
+    lastClick=info.button===0?{key,t:now}:{key:'',t:0};
+    if(info.shift&&info.button===0&&!started){
+      if(info.area==='out'){craftAll();return;}
+      shiftMove(info.area,info.index);
+      syncInv();
+      return;
+    }
     clickSlot(info.area,info.index,info.button);
     syncInv();
   }
@@ -1503,6 +1786,13 @@ async function boot(){
     const grid=gridRef();
     $('#slots').replaceChildren(...Array.from({length:27},(_,i)=>slotNode(world.inventory[9+i],'inv',9+i,false)));
     $('#inv-hotbar').replaceChildren(...Array.from({length:9},(_,i)=>slotNode(world.inventory[i],'inv',i,false)));
+    const armorBox=$('#armor-slots');
+    if(armorBox)armorBox.replaceChildren(...ARMOR_PARTS.map((part,i)=>{
+      const s=world.player.armor[part];
+      const b=slotNode(s,'armor',i,false);
+      if(!s)b.dataset.tip=`${({helmet:'头盔',chestplate:'胸甲',leggings:'护腿',boots:'靴子'})[part]}（Shift 点背包里的可自动穿上）`;
+      return b;
+    }));
     $('#craft-grid').replaceChildren(...Array.from({length:isTable?9:4},(_,i)=>slotNode(grid[i],'grid',i,false)));
     const result=isTable?world.findTableRecipe():world.findGridRecipe();
     const out=$('#craft-result');
@@ -1512,8 +1802,8 @@ async function boot(){
       b.type='button';b.className='slot';
       b.append(iconImg(result.out));
       if(result.n>1){const c=document.createElement('span');c.className='count';c.textContent=result.n;b.append(c);}
-      b.dataset.tip=`取得 ${ITEMS[result.out].name}`;
-      b.onclick=takeResult;
+      b.dataset.tip=`取得 ${ITEMS[result.out].name}\nShift+点击：一键合成`;
+      b.onclick=e=>{if(e.shiftKey)craftAll();else takeResult();};
       out.append(b);
     }
     const table=world.nearBlock(13),furnace=world.nearBlock(14);
@@ -1917,7 +2207,16 @@ async function boot(){
       world.setCrouch(!!input.crouch);
       while(accumulator>=1/60){
         world.update(1/60,input);
-        if(aim&&(mouseDown||touch.has('mine'))){
+        /* 手持弓按住左键 = 拉弓（原版语义），松开发射 —— 与挖掘/攻击互斥。
+           拉弓途中把弓切走（滚轮）就取消，不射箭不耗箭。 */
+        const mineHeld=!!(aim&&(mouseDown||touch.has('mine')));
+        if(world.drawBow&&world.held()?.id!=='bow')world.drawBow=null;
+        if(world.drawBow){
+          if(mineHeld)world.drawBow.t+=1/60;
+          else{world.shootBow(Math.min(1,world.drawBow.t/1));world.drawBow=null;}
+        }else if(mineHeld&&world.held()?.id==='bow'&&world.hasArrow()){
+          world.drawBow={t:0};
+        }else if(mineHeld){
           if(!world.attack(aim.x,aim.y))world.mine(aim.x,aim.y,1/60);
         }else world.mining=null;
         accumulator-=1/60;
