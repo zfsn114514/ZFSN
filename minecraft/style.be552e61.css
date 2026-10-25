@@ -1,0 +1,268 @@
+@charset "UTF-8";
+/* ─────────────────────────────────────────────────────────────
+   方块世界 2D · 界面样式
+   目标：所有面板、按钮、槽位都用 Java 版原始贴图，坐标按原版
+   176×166 的 GUI 设计稿整体放大 2 倍，文字用客户端自带的位图字体
+   （mc-font.woff2 由 tools/build_minecraft_font.py 从官方 jar 生成）。
+   ───────────────────────────────────────────────────────────── */
+
+@font-face{
+  font-family:'MCBitmap';
+  src:url('mc-font.woff2') format('woff2');
+  font-display:block;
+  font-weight:400;
+}
+
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;overflow:hidden;background:#000;
+  font-family:'MCBitmap',monospace;font-size:16px;line-height:1.15;
+  color:#fff;-webkit-font-smoothing:none;
+}
+/* 原版文字一律带右下 2px 深色投影（等价于 MC 的 shadow 加倍率） */
+#game,#game *{text-shadow:2px 2px 0 rgba(0,0,0,.55)}
+img,canvas{image-rendering:pixelated}
+
+#game{position:relative;height:100dvh;min-height:320px;isolation:isolate}
+#world{position:absolute;inset:0;width:100%;height:100%;outline:none;touch-action:none;cursor:crosshair}
+
+/* ── 通用按钮：gui_button.png 九宫格（3px 边）── */
+button{
+  -webkit-appearance:none;appearance:none;margin:0;padding:0;border:0;background:none;
+  font:inherit;color:inherit;cursor:pointer;
+}
+button.mc-btn,a.mc-btn{
+  -webkit-appearance:none;appearance:none;margin:0;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  width:400px;height:40px;padding:0 8px;
+  font-family:inherit;font-size:16px;line-height:1;color:#fff;text-decoration:none;
+  background:transparent;border:6px solid transparent;
+  border-image:url('textures/gui_button.png') 3 fill stretch;
+  border-image-width:6px;
+}
+button.mc-btn:hover:not(:disabled),a.mc-btn:hover{
+  color:#ffffa0;
+  border-image-source:url('textures/gui_button_hover.png');
+}
+button:disabled,a.mc-btn[aria-disabled="true"]{
+  cursor:not-allowed;color:#a0a0a0;
+  border-image-source:url('textures/gui_button_disabled.png');
+}
+button:focus-visible,a:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.mc-btn.narrow{width:auto;min-width:132px;height:36px;font-size:16px}
+
+/* ── 输入框 / 单选 ── */
+.mc-input{
+  width:400px;height:40px;padding:0 12px;
+  font-family:inherit;font-size:16px;color:#e0e0e0;
+  background:#000;border:2px solid #a0a0a0;border-radius:0;
+}
+.mc-input::placeholder{color:#707070}
+.mc-input:focus{outline:none;border-color:#fff}
+.mc-label{display:block;margin-bottom:6px;color:#a0a0a0;align-self:flex-start}
+.mc-choice{display:flex;gap:24px;justify-content:center;color:#fff}
+.mc-choice label{display:flex;align-items:center;gap:8px;cursor:pointer}
+.mc-choice input{accent-color:#5a8f3d;width:16px;height:16px}
+
+/* ── 屏幕容器（全屏遮罩 + 居中）── */
+.screen,.mc-screen{
+  position:fixed;inset:0;z-index:20;
+  display:grid;place-items:center;
+  background:rgba(0,0,0,.62);
+}
+dialog.mc-screen{
+  margin:0;padding:0;border:0;width:100%;height:100%;max-width:none;max-height:none;
+  color:inherit;
+}
+dialog.mc-screen:not([open]){display:none}
+dialog::backdrop{background:transparent}
+
+/* ── 标题画面 ── */
+#start-screen{background:linear-gradient(rgba(0,0,0,.42),rgba(0,0,0,.72));z-index:15}
+.title-stack{display:flex;flex-direction:column;align-items:center;gap:10px;width:400px;position:relative}
+#title-logo{width:400px;height:100px;object-fit:fill;margin-bottom:2px}
+.splash{
+  position:absolute;right:-6px;top:78px;transform:rotate(-18deg);transform-origin:center;
+  color:#ffff00;font-size:16px;animation:splashPulse 1s ease-in-out infinite alternate;
+  pointer-events:none;
+}
+@keyframes splashPulse{from{transform:rotate(-18deg) scale(1)}to{transform:rotate(-18deg) scale(1.08)}}
+.menu-buttons,#new-world{display:flex;flex-direction:column;align-items:center;gap:8px;width:400px}
+#new-world{gap:10px}
+#new-world .mc-choice{margin:2px 0 6px}
+.title-foot{
+  position:absolute;bottom:-72px;left:-100px;width:600px;
+  display:flex;justify-content:space-between;font-size:16px;color:#fff;opacity:.9;
+}
+
+/* ── HUD ── */
+#hud{position:absolute;inset:auto 0 0;display:flex;justify-content:center;pointer-events:none;z-index:6}
+#hotbar-wrap{position:relative;width:364px;height:44px;margin-bottom:6px;pointer-events:auto}
+#hotbar{
+  position:absolute;left:0;bottom:0;width:364px;height:44px;
+  background:url('textures/gui_hotbar.png') 0 0/100% 100% no-repeat;
+}
+.slot{
+  position:absolute;width:40px;height:40px;padding:0;border:0;background:transparent;
+  cursor:pointer;display:block;
+}
+.slot img{position:absolute;left:4px;top:4px;width:32px;height:32px;pointer-events:none}
+.slot .count{
+  position:absolute;right:2px;bottom:-2px;font-size:16px;line-height:1;
+  color:#fff;pointer-events:none;
+}
+.slot .dur{position:absolute;left:4px;bottom:4px;width:32px;height:4px;background:#000;pointer-events:none}
+.slot .dur i{display:block;height:100%;background:#3ce63c;font-style:normal}
+.slot:hover{background:rgba(255,255,255,.22)}
+#hotbar-selection{
+  position:absolute;width:48px;height:46px;top:-2px;
+  background:url('textures/gui_hotbar_selection.png') 0 0/100% 100% no-repeat;
+  pointer-events:none;
+}
+.stats{
+  position:absolute;left:0;bottom:48px;width:364px;height:18px;
+  display:flex;justify-content:space-between;
+}
+#health,#hunger{display:flex}
+#health i,#hunger i{display:block;width:18px;height:18px;background-size:100% 100%;margin-right:-2px}
+#item-name{
+  position:absolute;left:0;right:0;bottom:66px;text-align:center;font-size:16px;
+  opacity:0;transition:opacity .35s;pointer-events:none;
+}
+#item-name.show{opacity:1}
+
+/* ── F3 调试信息 ── */
+#debug{
+  position:absolute;left:4px;top:4px;z-index:8;padding:2px 6px;
+  font-size:16px;line-height:1.25;color:#e0e0e0;background:rgba(0,0,0,.45);
+  white-space:pre;pointer-events:none;
+}
+
+/* ── 提示条 ── */
+#toast{
+  position:absolute;left:50%;top:14%;transform:translateX(-50%);z-index:30;
+  max-width:80vw;padding:8px 14px;background:rgba(16,0,16,.86);
+  border:2px solid #2d0a63;text-align:center;font-size:16px;
+  opacity:0;transition:opacity .25s;pointer-events:none;
+}
+#toast.show{opacity:1}
+
+/* ── 容器面板 ── */
+.mc-panel{
+  position:relative;color:#404040;text-shadow:none;
+  background:#c6c6c6;
+  box-shadow:inset -4px -4px 0 #555, inset 4px 4px 0 #fff, 0 0 0 2px #000;
+  padding:8px;
+}
+.mc-panel h2{margin:0 0 6px;font-size:16px;font-weight:400;color:#404040;text-shadow:none}
+.mc-panel .mc-btn{width:100%}
+.mc-note{font-size:16px;color:#c0c0c0;text-align:center;margin:8px 0 0}
+
+/* 背包：176×166 设计稿 ×2 = 352×332，背景取 inventory.png 左上角区域 */
+.inv-root{display:flex;align-items:flex-start;gap:12px}
+.inv-panel{
+  width:352px;height:332px;padding:0;
+  background:url('textures/gui_inventory.png') 0 0/512px 512px no-repeat;
+  box-shadow:none;
+}
+#inv-player{position:absolute;left:52px;top:14px;width:96px;height:128px;image-rendering:pixelated}
+#slots{position:absolute;left:16px;top:168px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#inv-hotbar{position:absolute;left:16px;top:284px;display:grid;grid-template-columns:repeat(9,36px);grid-auto-rows:36px}
+#craft-grid{position:absolute;left:196px;top:36px;display:grid;grid-template-columns:repeat(2,36px);grid-auto-rows:36px}
+#craft-result{position:absolute;left:308px;top:56px;width:36px;height:36px}
+.craft-arrow{position:absolute;left:272px;top:52px;font-size:16px;color:#8b8b8b}
+#slot-description{
+  position:absolute;left:0;right:0;bottom:4px;text-align:center;
+  font-size:16px;color:#404040;margin:0;
+}
+.recipe-panel{width:300px;height:332px;display:flex;flex-direction:column;gap:6px}
+.recipe-panel h2{flex:0 0 auto}
+#station-status{flex:0 0 auto;margin:0;font-size:16px;color:#404040;text-shadow:none}
+#recipes{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding-right:4px}
+#recipes::-webkit-scrollbar{width:12px}
+#recipes::-webkit-scrollbar-thumb{background:#8b8b8b;border:2px solid #c6c6c6}
+.recipe{
+  display:flex;align-items:center;gap:8px;width:100%;min-height:46px;height:auto;padding:2px 6px;
+  background:#8b8b8b;border:2px solid;border-color:#373737 #fff #fff #373737;
+  color:#fff;font-family:inherit;font-size:16px;text-align:left;cursor:pointer;
+}
+.recipe:hover:not(:disabled){background:#a0a0a0;color:#ffffa0}
+.recipe:disabled{opacity:.55;cursor:not-allowed}
+.recipe img{width:32px;height:32px;flex:0 0 32px}
+.recipe span{display:flex;flex-direction:column;justify-content:center;line-height:1.1;min-width:0}
+.recipe small{font-size:16px;color:#e8e8e8}
+
+/* 熔炉：176×166 ×2 */
+.furnace-wrap{display:flex;flex-direction:column;align-items:center;gap:10px}
+.furnace-panel{
+  position:relative;width:352px;height:332px;color:#404040;
+  background:url('textures/gui_furnace.png') 0 0/512px 512px no-repeat;
+}
+.furnace-panel h2{position:absolute;left:18px;top:4px;margin:0;font-size:16px;font-weight:400;color:#404040;text-shadow:none}
+.fslot{position:absolute;width:36px;height:36px}
+.fslot img{position:absolute;left:2px;top:2px;width:32px;height:32px}
+#furnace-input{left:112px;top:34px}
+#furnace-fuel{left:112px;top:106px}
+#furnace-output{left:232px;top:62px}
+.flame{position:absolute;left:114px;top:73px;width:28px;height:28px;background:radial-gradient(circle at 50% 70%,#ffb43a,#e05a12 60%,transparent 70%);opacity:0}
+.flame.on{opacity:1}
+.progress-arrow{position:absolute;left:166px;top:74px;width:44px;height:16px;background:#8b8b8b}
+.progress-arrow i{display:block;height:100%;width:0;background:#e8e8e8}
+/* 状态文字已移到 .furnace-panel 外面（面板内 top:266px 会压在物品格上），
+   这里改成普通流式排版，不再绝对定位。 */
+#furnace-status{
+  margin:0;text-align:center;max-width:352px;
+  font-size:14px;color:#e8e8e8;text-shadow:2px 2px 0 #000;
+}
+.furnace-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;width:352px}
+.furnace-actions .mc-btn.narrow{width:100%;min-width:0;height:36px}
+
+/* ── 暂停 / 死亡 ── */
+.pause-stack{display:flex;flex-direction:column;align-items:center;gap:8px;width:400px}
+.pause-stack h2{margin:0 0 6px;font-size:16px;font-weight:400}
+.pause-stack .dead{color:#ff5555;font-size:32px}
+#death-dialog{background:rgba(112,0,0,.62)}
+
+/* ── 说明面板 ── */
+.help-panel{width:min(560px,92vw);max-height:86vh;overflow-y:auto}
+.help-panel .guide{margin:0 0 8px;padding-left:22px;font-size:16px;line-height:1.35;color:#404040;text-shadow:none}
+.help-panel .guide b{color:#000}
+.help-panel .mc-note{color:#606060;text-shadow:none}
+.help-panel .mc-btn{width:100%}
+
+/* ── 触屏 ── */
+#touch-controls{position:absolute;inset:auto 0 60px;z-index:9;display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
+#touch-controls>div{display:flex;gap:8px;pointer-events:auto}
+#touch-controls button{
+  width:64px;height:64px;padding:0;font-family:inherit;font-size:16px;color:#fff;
+  background:rgba(0,0,0,.42);border:2px solid rgba(255,255,255,.6);border-radius:0;
+  display:flex;align-items:center;justify-content:center;
+}
+#touch-controls button:active{background:rgba(255,255,255,.35)}
+
+/* 窄屏整体缩小，保证背包不溢出 */
+/* ★ 这里必须写 button.mc-btn 而不是 button：基础规则是 button.mc-btn{width:400px}，
+   特异性 (0,1,1) 高于 button (0,0,1)，只写 button 的话媒体查询完全不生效，
+   手机 375px 宽下按钮仍然 400px → 横向溢出、按钮点不到。 */
+@media (max-width:760px){
+  .inv-root{transform:scale(.86);transform-origin:center}
+  .title-stack,.menu-buttons,#new-world,.pause-stack{width:min(340px,86vw)}
+  button.mc-btn,a.mc-btn,.mc-input{width:min(340px,86vw)}
+  #title-logo{width:min(340px,86vw);height:auto;aspect-ratio:4/1}
+  /* 触屏键：3 个移动键 + 4 个动作键，64px 时总共需要 ≈516px，375 屏塞不下，
+     右边「使用/背包」会被挤出屏幕。窄屏缩到 44px（Apple 最小可点尺寸），
+     总宽 3*44+4*44+间距 ≈ 354px，刚好放得下一行。 */
+  #touch-controls{padding:0 8px;bottom:58px;gap:6px}
+  #touch-controls>div{gap:6px}
+  #touch-controls button{width:44px;height:44px;font-size:11px;border-width:1px}
+  /* 底部版本文本是 left:-100px;width:600px 的绝对定位（模拟原版底栏比菜单宽），
+     窄屏会整个溢到屏幕左边外，只剩半截 "D · 1.21.1 材质"。 */
+  .title-foot{left:0;width:100%;bottom:-52px;font-size:11px;line-height:1.5;
+    flex-wrap:wrap;justify-content:center;gap:0 10px}
+}
+@media (max-height:520px){
+  .inv-root{transform:scale(.72)}
+  #title-logo{width:300px;height:75px}
+}

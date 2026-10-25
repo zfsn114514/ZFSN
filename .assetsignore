@@ -65,4 +65,8 @@ Thumbs.db
 #   wrangler 只会甩一句 Asset too large，不会告诉你是哪个目录撑爆的。
 .tmp-*/
 
+# 同一个通配也覆盖 .tmp-* 散文件（当初只写了 .tmp-*/ 只能匹配目录，
+# minecraft/.tmp-boot.js 这类临时文件照样会被打包上线）
+.tmp-*
+
 .site-manager/
