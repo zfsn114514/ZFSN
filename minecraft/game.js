@@ -60,6 +60,9 @@ for(const [mat,tier,speed,durability]of [['golden',1,12,32],['netherite',5,9,203
 }
 for(const [id,food]of Object.entries({bread:5,carrot:3,potato:1,baked_potato:5,beetroot:1,cookie:2,melon_slice:2,sweet_berries:2,glow_berries:2,dried_kelp:1,cod:2,cooked_cod:5,salmon:2,cooked_salmon:6,rabbit:3,cooked_rabbit:5,golden_carrot:6}))if(ITEMS[id])Object.assign(ITEMS[id],{food,catalogOnly:false});
 for(const mob of ['pig','cow','sheep','chicken','zombie'])if(ITEMS[mob+'_spawn_egg'])Object.assign(ITEMS[mob+'_spawn_egg'],{mob,catalogOnly:false});
+/* 目录里 76 个刷怪蛋，只有上面 5 种有生物模型。剩下的打上 spawnEgg 标记，
+   右键时给出「还没实现」的提示 —— 否则会掉到「这个位置放不下」那条误导性文案上。 */
+for(const id of Object.keys(ITEMS))if(/_spawn_egg$/.test(id)&&!ITEMS[id].mob)ITEMS[id].spawnEgg=true;
 /* ── 原版堆叠上限 ──────────────────────────────────────────────
    绝大多数物品是 64，这里只判定「原版就是 1」的那几类。
    ★ 上面 47~59 行虽然给工具写死了 stack:1，但两轮循环只覆盖
@@ -137,6 +140,22 @@ function armorTexture(id,part){
   const mat=m[1]==='golden'?'gold':m[1];
   return `armor/${mat}_${part==='leggings'?2:1}`;
 }
+/* ── 可投掷物品（右键抛出，和箭共用一套实体数组） ──
+   kind 同时是贴图名（icons 里就有 snowball/egg/ender_pearl…）。
+   damage=0 的（雪球/鸡蛋）只造成击退，不扣血 —— 和原版一致。 */
+const THROWABLE={
+  snowball:{speed:21,damage:0},
+  egg:{speed:21,damage:0,hatch:.125},
+  ender_pearl:{speed:19,damage:0,teleport:true},
+  experience_bottle:{speed:19,damage:0},
+  firework_rocket:{speed:15,damage:0,grav:6},
+  fire_charge:{speed:17,damage:2},
+  splash_potion:{speed:17,damage:4,splash:true},
+  lingering_potion:{speed:17,damage:3,splash:true},
+};
+/* 模块级：boot 里的 partOf 在闭包里，World 的方法用这个 */
+function armorPart(id){const m=String(id).match(/_(helmet|chestplate|leggings|boots)$/);return m?m[1]:null;}
+
 export const RECIPES = [
   {out:'oak_planks',n:4,needs:{oak_log:1}},
   {out:'stick',n:4,needs:{oak_planks:2}},
@@ -259,7 +278,7 @@ export class World {
     this.inventory=Array(36).fill(null);this.craftGrid=Array(4).fill(null);
     // 工作台 3×3 与背包 2×2 是两个独立容器（原版就是这样，互不串味）
     this.tableGrid=Array(9).fill(null);
-    this.selected=0;this.time=120;this.elapsed=0;this.drops=[];this.mobs=[];this.furnaces={};this.mining=null;this.attackCooldown=0;this.exhaustion=0;this.regen=0;this.mobClock=0;this.gravityClock=0;this.deathReason='';this.revision=0;this.notify=()=>{};
+    this.selected=0;this.time=120;this.elapsed=0;this.drops=[];this.mobs=[];this.particles=[];this.furnaces={};this.mining=null;this.attackCooldown=0;this.exhaustion=0;this.regen=0;this.mobClock=0;this.gravityClock=0;this.deathReason='';this.revision=0;this.notify=()=>{};
     this.arrows=[];this.drawBow=null;   // 弓：拉弓状态 {t} 与空中/插住的箭
     // 天气：clear / rain / thunder。rain 会压暗天空并下粒子，thunder 额外打闪电。
     this.weather='clear';this.weatherTimer=0;this.lightning=0;this.rainDrops=[];
@@ -397,6 +416,23 @@ export class World {
    *  ★ 已经在挥的时候不重置：连点鼠标会把动作永久卡在第一帧，
    *    表现成「手一直在最高点抖」。让它自然播完更接近原版。 */
   swing(dur=.26){const p=this.player;if(p.swing>0)return;p.swing=p.swingDur=dur;}
+  /* 粒子只属于当次游玩画面，不写入存档。上限避免连锁挖矿或战斗拖慢手机。 */
+  particle(kind,x,y,count=1,extra={}){
+    const cap=Math.max(0,480-this.particles.length),n=Math.min(count,cap);
+    for(let i=0;i<n;i++){
+      const life=extra.life??(.32+this.rng()*.28);
+      this.particles.push({kind,x:x+(this.rng()-.5)*(extra.spread??.25),y:y+(this.rng()-.5)*(extra.spread??.25),
+        vx:extra.vx??(this.rng()-.5)*(extra.speed??2.6),vy:extra.vy??(-this.rng()*(extra.lift??2.6)),
+        life,maxLife:life,size:extra.size??(.075+this.rng()*.085),id:extra.id,color:extra.color,gravity:extra.gravity??8,drag:extra.drag??.9,
+        u:Math.floor(this.rng()*12),v:Math.floor(this.rng()*12)});
+    }
+  }
+  blockParticles(id,x,y){this.particle('block',x,y,12,{id,spread:.78,speed:3.4,lift:3.5,gravity:11,life:.46});}
+  hitParticles(x,y,critical=false){this.particle(critical?'crit':'hit',x,y,critical?8:5,{spread:.42,speed:critical?3.3:2.2,lift:3.4,gravity:5,life:.38,color:critical?'#60eaff':'#e64545'});}
+  updateParticles(dt){
+    for(const q of this.particles){q.life-=dt;q.vy+=(q.gravity??8)*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;q.vx*=Math.pow(q.drag??.9,dt*60);}
+    this.particles=this.particles.filter(q=>q.life>0&&q.y<H+3);
+  }
   drop(id,n,x,y,dur){if(n>0)this.drops.push({id,n,x,y,w:.3,h:.3,vx:(this.rng()-.5)*2,vy:-3,age:0,...(dur?{dur}:{})});}
   mine(x,y,dt){
     x=Math.floor(x);y=Math.floor(y);const block=BLOCKS[this.get(x,y)],tool=ITEMS[this.held()?.id];
@@ -410,7 +446,7 @@ export class World {
     this.mining.progress+=dt/seconds;this.mining.soundClock=(this.mining.soundClock||0)+dt;
     if(this.mining.soundClock>.23){this.mining.soundClock=0;this.sound('dig_'+material(block),x,.22);}
     if(this.mining.progress<1)return;
-    const id=this.get(x,y);this.set(x,y,0);this.wear();this.exhaustion+=.025;this.sound('dig_'+material(block),x,.6);
+    const id=this.get(x,y);this.set(x,y,0);this.blockParticles(BLOCKS[id].id,x+.5,y+.5);this.wear();this.exhaustion+=.025;this.sound('dig_'+material(block),x,.6);
     if(this.mode!=='creative'&&harvest){
       if(id===6){if(this.rng()<.12)this.drop('apple',1,x+.35,y+.35);else if(this.rng()<.3)this.drop('stick',1,x+.35,y+.35);}
       else{const drop=block.drop===undefined?block.id:block.drop;if(drop)this.drop(drop,1,x+.35,y+.35);}
@@ -421,14 +457,14 @@ export class World {
   place(x,y){
     x=Math.floor(x);y=Math.floor(y);const slot=this.held(),item=ITEMS[slot?.id];
     if(item?.mob&&this.reachable(x,y)&&!this.solid(x,y)){const mob=this.makeMob(item.mob,x,y);if(this.collides(mob))return false;this.mobs.push(mob);if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;this.swing();return true;}
-    if(slot?.id==='water_bucket'&&this.reachable(x,y)&&[0,17].includes(this.get(x,y))){this.setWaterSource(x,y);if(this.mode!=='creative')this.inventory[this.selected]={id:'bucket',n:1};this.sound('splash',x,.6);this.swing();return true;}
-    if(slot?.id==='bucket'&&this.reachable(x,y)&&this.waterSources.has(y*W+x)){this.setWaterSource(x,y,false);if(this.mode!=='creative'){if(slot.n===1)this.inventory[this.selected]={id:'water_bucket',n:1};else{slot.n--;if(this.add('water_bucket'))this.drop('water_bucket',1,this.player.x,this.player.y);}}this.sound('splash',x,.5);this.swing();return true;}
+    if(slot?.id==='water_bucket'&&this.reachable(x,y)&&[0,17].includes(this.get(x,y))){this.setWaterSource(x,y);this.particle('splash',x+.5,y+.4,10,{color:'#62b7ff',spread:.7,speed:2.8,lift:3.3,gravity:10,life:.42});if(this.mode!=='creative')this.inventory[this.selected]={id:'bucket',n:1};this.sound('splash',x,.6);this.swing();return true;}
+    if(slot?.id==='bucket'&&this.reachable(x,y)&&this.waterSources.has(y*W+x)){this.setWaterSource(x,y,false);this.particle('splash',x+.5,y+.4,7,{color:'#62b7ff',spread:.6,speed:2.4,lift:2.7,gravity:10,life:.38});if(this.mode!=='creative'){if(slot.n===1)this.inventory[this.selected]={id:'water_bucket',n:1};else{slot.n--;if(this.add('water_bucket'))this.drop('water_bucket',1,this.player.x,this.player.y);}}this.sound('splash',x,.5);this.swing();return true;}
     if(!item?.block||!this.reachable(x,y)||![0,17].includes(this.get(x,y)))return false;
     if(![[x-1,y],[x+1,y],[x,y-1],[x,y+1]].some(([xx,yy])=>this.solid(xx,yy)))return false;
     const rect={x,y,w:1,h:1};if(item.solid!==false&&(overlap(rect,this.player)||this.mobs.some(m=>overlap(rect,m))))return false;
     this.set(x,y,item.block);this.sound('dig_'+material(item),x,.5);if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;this.swing();return true;
   }
-  eat(){const slot=this.held(),item=ITEMS[slot?.id];if(!item?.food||this.player.food>=20)return false;this.player.food=Math.min(20,this.player.food+item.food);if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;this.notify('补充了饱食度');this.sound('eat',this.player.x,.6);this.swing();return true;}
+  eat(){const slot=this.held(),item=ITEMS[slot?.id];if(!item?.food||this.player.food>=20)return false;this.player.food=Math.min(20,this.player.food+item.food);this.particle('crumb',this.player.x+this.player.w/2,this.player.y+this.player.h*.42,6,{id:slot.id,color:'#e3b35d',spread:.35,speed:2.1,lift:2.8,gravity:7,life:.34,size:.06});if(this.mode!=='creative'&&--slot.n<=0)this.inventory[this.selected]=null;this.notify('补充了饱食度');this.sound('eat',this.player.x,.6);this.swing();return true;}
   smelt(input){
     const station=this.nearBlock(14),out=SMELTS[input];
     if(!station||!out||!this.count(input))return false;
@@ -453,7 +489,7 @@ export class World {
     const points=this.armorPoints();
     p.health=Math.max(0,p.health-Math.max(.5,amount*(1-Math.min(.8,points*.04))));
     if(points)this.wearArmor();
-    p.invuln=1;this.sound('hurt',p.x,.6);if(!p.health){this.deathReason=reason;for(const s of this.inventory)if(s)this.drop(s.id,s.n,p.x,p.y,s.dur);this.inventory.fill(null);this.notify('你倒下了，物品掉落在原地');}}
+    p.invuln=1;this.hitParticles(p.x+p.w/2,p.y+p.h*.45,false);this.particle('hurt',p.x+p.w/2,p.y+p.h*.45,8,{color:'#ef3434',spread:.55,speed:3.2,lift:3.8,gravity:7,life:.46});this.sound('hurt',p.x,.6);if(!p.health){this.particle('death',p.x+p.w/2,p.y+p.h*.45,18,{color:'#ef3434',spread:.7,speed:4.2,lift:4.4,gravity:8,life:.65});this.deathReason=reason;for(const s of this.inventory)if(s)this.drop(s.id,s.n,p.x,p.y,s.dur);this.inventory.fill(null);this.notify('你倒下了，物品掉落在原地');}}
   armorPoints(){let n=0;for(const s of Object.values(this.player.armor))if(s)n+=armorSlotPoints(s.id);return n;}
   /* 受伤时每件护甲磨 1 点耐久（原版 1 点伤害磨 1 耐久，简化成每件固定 1） */
   wearArmor(){if(this.mode==='creative')return;
@@ -463,22 +499,138 @@ export class World {
     }}
   /* ── 弓 ── */
   hasArrow(){return this.mode==='creative'||this.inventory.some(s=>s&&s.id==='arrow');}
-  shootBow(power){
+  /* 抛射物的出生点：沿射线外移 0.8 格，若仍卡在方块里就再往外挪。
+     ★ 以前箭是固定在 x+0.55（加玩家半宽 = 距中心 0.875 格）出生的：
+       贴着墙、斜坡或半砖时出生点直接落在方块内部 → 第一帧就 stuck，
+       而 stuck 又满足「1.5 格内自动拾取」→ 同一帧被收回背包，
+       表现就是「箭一射出去立刻消失」。 */
+  spawnProjectile(ang,prop){
+    const p=this.player,ox=p.x+p.w/2,oy=p.y+p.h*.66;
+    const cs=Math.cos(ang),sn=Math.sin(ang);
+    let sx=ox+cs*.8,sy=oy+sn*.8;
+    /* 出身体这 0.8 格若正好压在方块里（贴脸射墙 / 斜坡），沿射线让开一点。
+       只让 0.45 格：再多就等于「穿墙射出去了」。剩下的交给第一步的碰撞检测 ——
+       箭会插在墙面上，不再是「原地消失」。 */
+    for(let i=0;i<3&&this.solid(sx,sy);i++){sx+=cs*.15;sy+=sn*.15;}
+    return {x:sx,y:sy,vx:cs*prop.speed,vy:sn*prop.speed,ang,age:0,stuck:false,dead:false,
+      damage:prop.damage??0,grav:prop.grav??22,kind:prop.kind,tex:prop.tex,
+      pickup:!!prop.pickup,teleport:!!prop.teleport,splash:!!prop.splash,hatch:prop.hatch||0};
+  }
+  /* 发射角度 = 光标相对胸口的方向。以前箭永远水平飞（只有一点点固定上抬），
+     瞄哪儿都不影响弹道，抬头射箭会直接钻进脚前的土里。 */
+  aimAngle(aim){
+    const p=this.player,ox=p.x+p.w/2,oy=p.y+p.h*.66;
+    if(aim&&Number.isFinite(aim.x)&&Number.isFinite(aim.y)){
+      const dx=aim.x-ox,dy=aim.y-oy;
+      if(Math.hypot(dx,dy)>.6)return Math.atan2(dy,dx);
+    }
+    return p.face>0?0:Math.PI;
+  }
+  shootBow(power,aim){
     if(!this.hasArrow())return false;
+    const a=this.spawnProjectile(this.aimAngle(aim),{speed:10+40*power,kind:'arrow',
+      tex:'arrow_projectile',pickup:true,damage:Math.max(1,Math.round(2+7*power))});
     if(this.mode!=='creative'){
       const i=this.inventory.findIndex(s=>s&&s.id==='arrow');
       if(i<0)return false;
       if(--this.inventory[i].n<=0)this.inventory[i]=null;
     }
-    const p=this.player,speed=10+40*power,dir=p.face;
-    this.arrows.push({x:p.x+p.w/2+dir*.55,y:p.y+p.h*.68,vx:dir*speed,vy:-2-3*power,
-      ang:dir>0?0:Math.PI,age:0,stuck:false,damage:Math.max(1,Math.round(2+7*power)),dead:false});
-    this.swing(.25);this.wear();
+    this.arrows.push(a);this.swing(.25);this.wear();
     return true;
+  }
+  /* 投掷物的落地效果（箭不走这里：箭是插住等人捡） */
+  impact(a){
+    const p=this.player;
+    if(a.teleport){
+      /* 珍珠命中时坐标已经陷进方块里（撞的是表面再往里一步），
+         直接按落点放玩家会和被撞的方块重叠 —— 必须向上找空位，
+         否则「传送失败」而且什么都看不到。 */
+      const x=clamp(a.x-p.w/2,0,W-1);
+      let y=clamp(a.y-p.h,0,H-p.h);
+      const free=(yy)=>!this.collides({x,y:yy,w:p.w,h:p.h});
+      for(let i=0;i<12&&!free(y);i++)y-=0.25;
+      if(!free(y))for(let i=0;i<12&&!free(y);i++)y+=0.25;
+      if(free(y)){p.x=x;p.y=y;p.vx=0;p.vy=0;p.invuln=Math.max(p.invuln,.5);}
+      this.sound('click',p.x,.6);return;
+    }
+    if(a.splash){
+      this.particle('splash',a.x,a.y,16,{color:'#8e62ff',spread:1.1,speed:4.1,lift:4.2,gravity:8,life:.52});
+      for(const m of this.mobs)if(Math.hypot(m.x-a.x,m.y-a.y)<3){m.health-=a.damage;m.hurt=.25;this.hitParticles(m.x+m.w/2,m.y+m.h*.45,true);if(m.type!=='zombie')m.panic=2.6;}
+      this.sound('splash',a.x,.7);return;
+    }
+    if(a.hatch&&this.rng()<a.hatch&&this.mobs.length<60){
+      const m=this.makeMob('chicken',a.x,a.y);
+      if(!this.collides(m))this.mobs.push(m);
+    }
+    this.sound('click',a.x,.4);
+  }
+  /* 消耗手上 1 个（或 replace 成别的物品）。创造模式不消耗。 */
+  consumeHeld(n=1,replace=null){
+    if(this.mode==='creative')return;
+    const slot=this.held();if(!slot)return;
+    slot.n-=n;
+    if(slot.n<=0)this.inventory[this.selected]=replace?{id:replace,n:1}:null;
+  }
+  drinkPotion(){
+    const p=this.player;
+    const heal=Math.min(20-p.health,6);
+    p.health+=heal;p.food=Math.min(20,p.food+2);
+    this.consumeHeld(1);this.sound('eat',p.x,.6);this.swing();
+    return heal>0?`喝下药水，恢复了 ${Math.ceil(heal/2)} 颗心`:'喝下药水，状态已经很好了';
+  }
+  throwItem(id,t,aim){
+    const a=this.spawnProjectile(this.aimAngle(aim),{speed:t.speed,kind:id,tex:id,
+      damage:t.damage,grav:t.grav,teleport:t.teleport,splash:t.splash,hatch:t.hatch});
+    this.arrows.push(a);this.consumeHeld(1);this.swing(.25);
+    return '';
+  }
+  /* ── 手持物品「使用」（右键 / F） ───────────────────────────────
+     放置类（方块、刷怪蛋、水桶）由 place() 先试；这里负责「不放置方块、
+     但原版右键有反应」的所有东西。返回给玩家看的提示，'' = 已经生效。 */
+  useItem(aim){
+    const slot=this.held(),item=ITEMS[slot?.id];
+    if(!slot||!item)return '手上没有东西';
+    const p=this.player,id=slot.id;
+    if(item.food)return this.eat()?'':(p.food>=20?'你现在不饿，留着以后吃':'这个现在吃不下');
+    if(id==='potion')return this.drinkPotion();
+    if(id==='milk_bucket'){const h=Math.min(20-p.health,2);p.health+=h;this.consumeHeld(1,'bucket');this.sound('eat',p.x,.6);this.swing();return '喝下牛奶，清空状态并回复 1 颗心';}
+    if(id==='honey_bottle'){p.food=Math.min(20,p.food+6);this.consumeHeld(1);this.sound('eat',p.x,.6);this.swing();return '喝下蜂蜜，补充了饱食度';}
+    const t=THROWABLE[id];
+    if(t)return this.throwItem(id,t,aim);
+    const part=armorPart(id);
+    if(part){
+      if(p.armor[part])return `身上已经穿着${ITEMS[p.armor[part].id].name}，先去背包里脱下来`;
+      p.armor[part]={id,n:1,...(slot.dur?{dur:slot.dur}:{})};
+      this.consumeHeld(1);this.sound('click',p.x,.5);
+      return `穿上了${item.name}（护甲值 +${armorSlotPoints(id)}）`;
+    }
+    if(id==='shears'){
+      const sheep=this.mobs.find(m=>m.type==='sheep'&&!m.sheared&&Math.abs(m.x-p.x)<2.6&&Math.abs(m.y-p.y)<2.5);
+      if(!sheep)return '对着羊右键才能剪羊毛（先靠近它）';
+      sheep.sheared=true;this.drop('white_wool',1+Math.floor(this.rng()*3),sheep.x,sheep.y);
+      this.sound('click',sheep.x,.6);this.swing();return '剪下了羊毛';
+    }
+    if(/^music_disc_/.test(id)){this.sound('click',p.x,.55);return `播放《${item.name}》`;}
+    if(id==='clock')return `第 ${Math.floor(this.time/DAY)+1} 天 · ${this.night()?'夜晚':'白昼'}`;
+    if(id==='compass'){
+      const d=Math.round(Math.abs(this.spawn.x-p.x));
+      return `出生点 X ${Math.round(this.spawn.x)}（在${this.spawn.x>p.x?'右':'左'}边 ${d} 格）；脚下 Y ${Math.round(H-p.y-p.h)}`;
+    }
+    if(id==='flint_and_steel')return '这个世界还没有可燃烧的方块，打火石暂时点不着';
+    if(id==='bucket')return '对着水源（湖面）右键才能装水';
+    if(id==='water_bucket')return '对着空地或水面右键才能倒水';
+    if(id==='lava_bucket')return '本作还没有岩浆方块，倒不出来';
+    if(item.spawnEgg)return `${item.name}：本作只实现了猪 / 牛 / 羊 / 鸡 / 僵尸`;
+    if(/(^|_)(boat|minecart)$/.test(id))return '船和矿车需要水面或铁轨，本作暂不支持放置';
+    if(id==='bone_meal')return '骨粉要对准树苗，本作暂不支持催熟';
+    if(id==='shield')return '盾牌会被动生效，不用右键';
+    if(item.tool)return `${item.name}：左键对着方块挖、对着生物打`;
+    if(item.block||item.mob)return '这个位置放不下（对着空地或水面右键）';    // place() 已经试过
+    return `${item.name}是合成材料，不能直接使用`;
   }
   respawn(){const p=this.player;Object.assign(p,{...this.spawn,vx:0,vy:0,health:20,food:20,invuln:3});while(this.collides(p)&&p.y>1)p.y--;this.mining=null;}
   attack(x,y){if(this.attackCooldown>0)return false;const p=this.player;const mob=this.mobs.find(m=>x>=m.x-.4&&x<=m.x+m.w+.4&&y>=m.y-.3&&y<=m.y+m.h+.3&&Math.hypot(m.x-p.x,m.y-p.y)<3.5&&this.reachable(Math.floor(m.x),Math.floor(m.y)));if(!mob)return false;
-    this.attackCooldown=.55;this.swing(.3);mob.health-=ITEMS[this.held()?.id]?.damage??1;mob.hurt=.25;this.sound(mob.type,mob.x,.65);
+    this.attackCooldown=.55;this.swing(.3);const weapon=ITEMS[this.held()?.id],critical=!!weapon?.tool&&this.rng()<.28;mob.health-=(weapon?.damage??1)*(critical?1.5:1);mob.hurt=.25;this.hitParticles(mob.x+mob.w/2,mob.y+mob.h*.42,critical);this.sound(mob.type,mob.x,.65);
     /* 击退：vx 指向远离玩家的方向，**脸必须同一帧跟上**。
        以前只改 vx 不改 face，模型要等 0.25 秒受伤硬直结束、AI 重新决策时才转身，
        这半秒里它朝玩家、人却被推远 —— 看起来就是「倒着走路」。
@@ -486,7 +638,7 @@ export class World {
     const away=mob.x>p.x?1:-1;
     mob.vx=away*6;mob.vy=-3;mob.face=away;
     if(mob.type!=='zombie')mob.panic=2.6;
-    this.wear();if(mob.health<=0){const loot={pig:[['porkchop',2]],cow:[['beef',2],['leather',1]],sheep:[['mutton',2],['white_wool',1]],chicken:[['chicken',1],['feather',1]]}[mob.type]||[];for(const [id,n] of loot)this.drop(id,n,mob.x,mob.y);this.mobs.splice(this.mobs.indexOf(mob),1);}return true;
+    this.wear();if(mob.health<=0){this.particle('death',mob.x+mob.w/2,mob.y+mob.h*.45,14,{color:'#f16a6a',spread:.75,speed:4,lift:4.2,gravity:8,life:.6});const loot={pig:[['porkchop',2]],cow:[['beef',2],['leather',1]],sheep:[['mutton',2],['white_wool',1]],chicken:[['chicken',1],['feather',1]]}[mob.type]||[];for(const [id,n] of loot)this.drop(id,n,mob.x,mob.y);this.mobs.splice(this.mobs.indexOf(mob),1);}return true;
   }
   move(e,dt,fallDamage=false){
     e.ground=false;const inWater=this.get(e.x+e.w/2,e.y+e.h*.65)===17;
@@ -513,6 +665,7 @@ export class World {
   }
   footSupported(e,x=e.x+e.w/2,y=e.y+e.h+.06){return this.solid(x,y)||this.solid(x-.02,y)||this.solid(x+.02,y);}
   update(dt,controls={}){
+    this.updateParticles(dt);
     if(this.player.health<=0)return;
     const p=this.player;this.time+=dt;this.elapsed+=dt;this.attackCooldown=Math.max(0,this.attackCooldown-dt);p.invuln=Math.max(0,p.invuln-dt);
     p.swing=Math.max(0,p.swing-dt);
@@ -535,14 +688,14 @@ export class World {
     p.vx=dir*speed;
     if(controls.jump&&(p.ground||water||this.mode==='creative')){p.vy=this.mode==='creative'?-7:water?-4.8:-8.8;if(p.ground)this.exhaustion+=.05;}
     this.move(p,dt,true);this.fluidClock+=dt;if(this.fluidClock>=.2){this.fluidClock-=.2;this.stepWater();}
-    if(water&&!this.wasInWater)this.sound('splash',p.x,.5);this.wasInWater=water;
-    this.stepClock+=Math.abs(p.vx)*dt;if(this.stepClock>1.7&&p.ground){this.stepClock=0;this.sound('step_'+material(BLOCKS[this.get(p.x+p.w/2,p.y+p.h+.1)]),p.x,.38);}
+    if(water&&!this.wasInWater){this.particle('splash',p.x+p.w/2,p.y+p.h*.65,10,{color:'#62b7ff',spread:.55,speed:2.8,lift:3.1,gravity:10,life:.4});this.sound('splash',p.x,.5);}this.wasInWater=water;
+    this.stepClock+=Math.abs(p.vx)*dt;if(this.stepClock>1.7&&p.ground){this.stepClock=0;const under=BLOCKS[this.get(p.x+p.w/2,p.y+p.h+.1)];if(under?.id!=='water_still')this.particle('dust',p.x+p.w/2,p.y+p.h,2,{id:under?.id,color:under?.id==='grass_block_side'?'#8a7148':'#9b9b9b',spread:.28,speed:1.1,lift:1.2,gravity:6,life:.28,size:.055});this.sound('step_'+material(under),p.x,.38);}
     this.ambientClock+=dt;if(this.ambientClock>5){this.ambientClock=0;const nearby=this.mobs.filter(m=>Math.abs(m.x-p.x)<14);if(nearby.length){const m=nearby[Math.floor(this.rng()*nearby.length)];this.sound(m.type,m.x,.32);}if(water)this.sound('water',p.x,.22);}
     if(this.mode!=='creative'){
       if(this.exhaustion>=1){p.food=Math.max(0,p.food-1);this.exhaustion-=1;}
       this.regen+=dt;if(this.regen>=4){this.regen=0;if(p.food>=18&&p.health<20){p.health++;this.exhaustion+=.6;}else if(p.food===0&&p.health>1)this.damage(1,'饥饿');}
     }
-    for(const d of this.drops){d.age+=dt;this.move(d,dt);d.vx*=.97;if(d.age>.4&&Math.hypot(d.x-p.x,d.y-p.y-.7)<1.7){const before=d.n;d.n=this.add(d.id,d.n,d.dur);if(d.n<before)this.sound('pickup',p.x,.35);}}
+    for(const d of this.drops){d.age+=dt;this.move(d,dt);d.vx*=.97;if(d.age>.4&&Math.hypot(d.x-p.x,d.y-p.y-.7)<1.7){const before=d.n;d.n=this.add(d.id,d.n,d.dur);if(d.n<before){this.particle('pickup',d.x,d.y,5,{id:d.id,color:'#e8df78',spread:.22,speed:1.8,lift:2.4,gravity:3,life:.34,size:.06});this.sound('pickup',p.x,.35);}}}
     this.drops=this.drops.filter(d=>d.n>0&&d.age<300);
     /* ── 箭：抛物线飞行，插进方块后留在原地，玩家走近自动拾取；
        命中生物按伤害结算并击退（动物同样 panic 逃跑）。 ── */
@@ -551,23 +704,32 @@ export class World {
       if(a.stuck){
         /* ★ add() 返回的是「没塞进去的剩余量」，0 才是成功 ——
            写成 if(this.add(...)) 会在成功的帧继续留在数组里，
-           接下来每一帧都再塞一支，玩家走过去一次就凭空多出 58 支箭。 */
-        if(Math.hypot(a.x-p.x,a.y-p.y-.9)<1.5&&!this.add('arrow',1)){a.dead=true;this.sound('pickup',p.x,.35);}
+           接下来每一帧都再塞一支，玩家走过去一次就凭空多出 58 支箭。
+         * ★ 只有箭能捡；而且要有 0.45 秒的缓冲期，否则贴脸射墙时
+           「出生即卡住」的箭会在同一帧被吸回背包，看着像没射出去。 */
+        if(a.pickup!==false&&a.age>.45&&Math.hypot(a.x-p.x,a.y-p.y-.9)<1.5&&!this.add('arrow',1)){a.dead=true;this.sound('pickup',p.x,.35);}
         continue;
       }
-      a.vy+=22*dt;
+      a.vy+=(a.grav||22)*dt;
       const steps=Math.max(1,Math.ceil(Math.hypot(a.vx,a.vy)*dt/.2));
       for(let i=0;i<steps&&!a.stuck&&!a.dead;i++){
         const nx=a.x+a.vx*dt/steps,ny=a.y+a.vy*dt/steps;
         const m=this.mobs.find(m=>m.health>0&&nx>=m.x-.15&&nx<=m.x+m.w+.15&&ny>=m.y&&ny<=m.y+m.h);
         if(m){
-          m.health-=a.damage;m.hurt=.25;m.vx=Math.sign(a.vx||1)*2.5;m.vy=-2.5;
+          m.health-=a.damage;m.hurt=.25;this.hitParticles(m.x+m.w/2,m.y+m.h*.42,true);if(m.health<=0)this.particle('death',m.x+m.w/2,m.y+m.h*.45,14,{color:'#f16a6a',spread:.75,speed:4,lift:4.2,gravity:8,life:.6});m.vx=Math.sign(a.vx||1)*2.5;m.vy=-2.5;
           if(m.type!=='zombie')m.panic=2.6;
-          this.sound(m.type,m.x,.6);a.dead=true;break;
+          this.sound(m.type,m.x,.6);a.dead=true;
+          if(a.splash)this.impact(a);          // 喷溅药水打中生物也要溅射
+          break;
         }
         if(this.solid(nx,ny)||this.get(nx,ny)===1){
-          a.stuck=true;a.vx=0;a.vy=0;
-          a.x-=Math.cos(a.ang)*.3;a.y-=Math.sin(a.ang)*.3;   // 往回退一点，箭头露在方块外
+          if(a.pickup!==false){                // 箭（默认）：插在方块上，留着等人来捡
+            a.stuck=true;a.vx=0;a.vy=0;
+            a.x-=Math.cos(a.ang)*.3;a.y-=Math.sin(a.ang)*.3;   // 往回退一点，箭头露在方块外
+          }else{
+            a.dead=true;
+            this.impact(a);                    // 投掷物的一次性效果
+          }
           break;
         }
         a.x=nx;a.y=ny;
@@ -620,7 +782,8 @@ export class World {
       surface:Array.from(this.surface),spawn:this.spawn,player:this.player,
       inventory:this.inventory,selected:this.selected,time:this.time,elapsed:this.elapsed,
       weather:this.weather,drops:this.drops,mobs:this.mobs,furnaces:this.furnaces,
-      arrows:this.arrows.map(a=>({x:a.x,y:a.y,vx:a.vx,vy:a.vy,ang:a.ang,age:a.age,stuck:a.stuck,damage:a.damage})),
+      arrows:this.arrows.map(a=>({x:a.x,y:a.y,vx:a.vx,vy:a.vy,ang:a.ang,age:a.age,stuck:a.stuck,
+        damage:a.damage,kind:a.kind,tex:a.tex,pickup:a.pickup,grav:a.grav})),
       exhaustion:this.exhaustion,craftGrid:this.craftGrid,tableGrid:this.tableGrid,
     };
   }
@@ -684,7 +847,9 @@ export class World {
       w.player.armor=out;
     }
     if(Array.isArray(data.arrows))for(const a of data.arrows.slice(0,256)){
-      if([a.x,a.y,a.vx,a.vy,a.ang].every(Number.isFinite))w.arrows.push({x:a.x,y:a.y,vx:a.vx,vy:a.vy,ang:a.ang,age:Number.isFinite(a.age)?a.age:0,stuck:!!a.stuck,damage:Number.isFinite(a.damage)?a.damage:6,dead:false});
+      if([a.x,a.y,a.vx,a.vy,a.ang].every(Number.isFinite))w.arrows.push({x:a.x,y:a.y,vx:a.vx,vy:a.vy,ang:a.ang,age:Number.isFinite(a.age)?a.age:0,stuck:!!a.stuck,damage:Number.isFinite(a.damage)?a.damage:6,dead:false,
+        kind:typeof a.kind==='string'?a.kind:'arrow',tex:typeof a.tex==='string'?a.tex:'arrow_projectile',
+        pickup:a.pickup!==false,grav:Number.isFinite(a.grav)?a.grav:22});
     }
     /* ★ 背包不能直接 structuredClone：装备的堆叠上限从 64 改成了 1，
        线上老档里可能存着「32 个钻石胸甲一摞」这种（当时合法）。
@@ -1100,6 +1265,25 @@ async function boot(){
     ctx.drawImage(sheet,0,frame*16,16,16,sx,sy+full-h,full,h);
     ctx.globalAlpha=1;
   }
+  function drawParticles(){
+    ctx.save();ctx.imageSmoothingEnabled=false;
+    for(const q of world.particles){
+      const alpha=clamp(q.life/q.maxLife,0,1),sx=Math.round(q.x*tile-camX),sy=Math.round(q.y*tile-camY);
+      const size=Math.max(2,Math.round(q.size*tile));
+      if(q.kind==='block'||q.kind==='dust'){
+        const img=tinted[q.id]||images[q.id];
+        if(img){ctx.globalAlpha=alpha;ctx.drawImage(img,q.u,q.v,4,4,sx-size/2,sy-size/2,size,size);continue;}
+      }
+      if(q.kind==='pickup'&&q.id&&images[q.id]){
+        ctx.globalAlpha=alpha;ctx.drawImage(images[q.id],0,0,images[q.id].width,images[q.id].height,sx-size,sy-size,size*2,size*2);continue;
+      }
+      ctx.globalAlpha=alpha;
+      ctx.fillStyle=q.color||'#ffffff';
+      if(q.kind==='crit'){ctx.fillRect(sx-size/2,sy-size*1.6,size,size*3);ctx.fillRect(sx-size*1.6,sy-size/2,size*3,size);}
+      else ctx.fillRect(sx-size/2,sy-size/2,size,size);
+    }
+    ctx.globalAlpha=1;ctx.restore();
+  }
 
   /* 明暗层：把每格的暗度写进一张「一格一像素」的小图，再放大贴上去。
      放大时开双线性插值 → 就是 MC 的平滑光照：格与格之间渐变过渡，
@@ -1274,11 +1458,11 @@ async function boot(){
     for(const d of world.drops)if(d.x>=minX-1&&d.x<=maxX+1)
       spriteAt(d.id,Math.round(d.x*tile-camX),Math.round(d.y*tile-camY+Math.sin(world.elapsed*3+d.x)*2),Math.round(tile*.46),Math.round(tile*.46));
 
-    // 箭：贴图按飞行方向旋转；插住时保持最后角度
-    if(world.arrows.length)ensureTexture('arrow_projectile');
+    // 弓/投掷物：贴图按飞行方向旋转；插住时保持最后角度
+    for(const a of world.arrows)ensureTexture(a.tex||'arrow_projectile');
     for(const a of world.arrows){
       if(a.x<minX-2||a.x>maxX+2)continue;
-      const img=images['arrow_projectile'];
+      const img=images[a.tex||'arrow_projectile'];
       const sx=Math.round(a.x*tile-camX),sy=Math.round(a.y*tile-camY);
       if(!img){continue;}
       ctx.save();ctx.translate(sx,sy);ctx.rotate(a.ang);ctx.imageSmoothingEnabled=false;
@@ -1313,6 +1497,7 @@ async function boot(){
 
     // 明暗：一次整片贴图，和方块共用 camX/camY，没有重叠也就没有缝
     drawShade(minX,minY,maxX,maxY,torches,p,light);
+    drawParticles();
 
     if(enhancedLight){
       ctx.save();ctx.globalCompositeOperation='screen';
@@ -1977,12 +2162,30 @@ async function boot(){
   const lightButton=$('#light-button');const lightLabel=()=>lightButton.textContent='柔和光影：'+(enhancedLight?'开':'关');lightLabel();lightButton.onclick=()=>{enhancedLight=!enhancedLight;localStorage.setItem('zfsn.mc.light',enhancedLight?'on':'off');lightLabel();};
   $('#collect-smelt').onclick=()=>{world.collectSmelt();furnaceUI();hud(true);};
 
+  /* 右键的完整语义：先试交互方块 → 再试放置 → 最后才是「使用物品」。
+     以前只有前两步，所以创造栏里绝大多数东西（药水、雪球、唱片、盔甲…）
+     右键全是静默无反应，玩家看不出是「不能用」还是「没实现」。 */
+  function rightClick(){
+    if(paused())return;
+    if(aim){
+      const bx=Math.floor(aim.x),by=Math.floor(aim.y),id=world.get(bx,by);
+      if(id===14){openFurnace();return;}
+      if(id===13){inventory('table');openDialog($('#inventory-dialog'));return;}
+      if(world.place(aim.x,aim.y)){hud(true);return;}
+    }
+    use();
+  }
   function use(){
     if(paused())return;
-    if(world.eat()){hud(true);return;}
+    const msg=world.useItem(aim);
+    if(!msg){hud(true);return;}                    // 物品已经生效
+    /* 物品没用上时，附近有台子就打开台子。
+       以前是「先看台子」，于是拿着镐按 F 会直接开熔炉；
+       现在反过来，但保留这个兜底 —— 否则站在熔炉前拿着石头按 F 只会得到
+       「这是合成材料」的提示，反而进不去熔炉。 */
     if(world.nearBlock(14)){openFurnace();return;}
     if(world.nearBlock(13)){inventory('table');openDialog($('#inventory-dialog'));return;}
-    notify('手持食物可以进食；靠近工作台或熔炉可以交互');
+    hud(true);notify(msg);
   }
 
   // ── 聊天 / 指令 ────────────────────────────────────────────────
@@ -2157,12 +2360,7 @@ async function boot(){
     if(paused())return;
     aimEvent(e);canvas.focus();
     if(e.pointerType==='touch'&&e.button!==2)return;
-    if(e.button===2){
-      const bx=Math.floor(aim.x),by=Math.floor(aim.y),id=world.get(bx,by);
-      if(id===14){openFurnace();return;}
-      if(id===13){inventory('table');openDialog($('#inventory-dialog'));return;}
-      world.place(aim.x,aim.y);hud(true);return;
-    }
+    if(e.button===2){rightClick();return;}
     mouseDown=true;canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointerup',()=>{mouseDown=false;world.mining=null;});
@@ -2210,11 +2408,12 @@ async function boot(){
         /* 手持弓按住左键 = 拉弓（原版语义），松开发射 —— 与挖掘/攻击互斥。
            拉弓途中把弓切走（滚轮）就取消，不射箭不耗箭。 */
         const mineHeld=!!(aim&&(mouseDown||touch.has('mine')));
-        if(world.drawBow&&world.held()?.id!=='bow')world.drawBow=null;
+        const bowHeld=/^(bow|crossbow)$/.test(world.held()?.id||'');
+        if(world.drawBow&&!bowHeld)world.drawBow=null;
         if(world.drawBow){
           if(mineHeld)world.drawBow.t+=1/60;
-          else{world.shootBow(Math.min(1,world.drawBow.t/1));world.drawBow=null;}
-        }else if(mineHeld&&world.held()?.id==='bow'&&world.hasArrow()){
+          else{world.shootBow(Math.min(1,world.drawBow.t/1),aim);world.drawBow=null;}
+        }else if(mineHeld&&bowHeld&&world.hasArrow()){
           world.drawBow={t:0};
         }else if(mineHeld){
           if(!world.attack(aim.x,aim.y))world.mine(aim.x,aim.y,1/60);
