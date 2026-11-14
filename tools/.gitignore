@@ -14,3 +14,16 @@ config.json
 # 临时中间文件
 _tmp_*.json
 _backup_*.json
+
+# ZF语音首个管理员初始化脚本生成的 SQL（含密码哈希，执行完即删）
+voice_admin_init.sql
+
+# 本地 Worker 运行时的数据（含本地账号哈希与头像，绝不提交）
+dev/.voice-dev.sqlite*
+dev/.voice-media/
+dev/.voice-dev-credentials.txt
+
+# 可选高级模式：自建 LiveKit 的真实配置含 API Secret，只提交 .example 模板
+livekit/livekit.yaml
+livekit/.env
+livekit/livekit-server.exe

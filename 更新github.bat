@@ -33,7 +33,7 @@ if not defined GIT (
 
 echo.
 echo ============================================
-echo   ZFSN Õ¾µã - ¸üÐÂµ½ GitHub
+echo   ZFSN Õ¾ï¿½ï¿½ - ï¿½ï¿½ï¿½Âµï¿½ GitHub
 echo   Ä¿Â¼: %CD%
 echo   Git: %GIT%
 echo ============================================
@@ -65,9 +65,21 @@ rem "nothing to commit" message.
 "%GIT%" diff --cached --quiet
 if errorlevel 1 (
   echo [2/3] Committing ...
-  rem Read the message from .commitmsg.txt to avoid CJK getting
+  rem Read the message from tools/.commitmsg.txt to avoid CJK getting
   rem garbled when piped through the console code page.
-  "%GIT%" commit -F "%~dp0.commitmsg.txt"
+  if not exist "%~dp0tools\.commitmsg.txt" (
+    echo [X] Commit message file not found: "%~dp0tools\.commitmsg.txt"
+    echo.
+    pause
+    exit /b 1
+  )
+  "%GIT%" commit -F "%~dp0tools\.commitmsg.txt"
+  if errorlevel 1 (
+    echo [X] Commit failed. Push was skipped.
+    echo.
+    pause
+    exit /b 1
+  )
 ) else (
   echo [2/3] No new changes, skipping commit.
 )

@@ -7,8 +7,8 @@
   <meta name="description" content="ZFSN 的 2D 方块生存世界：挖掘、合成、建造，浏览器直接游玩。">
   <title>方块世界 · ZFSN</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="../minecraft/style.3009d345.css">
-  <script type="module" src="../minecraft/game.25a4a5bb.js"></script>
+  <link rel="stylesheet" href="../minecraft/style.ef2ca107.css">
+  <script type="module" src="../minecraft/game.b12c2510.js"></script>
 </head>
 <body>
 <main id="game">
@@ -17,11 +17,20 @@
   <!-- ── 游戏内 HUD：位置和尺寸都照 Java 版的像素坐标，整体放大 2 倍 ── -->
   <div id="hud" hidden>
     <div id="hotbar-wrap">
+      <div id="xp-bar" aria-label="经验值"><i></i></div>
       <div class="stats">
-        <div id="health" aria-label="生命值"></div>
-        <div id="hunger" aria-label="饥饿值"></div>
+        <div class="stat-col stat-left">
+          <div id="absorption" aria-label="吸收生命"></div>
+          <div id="armor" aria-label="护甲值"></div>
+          <div id="health" aria-label="生命值"></div>
+        </div>
+        <div class="stat-col stat-right">
+          <div id="hunger" aria-label="饥饿值"></div>
+        </div>
       </div>
       <div id="hotbar" role="listbox" aria-label="快捷栏"></div>
+      <div id="hotbar-cooldown" hidden></div>
+      <div id="combat-status" hidden></div>
       <div id="item-name"></div>
     </div>
   </div>
@@ -73,6 +82,17 @@
           <label><input type="radio" name="mode" value="survival" checked> 生存模式</label>
           <label><input type="radio" name="mode" value="creative"> 创造模式</label>
         </div>
+        <!-- 世界类型（规格书 §10）：默认 / 超平坦 / 巨大群系 -->
+        <label class="mc-label" for="wt-default">世界类型</label>
+        <div class="mc-choice" id="world-type">
+          <label><input type="radio" name="worldType" value="default" id="wt-default" checked> 默认</label>
+          <label><input type="radio" name="worldType" value="flat" id="wt-flat"> 超平坦</label>
+          <label><input type="radio" name="worldType" value="huge" id="wt-huge"> 巨大群系</label>
+        </div>
+        <div class="mc-choice" id="world-opts">
+          <label><input type="checkbox" name="caves" id="opt-caves" checked> 洞穴</label>
+          <label><input type="checkbox" name="structures" id="opt-structures" checked> 结构</label>
+        </div>
         <button class="mc-btn" type="submit">开始游戏</button>
         <button class="mc-btn" type="button" id="cancel-new">取消</button>
       </form>
@@ -92,6 +112,8 @@
           <span id="creative-title"></span><input id="creative-search" aria-label="搜索物品" placeholder="搜索" hidden>
           <div id="creative-grid"></div><input id="creative-scroll" type="range" min="0" max="0" step="1" aria-label="滚动物品">
           <div id="creative-hotbar"></div>
+          <!-- 垃圾桶：光标上有物品时点一下销毁（原版创造物品栏的行为） -->
+          <button type="button" id="creative-trash" aria-label="销毁手上的物品" title="销毁手上的物品">×</button>
         </div>
         <div id="creative-tabs-bottom" role="tablist" aria-label="更多分类"></div>
       </div>
@@ -101,6 +123,7 @@
           <div id="craft-result" aria-label="合成产物"></div>
         </div>
         <div id="armor-slots" aria-label="盔甲栏"></div>
+        <div id="offhand-slot" aria-label="副手栏"></div>
         <canvas id="inv-player" width="96" height="128" aria-hidden="true"></canvas>
         <div id="slots" aria-label="物品栏"></div>
         <div id="inv-hotbar" aria-label="快捷栏"></div>
@@ -124,6 +147,16 @@
        只要 dialog 是 showModal() 开的，它就待在浏览器 top layer，外面任何 z-index 都盖不住。
        放在 .inv-root 外面还有第二个原因：那个容器在窄屏上带 zoom，fixed 定位的坐标会跟着缩放。 -->
   <div id="mc-tooltip" hidden aria-hidden="true"></div>
+
+  <!-- ── 村民 / 流浪商人交易（简化交易表：先给后得）── -->
+  <dialog id="trade-dialog" class="mc-screen">
+    <div class="trade-panel">
+      <h2 id="trade-title">交易</h2>
+      <p class="mc-note">身上没有支付物时会提示；交易获得少量经验。</p>
+      <div id="trade-offers"></div>
+      <button class="mc-btn" data-close>完成</button>
+    </div>
+  </dialog>
 
   <!-- ── 熔炉（原版 furnace.png 布局）── -->
   <dialog id="furnace-dialog" class="mc-screen">
@@ -161,6 +194,7 @@
       <h2>游戏菜单</h2>
       <button id="resume" class="mc-btn">回到游戏</button>
       <button id="save-button" class="mc-btn">保存世界</button>
+      <button id="autostep-button" class="mc-btn">自动跳跃</button>
       <button id="export-button" class="mc-btn">导出存档</button>
       <button id="import-button" class="mc-btn">导入存档</button>
       <button id="light-button" class="mc-btn">柔和光影</button>
@@ -204,5 +238,7 @@
   <input type="file" id="import-file" accept=".json,application/json" hidden>
   <noscript>请开启 JavaScript 以游玩这个游戏。</noscript>
 </main>
+  <!-- ZF语音：全站左上角入口按钮 -->
+  <script src="/assets/js/voice-entry.js"></script>
 </body>
 </html>

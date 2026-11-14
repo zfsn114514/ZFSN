@@ -1,0 +1,45 @@
+# LiveKit Server configuration template (OPTIONAL advanced mode)
+# Copy to livekit.yaml and replace the two placeholders before starting.
+# NEVER commit livekit.yaml - it contains the API secret.
+#
+# Default ZFVoice backend is Cloudflare Worker + Cloudflare Realtime SFU.
+# This file is only needed if an admin explicitly enables self-hosted channels.
+
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+# Single-node deployment does not require Redis.
+# redis:
+#   address: "127.0.0.1:6379"
+
+rtc:
+  # TCP fallback for clients behind strict firewalls
+  tcp_port: 7881
+  # UDP media ports. Narrow the range if you must forward fewer ports.
+  port_range_start: 50000
+  port_range_end: 50100
+  # Set false when using Cloudflare Tunnel + Cloudflare TURN for media.
+  use_external_ip: true
+
+room:
+  auto_create: true
+  max_participants: 20
+  empty_timeout: 300
+
+# API Key -> API Secret. Use the SAME pair in the Worker secrets
+# LIVEKIT_API_KEY / LIVEKIT_API_SECRET (short-lived JWTs are signed by Worker).
+keys:
+  REPLACE_WITH_API_KEY: REPLACE_WITH_API_SECRET
+
+logging:
+  level: info
+  json: false
+
+# Development only. Production should terminate TLS at a Cloudflare Tunnel
+# or a reverse proxy with a trusted certificate (wss://voice.example.com).
+# turn:
+#   enabled: true
+#   domain: voice.example.com
+#   cert_file: ""
+#   key_file: ""

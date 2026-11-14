@@ -10,6 +10,13 @@
 import * as L from "./lib.js";
 import * as M from "./media.js";
 import { appearanceDefaults, validateAppearance } from "./appearance.js";
+// ZF语音（阶段 2 起）。独立模块、独立路由前缀，未命中时返回 null，
+// 不影响 handleAPI 的任何既有分支。
+import { handleVoiceAPI } from "./voice-auth.js";
+import { handleVoiceRealtime } from "./voice-realtime.js";
+import { verifyRoomTicket } from "./voice-core.js";
+// Durable Object 必须由 Worker 入口模块导出，wrangler.toml 才能绑定 class_name。
+export { VoiceRoomDO } from "./voice-room.js";
 
 /* ── 常量（与旧后端保持一致，避免前端行为突变）───────────────── */
 const MAX_NAME = 24;
@@ -155,6 +162,28 @@ const worker = {
 
     try {
       if (p.indexOf("/api/") === 0) {
+        // ZF语音房间 WebSocket：直接转给对应频道的 Durable Object。
+        // 房间状态、成员广播、信令中继、踢人禁言全在 Worker 里，用户电脑无需跑服务。
+        const roomMatch = p.match(/^\/api\/voice\/room\/([^/]+)\/ws$/);
+        if (roomMatch && (request.headers.get("Upgrade") || "").toLowerCase() === "websocket") {
+          if (!env.VOICE_ROOM) return L.fail("房间状态服务尚未部署，请先在 wrangler.toml 添加 Durable Object 绑定与迁移", 503);
+          const channelId = decodeURIComponent(roomMatch[1]);
+          // 官方文档建议：升级请求先在 Worker 里校验，无效请求不要转发给 DO，
+          // 否则会为攻击者连发垃圾 WebSocket 付费。DO 内部仍会再校验一次（纵深防御）。
+          const ticket = await verifyRoomTicket(env, url.searchParams.get("ticket"), channelId);
+          if (!ticket) return L.fail("房间票据无效或已过期，请重新进入频道", 401);
+          const doId = env.VOICE_ROOM.idFromName("zf-voice:" + channelId);
+          const toDO = new URL(request.url);
+          toDO.searchParams.set("channel", channelId);
+          return await env.VOICE_ROOM.get(doId).fetch(new Request(toDO.toString(), request));
+        }
+        if (p.indexOf("/api/voice/") === 0) {
+          // 实时 / 频道 / 管理接口优先，未命中才回落到阶段 2 的账号接口。
+          const rtRes = await handleVoiceRealtime(request, env, ctx, url);
+          if (rtRes) return rtRes;
+          const voiceRes = await handleVoiceAPI(request, env, ctx, url);
+          if (voiceRes) return voiceRes;
+        }
         const res = await handleAPI(request, env, ctx, url);
         if (res) return res;
         return L.fail("接口不存在", 404);
@@ -1309,6 +1338,10 @@ export default {
     } else {
       response = await worker.fetch(request, env, ctx);
     }
+    // ZF语音房间是 WebSocket 升级响应（101 / webSocket）。
+    // Workers 运行时不允许用 new Response() 重建 101（只允许 200~599），
+    // 所以这类响应必须原样透传，否则房间连接会整批变成 500。
+    if (response.status === 101 || response.webSocket) return response;
     const headers = new Headers(response.headers);
     headers.append("Vary", "Origin");
     if (allowed) {

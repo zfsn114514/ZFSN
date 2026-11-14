@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07070b">
+<title>ZF语音 · ZFSN</title>
+<link rel="icon" href="/favicon-32.png">
+<link rel="stylesheet" href="/voice/voice.css">
+</head>
+<body>
+<a class="skip-link" href="#voice-main">跳到主内容</a>
+
+<!-- ══ 未登录：登录 / 注册 ══════════════════════════════════════ -->
+<section id="auth-view" class="auth-view" aria-labelledby="auth-title">
+  <div class="auth-bg" aria-hidden="true"></div>
+  <a class="auth-back" href="/" aria-label="返回主站">← 返回主站</a>
+
+  <div class="auth-wrap">
+    <div class="auth-brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <div>
+        <h1 id="auth-title">ZF语音</h1>
+        <p>和朋友开黑、语音聊天、共享屏幕 · 小圈子私有站点</p>
+      </div>
+    </div>
+
+    <div class="auth-card">
+      <div class="auth-tabs" role="tablist" aria-label="登录或注册">
+        <button type="button" role="tab" id="tab-login" aria-selected="true" aria-controls="form-login" data-tab="login">登录</button>
+        <button type="button" role="tab" id="tab-register" aria-selected="false" aria-controls="form-register" data-tab="register">注册</button>
+      </div>
+
+      <!-- 登录 -->
+      <form id="form-login" class="auth-form" novalidate>
+        <label for="login-user">用户名</label>
+        <input id="login-user" name="username" type="text" autocomplete="username" maxlength="20" placeholder="用于登录的用户名">
+        <label for="login-pwd">密码</label>
+        <input id="login-pwd" name="password" type="password" autocomplete="current-password" placeholder="请输入密码">
+        <label for="login-captcha">人机验证</label>
+        <div class="captcha-row">
+          <input id="login-captcha" name="captcha" type="text" inputmode="numeric" maxlength="5" placeholder="图中数字" autocomplete="off">
+          <button type="button" class="captcha-img" id="captcha-login" aria-label="点击刷新验证码"><span class="captcha-loading">加载中…</span></button>
+        </div>
+        <button type="submit" class="btn-primary">登录</button>
+      </form>
+
+      <!-- 注册 -->
+      <form id="form-register" class="auth-form" hidden novalidate>
+        <label for="reg-invite">邀请码 <span class="req">必填</span></label>
+        <input id="reg-invite" name="invite" type="text" maxlength="64" placeholder="向管理员索取邀请码">
+        <div class="two-col">
+          <div>
+            <label for="reg-user">用户名</label>
+            <input id="reg-user" name="username" type="text" autocomplete="username" maxlength="20" placeholder="3~20 位字母数字下划线">
+          </div>
+          <div>
+            <label for="reg-name">显示名称</label>
+            <input id="reg-name" name="displayName" type="text" maxlength="24" placeholder="频道里显示的名字">
+          </div>
+        </div>
+        <label for="reg-avatar">头像 <span class="opt">可选 · 不上传自动生成</span></label>
+        <div class="avatar-row">
+          <span class="avatar-preview" id="avatar-preview" aria-hidden="true">Z</span>
+          <input id="reg-avatar" name="avatar" type="file" accept="image/jpeg,image/png,image/webp">
+        </div>
+        <div class="two-col">
+          <div>
+            <label for="reg-pwd">密码</label>
+            <input id="reg-pwd" name="password" type="password" autocomplete="new-password" placeholder="至少 10 位，含字母和数字">
+          </div>
+          <div>
+            <label for="reg-pwd2">确认密码</label>
+            <input id="reg-pwd2" name="password2" type="password" autocomplete="new-password" placeholder="再输入一次">
+          </div>
+        </div>
+        <label for="reg-captcha">人机验证</label>
+        <div class="captcha-row">
+          <input id="reg-captcha" name="captcha" type="text" inputmode="numeric" maxlength="5" placeholder="图中数字" autocomplete="off">
+          <button type="button" class="captcha-img" id="captcha-register" aria-label="点击刷新验证码"><span class="captcha-loading">加载中…</span></button>
+        </div>
+        <button type="submit" class="btn-primary">创建账号</button>
+      </form>
+
+      <!-- 两种人机验证方式用同一套接口封装；后台可一键切换 -->
+      <div class="turnstile-slot" id="turnstile-slot" hidden></div>
+      <p class="auth-error" id="auth-error" role="alert" aria-live="assertive" hidden></p>
+      <p class="auth-hint" id="auth-hint">小圈子私有站点 · 注册需要管理员发放的邀请码</p>
+    </div>
+
+    <p class="auth-foot">需要账号？请使用管理员发放的邀请码注册。忘记密码请联系管理员重置。</p>
+  </div>
+</section>
+
+<!-- ══ 已登录：语音应用 ═════════════════════════════════════════ -->
+<div id="app-view" class="app" hidden>
+  <header class="v-topbar">
+    <a class="back-home" href="/" aria-label="返回主站">← <span>返回主站</span></a>
+    <div class="v-title"><span class="v-logo">ZF语音</span><span class="v-sub">和朋友的开黑语音</span></div>
+    <div class="v-top-actions">
+      <span class="env-badge" id="env-badge" hidden>预览模式</span>
+      <button type="button" id="btn-theme" class="icon-btn" aria-label="切换浅色或深色主题" title="切换主题">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+      <button type="button" id="btn-members" class="icon-btn" aria-label="折叠在线成员栏" aria-pressed="false" title="折叠成员栏">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2"/><path d="M17 11a3 3 0 0 0 0-6"/><path d="M19 20v-2a5 5 0 0 0-2-4"/></svg>
+      </button>
+      <button type="button" id="btn-menu" class="icon-btn only-mobile" aria-label="打开频道列表" aria-expanded="false" title="频道列表">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="v-layout" id="v-layout">
+    <!-- 最左窄栏：后端来源切换 -->
+    <nav class="rail" aria-label="频道后端分组">
+      <button type="button" class="rail-btn active" data-group="all" aria-label="全部频道" aria-pressed="true" title="全部频道">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h8"/></svg>
+      </button>
+      <button type="button" class="rail-btn" data-group="cloudflare" aria-label="Cloudflare 频道" aria-pressed="false" title="Cloudflare 频道">云</button>
+      <button type="button" class="rail-btn" data-group="self" aria-label="自建频道" aria-pressed="false" title="自建频道">自</button>
+      <span class="rail-sep" aria-hidden="true"></span>
+      <button type="button" class="rail-btn rail-add" id="btn-add" aria-label="添加私有频道" title="添加私有频道">+</button>
+    </nav>
+
+    <!-- 第二栏：频道列表 -->
+    <aside class="channels" id="channels-panel" aria-label="频道列表">
+      <div class="panel-head"><span>频道</span><span class="count" id="channel-count">0</span></div>
+      <div class="group-head"><span>语音分组</span><button type="button" class="mini-add" id="btn-add-2" aria-label="添加私有频道" title="添加私有频道">+</button></div>
+      <ul class="channel-list" id="channel-list"></ul>
+      <div class="panel-foot">后端全在 Cloudflare Worker · 你的电脑只添加私有频道</div>
+    </aside>
+
+    <!-- 主区域 -->
+    <main class="stage" id="voice-main" tabindex="-1">
+      <!-- 欢迎页 -->
+      <section class="welcome" id="welcome" aria-labelledby="welcome-title">
+        <div class="welcome-art" aria-hidden="true"><span></span><span></span><span></span></div>
+        <p class="eyebrow">ZF VOICE / 01</p>
+        <h2 id="welcome-title">挑个频道，开麦吧</h2>
+        <p class="welcome-desc">左侧选一个语音频道就能加入。朋友说话时头像会亮起绿色光环；有人共享屏幕，这里会自动切成大画面。</p>
+        <div class="welcome-cards">
+          <div class="wcard"><strong>Cloudflare 频道</strong><span>开箱即用，鉴权、信令、成员状态与媒体转发全部在 Cloudflare Worker。</span></div>
+          <div class="wcard"><strong>私有频道</strong><span>点左下「+」创建，配置只存在 Worker 数据库里；你的电脑不需要跑任何服务。</span></div>
+          <div class="wcard"><strong>小圈子</strong><span>注册需要邀请码，只有拿到码的人才能进来。</span></div>
+        </div>
+        <p class="welcome-tip">提示：手机端用左上角按钮展开频道列表；iOS Safari 只能观看他人共享屏幕。</p>
+      </section>
+
+      <!-- 频道内 -->
+      <section class="room" id="room" hidden aria-labelledby="room-name">
+        <div class="room-head">
+          <div>
+            <h2 id="room-name">频道</h2>
+            <p class="room-meta"><span id="room-backend" class="badge">云</span><span id="room-online">0 人在线</span><span id="room-quality">连接质量：—</span></p>
+          </div>
+          <div class="room-actions">
+            <button type="button" class="btn-ghost" id="btn-share" aria-label="共享屏幕">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3M12 14V8m-3 3 3-3 3 3"/></svg>
+              共享屏幕
+            </button>
+            <button type="button" class="btn-ghost" id="btn-stop-share" aria-label="停止共享屏幕" hidden>停止共享</button>
+            <button type="button" class="icon-btn" id="btn-fullscreen" aria-label="全屏显示" title="全屏">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 成员卡片网格 -->
+        <div class="member-grid" id="member-grid"></div>
+
+        <!-- 有人共享屏幕时的大画面 + 成员条 -->
+        <div class="screen-stage" id="screen-stage" hidden>
+          <div class="screen-main">
+            <video id="screen-video" autoplay playsinline muted aria-label="共享的屏幕画面"></video>
+            <div class="screen-placeholder" id="screen-placeholder">
+              <strong id="screen-owner">有人正在共享屏幕</strong>
+              <span id="screen-sub">等待画面…</span>
+            </div>
+            <div class="screen-tools">
+              <button type="button" class="chip" id="btn-pip" aria-label="画中画">画中画</button>
+              <button type="button" class="chip" id="btn-stop-watch" aria-label="不观看此共享">不观看</button>
+              <select class="chip chip-select" id="screen-quality" aria-label="观看画质">
+                <option value="auto">自动画质</option><option value="360">360p</option>
+                <option value="720">720p</option><option value="1080">1080p</option>
+              </select>
+              <label class="chip chip-vol" title="共享音量">音量<input id="screen-volume" type="range" min="0" max="200" value="100" aria-label="共享音量"></label>
+              <span class="chip stat" id="screen-stat">分辨率 · 帧率 · 码率 · 延迟</span>
+            </div>
+          </div>
+          <div class="screen-strip" id="screen-strip"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 右侧栏：在线成员 -->
+    <aside class="members" id="members-panel" aria-label="在线成员列表">
+      <div class="panel-head"><span>在线成员</span><span class="count" id="member-count">0</span></div>
+      <ul class="member-list" id="member-list"></ul>
+      <div class="panel-foot" id="members-foot">选择频道查看成员</div>
+    </aside>
+  </div>
+
+  <!-- 底部用户条 -->
+  <footer class="userbar">
+    <div class="me">
+      <span class="avatar" id="me-avatar" aria-hidden="true">Z</span>
+      <span class="me-text"><strong id="me-name">ZFSN114514</strong><small id="me-status">在线</small></span>
+    </div>
+    <div class="controls">
+      <button type="button" class="ctl" id="btn-mic" aria-pressed="true" aria-label="关闭麦克风" title="麦克风">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>
+      </button>
+      <button type="button" class="ctl" id="btn-deaf" aria-pressed="false" aria-label="静音全部" title="耳机">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2" y="14" width="4" height="6" rx="1"/><rect x="18" y="14" width="4" height="6" rx="1"/></svg>
+      </button>
+      <button type="button" class="ctl" id="btn-settings" aria-label="语音设置" title="设置">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21h-4v-.2a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3v-4h.2a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5V3h4v.2a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1H21v4h-.2a1.6 1.6 0 0 0-1.4 1z"/></svg>
+      </button>
+      <span class="ctl-sep" aria-hidden="true"></span>
+      <div class="call-info" id="call-info" hidden>
+        <span class="conn"><i aria-hidden="true"></i><span id="conn-text">已连接</span></span>
+        <span class="rtt" id="rtt-text">延迟 — ms</span>
+        <button type="button" class="hangup" id="btn-hangup" aria-label="挂断并离开频道" title="挂断">挂断</button>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<!-- 隐藏的远端音频 / 视频播放容器 -->
+<div id="media-sink" aria-hidden="true"></div>
+
+<!-- ══ 添加私有频道（用户电脑只做这一件事） ═════════════════════ -->
+<dialog class="dlg" id="dlg-add" aria-labelledby="dlg-add-title">
+  <form id="form-add" novalidate>
+    <div class="dlg-head"><h2 id="dlg-add-title">添加私有频道</h2><button type="button" class="dlg-x" data-close="dlg-add" aria-label="关闭">×</button></div>
+    <p class="dlg-note">频道配置保存在 Cloudflare Worker 数据库里，媒体走 Cloudflare Realtime SFU；<strong>你的电脑不需要运行任何服务</strong>。</p>
+    <label for="add-name">频道名称</label>
+    <input id="add-name" type="text" maxlength="24" placeholder="例如：朋友们的语音房" required>
+    <label for="add-descr">频道简介 <span class="opt">可选</span></label>
+    <input id="add-descr" type="text" maxlength="120" placeholder="一句话说明这个房间">
+    <div class="two-col">
+      <div>
+        <label for="add-visibility">可见范围</label>
+        <select id="add-visibility"><option value="private">私有（仅自己可见）</option><option value="public">公开（所有注册用户）</option></select>
+      </div>
+      <div>
+        <label for="add-password">加入口令 <span class="opt">可选</span></label>
+        <input id="add-password" type="password" maxlength="64" placeholder="留空则不需要口令" autocomplete="new-password">
+      </div>
+    </div>
+    <label for="add-backend">媒体后端</label>
+    <select id="add-backend">
+      <option value="cloudflare">Cloudflare 频道（推荐，无需自建服务）</option>
+      <option value="self_hosted">自建 SFU（可选高级模式，需要 wss 域名）</option>
+    </select>
+    <div id="add-self-fields" hidden>
+      <div class="two-col">
+        <div><label for="add-host">服务器域名</label><input id="add-host" type="text" placeholder="voice.example.com"></div>
+        <div><label for="add-port">端口</label><input id="add-port" type="number" value="7880" min="1" max="65535"></div>
+      </div>
+      <label class="check"><input id="add-tls" type="checkbox" checked> 使用 TLS（wss，推荐）</label>
+      <p class="dlg-help">HTTPS 页面不能连接 <code>ws://IP</code>（混合内容被拦截，且纯 IP 难申请证书）。请用 Cloudflare Tunnel 把信令端口暴露成 wss 域名，或域名 + DDNS + Let's Encrypt。媒体 UDP 端口仍需转发或 TURN 中继。</p>
+    </div>
+    <div class="dlg-alert" id="add-alert" hidden role="alert"></div>
+    <div class="dlg-actions">
+      <button type="button" class="btn-ghost" id="btn-test-conn" hidden>测试连接</button>
+      <button type="submit" class="btn-primary">保存频道</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ══ 屏幕共享设置 ════════════════════════════════════════════ -->
+<dialog class="dlg" id="dlg-share" aria-labelledby="dlg-share-title">
+  <form id="form-share" novalidate>
+    <div class="dlg-head"><h2 id="dlg-share-title">共享屏幕</h2><button type="button" class="dlg-x" data-close="dlg-share" aria-label="关闭">×</button></div>
+    <p class="dlg-note">实际生效值不会超过管理员为该频道设置的上限（<span id="share-limit">读取中…</span>）。</p>
+    <label for="share-res">分辨率</label>
+    <select id="share-res"><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option><option value="1440">1440p（受上限限制）</option><option value="2160">4K（受上限限制）</option></select>
+    <label for="share-fps">帧率</label>
+    <select id="share-fps"><option value="15">15 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select>
+    <label for="share-bitrate">码率 <span class="opt" id="bitrate-label">自动</span></label>
+    <input id="share-bitrate" type="range" min="0" max="8000" step="250" value="0">
+    <label for="share-hint">内容类型</label>
+    <select id="share-hint"><option value="motion">画面流畅（游戏 / 视频）</option><option value="detail" selected>文字清晰（代码 / 文档）</option></select>
+    <label class="check"><input id="share-audio" type="checkbox"> 同时共享系统 / 标签页音频</label>
+    <div class="dlg-actions"><button type="button" class="btn-ghost" data-close="dlg-share">取消</button><button type="submit" class="btn-primary">开始共享</button></div>
+    <p class="dlg-help">iOS / iPadOS 的 Safari 无法发起屏幕共享，只能观看他人的共享。</p>
+  </form>
+</dialog>
+
+<!-- ══ 语音设置抽屉 ════════════════════════════════════════════ -->
+<dialog class="dlg dlg-right" id="dlg-settings" aria-labelledby="dlg-settings-title">
+  <form id="form-settings" novalidate>
+    <div class="dlg-head"><h2 id="dlg-settings-title">语音设置</h2><button type="button" class="dlg-x" data-close="dlg-settings" aria-label="关闭">×</button></div>
+    <label for="set-in">输入设备</label><select id="set-in"><option value="">系统默认麦克风</option></select>
+    <label for="set-out">输出设备</label><select id="set-out"><option value="">系统默认扬声器</option></select>
+    <label for="set-vol">输入音量 <span class="opt" id="vol-label">100%</span></label>
+    <input id="set-vol" type="range" min="0" max="200" value="100">
+    <h3>音频处理</h3>
+    <label class="check"><input type="checkbox" id="set-noise" checked> 降噪</label>
+    <label class="check"><input type="checkbox" id="set-echo" checked> 回声消除</label>
+    <label class="check"><input type="checkbox" id="set-agc" checked> 自动增益</label>
+    <h3>说话方式</h3>
+    <label class="check"><input type="checkbox" id="set-ptt"> 按键说话（Push-to-Talk）</label>
+    <label for="set-key">快捷键</label>
+    <div class="key-row"><input id="set-key" type="text" value="未设置" readonly><button type="button" class="btn-ghost" id="btn-set-key">设置</button></div>
+    <label class="check"><input type="checkbox" id="set-sounds" checked> 加入 / 离开提示音</label>
+    <p class="dlg-help" id="set-device-help">切换麦克风或音频处理会重新申请麦克风权限。</p>
+    <div class="dlg-actions"><button type="button" class="btn-ghost" id="btn-logout">退出登录</button><button type="button" class="btn-primary" data-close="dlg-settings">完成</button></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script defer src="/voice/auth.js"></script>
+<script defer src="/voice/transport.js"></script>
+<script defer src="/voice/voice.js"></script>
+</body>
+</html>

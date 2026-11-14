@@ -7,8 +7,13 @@ function advance(world,seconds,controls={}) {
 }
 function fixture() {
   const world=new World('regression');
-  world.blocks.fill(0);for(let y=50;y<H;y++)for(let x=0;x<W;x++)world.set(x,y,y===H-1?4:3);
-  world.surface.fill(50);world.player.x=40;world.player.y=48.2;world.mobs=[];return world;
+  /* 世界存储已改成「分块式」（worldgen 路线）：没有 world.blocks / world.surface
+     这两张扁平数组了，改用 setRaw 直接铺方块 + legacySurface 覆盖地表高度。
+     setRaw 不触发流体调度，所以这个回归套件不会被流体逻辑干扰。 */
+  for(let y=0;y<50;y++)for(let x=0;x<W;x++)world.setRaw(x,y,0);
+  for(let y=50;y<H;y++)for(let x=0;x<W;x++)world.setRaw(x,y,y===H-1?4:3);
+  world.legacySurface=new Map();for(let x=0;x<W;x++)world.legacySurface.set(x,50);
+  world.player.x=40;world.player.y=48.2;world.mobs=[];return world;
 }
 function recipe(id) {return RECIPES.find(r=>r.out===id);}
 
@@ -123,4 +128,15 @@ test('catalog blocks above 255 survive placement, mining and v4 saves',()=>{
 test('supported spawn eggs spawn a live mob and consume the item',()=>{
   const w=fixture();w.add('cow_spawn_egg');w.selected=0;
   assert.equal(w.place(42,48),true);assert.equal(w.mobs[0].type,'cow');assert.equal(w.count('cow_spawn_egg'),0);
+});
+
+test('gameplay events emit bounded, short-lived visual particles',()=>{
+  const w=fixture();
+  w.blockParticles('stone',41.5,49.5);assert.equal(w.particles.length,12);
+  w.hitParticles(41.5,48.5,true);assert.ok(w.particles.some(p=>p.kind==='crit'));
+  w.damage(2,'test');assert.ok(w.particles.some(p=>p.kind==='hurt'));
+  while(w.particles.length<479)w.particle('hit',41,49,1,{life:.05});
+  w.particle('hit',41,49,9);assert.equal(w.particles.length,480,'particle cap protects frame time');
+  advance(w,2);assert.equal(w.particles.length,0,'expired particles are not retained');
+  assert.equal(w.serialize().particles,undefined,'visual particles do not bloat saves');
 });

@@ -61,6 +61,12 @@ run_worker_first = [
   "/pvz/pvz-portable",
   "/pvz/pvz-portable.html",
   "/googleb9db891307fd40eb.html",
+  # ZF语音：独立页面。加进白名单才能享受 workers.dev → 规范域名 301，
+  # 并为阶段 2 的服务端会话判断（未登录只返回登录壳）留出入口。
+  "/voice",
+  "/voice/",
+  "/voice/index.html",
+  "/voice.html",
 ]
 
 # 图片长缓存写在仓库根目录的 `_headers` 里，不在这里、也不在 src/index.js
@@ -78,6 +84,21 @@ database_id = "6e6ae2a5-0ac9-4be7-b2df-5d2cdb03720c"
 [[kv_namespaces]]
 binding = "MEDIA"           # 代码里用 env.MEDIA
 id = "43b4e1c0827542dc88da95cce8f3796b"
+
+# ══ ZF语音：Durable Object（房间状态 / 信令 / 设置实时下发）══════
+# 生产后端只有 Cloudflare Worker；用户的电脑只是浏览器客户端，
+# 负责「添加私有频道」，不跑任何常驻服务。
+# 首次部署必须先应用这条迁移（否则 env.VOICE_ROOM 为空，语音降级为提示）。
+[[durable_objects.bindings]]
+name = "VOICE_ROOM"
+class_name = "VoiceRoomDO"
+
+[[migrations]]
+tag = "v1"
+# 官方 2026 文档对新建 DO 推荐 new_sqlite_classes（SQLite 后端），
+# 不再用旧版 new_classes。本 DO 只用 WebSocket Hibernation + attachment，
+# 不依赖旧 KV 存储；本模块尚未上线，可直接采用推荐写法。
+new_sqlite_classes = ["VoiceRoomDO"]
 
 [vars]
 # PBKDF2 迭代次数（SHA-512）。
@@ -113,3 +134,30 @@ TZ_OFFSET = 8
 #   cf     —— 用 request.cf（Cloudflare 边缘自带，零延迟、不依赖外部 API）
 #   ipapi  —— 回落到 ip-api.com（中文省/市更全，但有 45 次/分钟限流）
 GEO_SOURCE = "cf"
+
+# ══ ZF语音 密钥（阶段 2）══════════════════════════════════════════
+# 下列三项都是保密值，**不要写在这个文件里**，用 `npx wrangler secret put <名字>`：
+#   TURNSTILE_SECRET_KEY   后台把人机验证切到 Turnstile 时必须配置；
+#                          未配置时服务端会拒绝切换（留言防灌水也共用它）
+#   VOICE_CAPTCHA_SECRET   自制验证码答案哈希的站点盐；不配置会用内置常量，
+#                          安全性下降但功能可用，生产建议配置
+#   VOICE_TURNSTILE_SITE_KEY  Turnstile 的公开 Site Key（也可复用上面已有的
+#                          TURNSTILE_SITE_KEY；两者都为空时前端会给出中文提示）
+# 首个 ZF语音管理员用一次性脚本创建，不在代码里写死密码（按此顺序）：
+#   1) npm run voice:d1                 # 先执行 schema/0003_voice.sql 建表
+#   2) $env:VOICE_ADMIN_USERNAME="admin"; $env:VOICE_ADMIN_PASSWORD="强密码"
+#      npm run voice:init-admin         # 只生成含密码哈希的 SQL，明文不落盘
+#   3) npx wrangler d1 execute zfsn-db --remote --file=./tools/migrate/voice_admin_init.sql
+#   4) 删除 tools/migrate/voice_admin_init.sql 并清除环境变量
+#
+# ══ ZF语音：实时媒体密钥（阶段 3~6）═════════════════════════════
+# 以下全部是保密值，用 `npx wrangler secret put <名字>` 注入，切勿写进本文件：
+#   VOICE_ROOM_SECRET           房间 WebSocket 票据的 HMAC 密钥（强烈建议配置）
+#   REALTIME_SFU_APP_ID         Cloudflare 控制台 Realtime > Serverless SFU 的 App ID
+#   REALTIME_SFU_APP_SECRET     同页生成的 App Secret（Bearer，只放 Worker）
+#   TURN_KEY_ID                 Cloudflare Realtime TURN Key 的 ID（可选）
+#   TURN_KEY_API_TOKEN          TURN Key 的 API Token（可选）
+#   LIVEKIT_API_KEY             可选高级模式：自建 LiveKit 的 API Key
+#   LIVEKIT_API_SECRET          可选高级模式：自建 LiveKit 的 API Secret
+# 未配置 SFU 时页面仍可用「本地直连降级模式」，但线上多人通话必须配置 SFU。
+# 详见 docs/voice-deploy.md（中文部署文档）。

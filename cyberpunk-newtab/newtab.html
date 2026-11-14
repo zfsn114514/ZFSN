@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="night" data-motion="on" data-scanlines="on">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>ZFSN://HOME</title>
+  <link rel="icon" type="image/png" href="icons/icon32.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- ── 背景：城市 / 网格 / CRT ───────────────────────────────── -->
+  <div class="scene" aria-hidden="true">
+    <div class="scene__gradient"></div>
+    <div class="scene__sun"></div>
+    <svg class="scene__skyline" viewBox="0 0 1920 620" preserveAspectRatio="xMidYMax slice">
+      <g class="scene__layer scene__layer--back" id="skyline-back"></g>
+      <g class="scene__layer scene__layer--mid" id="skyline-mid"></g>
+      <g class="scene__layer scene__layer--front" id="skyline-front"></g>
+      <g class="scene__signs" id="skyline-signs"></g>
+    </svg>
+    <div class="scene__grid"></div>
+    <div class="scene__scanlines"></div>
+    <div class="scene__noise"></div>
+    <div class="scene__vignette"></div>
+  </div>
+
+  <div class="edge edge--left" aria-hidden="true"><span>ZFSN-2077 // MUNICIPAL NETWORK</span></div>
+  <div class="edge edge--right" aria-hidden="true"><span>ZFSN // RESTRICTED FREQUENCY</span></div>
+  <div class="frame" aria-hidden="true">
+    <i class="frame__corner frame__corner--tl"></i>
+    <i class="frame__corner frame__corner--tr"></i>
+    <i class="frame__corner frame__corner--bl"></i>
+    <i class="frame__corner frame__corner--br"></i>
+  </div>
+
+  <div class="app">
+    <header class="hud">
+      <div class="brand" aria-label="ZFSN Home">
+        <div class="brand__logo">
+          <span class="brand__name">ZFSN</span><span class="brand__slash">//</span><span class="brand__home">HOME</span>
+        </div>
+        <div class="brand__meta">
+          <i class="brand__led" aria-hidden="true"></i>
+          <span>ZFSN PERSONAL NET</span>
+          <span class="brand__ver">v1.1</span>
+        </div>
+      </div>
+      <div class="hud__right">
+        <div class="clock" aria-label="当前时间">
+          <div class="clock__time" id="clock-time">00:00:00</div>
+          <div class="clock__meta">
+            <span id="clock-date">2026.01.01 // THU</span>
+            <span id="clock-zone">UTC+08</span>
+          </div>
+        </div>
+        <button class="hud-btn" id="settings-btn" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" title="设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 9.96 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 5.6 15a1.7 1.7 0 0 0-1.56-1.03H4v-4h.04A1.7 1.7 0 0 0 5.6 8.94a1.7 1.7 0 0 0-.34-1.87L5.2 7.01 8.03 4.18l.06.06a1.7 1.7 0 0 0 1.87.34A1.7 1.7 0 0 0 11 3.02V3h4v.02a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.87A1.7 1.7 0 0 0 21.95 10H22v4h-.05A1.7 1.7 0 0 0 19.4 15Z"/>
+          </svg>
+          <span class="hud-btn__label">CONFIG</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero__copy">
+          <div class="kicker">
+            <span class="kicker__tag">ZFSN // NETRUNNER DASHBOARD</span>
+            <span class="kicker__line" aria-hidden="true"></span>
+            <span class="kicker__alive"><i aria-hidden="true"></i>LINK STABLE</span>
+          </div>
+
+          <h1 class="hero__title" id="hero-title">ZFSN</h1>
+          <p class="hero__tagline">WELCOME BACK, ZFSN.<span class="hero__caret" aria-hidden="true"></span></p>
+
+          <form class="search" id="search-form" role="search" autocomplete="off">
+            <span class="search__prompt" aria-hidden="true">&gt;</span>
+            <label class="sr-only" for="search-input">搜索或输入网址</label>
+            <input class="search__input" id="search-input" name="q" type="text" inputmode="search" spellcheck="false" placeholder="搜索网络，或输入网址 / IP ..." autocomplete="off" autocapitalize="off">
+            <button class="search__engine" id="engine-btn" type="button" title="切换搜索引擎" aria-label="切换搜索引擎，当前 Google">GOOGLE</button>
+            <button class="search__submit" type="submit" title="搜索">JACK IN <span aria-hidden="true">↵</span></button>
+          </form>
+
+          <div class="hero__hints" aria-hidden="true">
+            <span><kbd>/</kbd> FOCUS</span>
+            <span><kbd>ENTER</kbd> JACK IN</span>
+            <span><kbd>N</kbd> NEW NODE</span>
+          </div>
+        </div>
+
+        <aside class="status" aria-label="系统状态">
+          <div class="status__head"><span>// SYSTEM STATUS</span><i class="status__led" aria-hidden="true"></i></div>
+          <dl class="status__list">
+            <div><dt>NODES</dt><dd id="stat-nodes">11</dd></div>
+            <div><dt>ENGINE</dt><dd id="stat-engine">GOOGLE</dd></div>
+            <div><dt>ICE</dt><dd class="is-ok">ACTIVE</dd></div>
+            <div><dt>UPLINK</dt><dd>LOCAL</dd></div>
+          </dl>
+          <div class="status__signal" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i>
+            <i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="status__foot"><span>ZFSN-2077</span><span>NETRUNNER OS</span></div>
+        </aside>
+      </section>
+
+      <section class="tiles-section" aria-labelledby="tiles-title">
+        <div class="section-head">
+          <div class="section-head__left">
+            <h2 id="tiles-title">// ACCESS POINTS</h2>
+            <span class="section-head__line" aria-hidden="true"></span>
+          </div>
+          <div class="section-head__right">
+            <span id="tile-count">11 NODES</span>
+            <button class="section-head__add" id="quick-add" type="button" title="添加磁贴">+ ADD</button>
+          </div>
+        </div>
+        <div class="tile-grid" id="tile-grid"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer__left">
+        <span class="footer__mark">ZFSN://HOME</span>
+        <span>v1.1 // LOCAL INSTANCE</span>
+      </div>
+      <div class="footer__right">
+        <span>DATA // LOCAL STORAGE</span>
+        <i class="footer__dot" aria-hidden="true"></i>
+        <span>NO TRACKING</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ── 磁贴编辑 ──────────────────────────────────────────────── -->
+  <dialog class="modal" id="tile-dialog" aria-labelledby="tile-dialog-title">
+    <form class="modal__form" id="tile-form" novalidate>
+      <div class="modal__head">
+        <div>
+          <span class="modal__kicker" id="tile-dialog-kicker">// NODE CONFIG</span>
+          <h2 id="tile-dialog-title">ADD ACCESS POINT</h2>
+        </div>
+        <button class="modal__close" type="button" data-close-dialog="tile-dialog" aria-label="关闭">×</button>
+      </div>
+
+      <div class="field">
+        <label for="tile-name">名称 <span>NAME</span></label>
+        <input id="tile-name" name="name" type="text" maxlength="40" required placeholder="例如：GitHub">
+      </div>
+
+      <div class="field">
+        <label for="tile-url">链接 <span>URL</span></label>
+        <input id="tile-url" name="url" type="text" inputmode="url" spellcheck="false" required placeholder="https://github.com 或 192.168.0.1">
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="tile-icon">图标 <span>OPTIONAL</span></label>
+          <input id="tile-icon" name="icon" type="text" maxlength="512" spellcheck="false" placeholder="留空自动抓取 / emoji / 图片 URL">
+        </div>
+        <div class="field">
+          <label for="tile-tag">标签 <span>OPTIONAL</span></label>
+          <input id="tile-tag" name="tag" type="text" maxlength="16" placeholder="CODE">
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="field__legend">信号色 <span>SIGNAL COLOR</span></span>
+        <div class="swatches" id="tile-colors" role="group" aria-label="信号色">
+          <button class="swatch swatch--yellow" type="button" data-color="yellow" aria-pressed="true"><i></i>YELLOW</button>
+          <button class="swatch swatch--cyan" type="button" data-color="cyan" aria-pressed="false"><i></i>CYAN</button>
+          <button class="swatch swatch--red" type="button" data-color="red" aria-pressed="false"><i></i>RED</button>
+          <button class="swatch swatch--magenta" type="button" data-color="magenta" aria-pressed="false"><i></i>MAGENTA</button>
+        </div>
+      </div>
+
+      <p class="form-error" id="tile-error" role="alert" hidden></p>
+
+      <div class="modal__actions">
+        <button class="btn btn--ghost" type="button" data-close-dialog="tile-dialog">CANCEL</button>
+        <button class="btn btn--primary" type="submit" id="tile-submit">SAVE NODE</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ── 设置 ──────────────────────────────────────────────────── -->
+  <dialog class="modal modal--settings" id="settings-dialog" aria-labelledby="settings-title">
+    <div class="modal__form">
+      <div class="modal__head">
+        <div>
+          <span class="modal__kicker">// SYSTEM CONFIG</span>
+          <h2 id="settings-title">SETTINGS</h2>
+        </div>
+        <button class="modal__close" type="button" data-close-dialog="settings-dialog" aria-label="关闭">×</button>
+      </div>
+
+      <div class="settings">
+        <section class="settings__section">
+          <h3>// SEARCH ENGINE</h3>
+          <div class="field">
+            <label for="setting-engine">默认搜索引擎 <span>DEFAULT ENGINE</span></label>
+            <select id="setting-engine">
+              <option value="google">Google</option>
+              <option value="bing">Bing</option>
+              <option value="baidu">百度</option>
+              <option value="duckduckgo">DuckDuckGo</option>
+              <option value="bilibili">哔哩哔哩</option>
+              <option value="github">GitHub</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="settings__section">
+          <h3>// INTERFACE THEME</h3>
+          <div class="theme-grid" id="theme-grid" role="group" aria-label="界面主题">
+            <button class="theme-card theme-card--night" type="button" data-theme="night" aria-pressed="true">
+              <span class="theme-card__preview" aria-hidden="true"></span>
+              <span class="theme-card__name">NIGHT CITY</span>
+              <span class="theme-card__sub">黄 / 青</span>
+            </button>
+            <button class="theme-card theme-card--netrunner" type="button" data-theme="netrunner" aria-pressed="false">
+              <span class="theme-card__preview" aria-hidden="true"></span>
+              <span class="theme-card__name">NETRUNNER</span>
+              <span class="theme-card__sub">青 / 黄</span>
+            </button>
+            <button class="theme-card theme-card--afterglow" type="button" data-theme="afterglow" aria-pressed="false">
+              <span class="theme-card__preview" aria-hidden="true"></span>
+              <span class="theme-card__name">AFTERLIFE</span>
+              <span class="theme-card__sub">红 / 金</span>
+            </button>
+            <button class="theme-card theme-card--blackwall" type="button" data-theme="blackwall" aria-pressed="false">
+              <span class="theme-card__preview" aria-hidden="true"></span>
+              <span class="theme-card__name">BLACKWALL</span>
+              <span class="theme-card__sub">紫 / 绿</span>
+            </button>
+          </div>
+
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="setting-motion">
+              <span class="switch__track" aria-hidden="true"></span>
+              <span class="switch__label">界面动效 <small>MOTION</small></span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="setting-scanlines">
+              <span class="switch__track" aria-hidden="true"></span>
+              <span class="switch__label">扫描线 <small>SCANLINES</small></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="settings__section">
+          <h3>// DATA</h3>
+          <div class="data-actions">
+            <button class="btn btn--ghost" type="button" id="export-btn">导出备份 <span>EXPORT</span></button>
+            <button class="btn btn--ghost" type="button" id="import-btn">导入备份 <span>IMPORT</span></button>
+            <button class="btn btn--ghost" type="button" id="reset-btn">恢复示例 <span>RESET</span></button>
+            <button class="btn btn--danger" type="button" id="clear-btn">清空磁贴 <span>CLEAR</span></button>
+          </div>
+          <p class="settings__note">数据保存在 <code>chrome.storage.local</code>，不会上传。首次安装含示例磁贴，路由器 / DNS 地址请按自己的网络修改。</p>
+        </section>
+
+        <section class="settings__section settings__section--about">
+          <h3>// ABOUT</h3>
+          <p class="settings__note">ZFSN://HOME v1.1 · 赛博朋克风格新标签页<br>磁贴图标取自站点自己的 favicon：扩展环境读 Chromium 本地图标缓存，预览环境回落到公开图标服务；取不到时显示站点首字。</p>
+        </section>
+      </div>
+
+      <div class="modal__actions">
+        <button class="btn btn--primary" type="button" data-close-dialog="settings-dialog">CLOSE</button>
+      </div>
+    </div>
+  </dialog>
+
+  <input type="file" id="import-file" accept=".json,application/json" hidden>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

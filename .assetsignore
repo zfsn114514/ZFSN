@@ -22,6 +22,7 @@
 # 本地抓取 / 构建脚本与工具缓存，线上站点完全用不到
 # （排除后单次部署少传约 22 MB、上百个文件，构建也更快）
 tools/
+tests/
 *.py
 *.bat
 *.ps1
@@ -70,3 +71,7 @@ Thumbs.db
 .tmp-*
 
 .site-manager/
+
+# 浏览器扩展源码：在本机 chrome://extensions 里加载，不需要随网站部署。
+# 如果以后想把它发布到站点上，再把这一行删掉。
+cyberpunk-newtab/
