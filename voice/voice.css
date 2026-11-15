@@ -364,6 +364,67 @@ html[data-theme="light"] .screen-main{background:#e4e4ea}
   border-radius:9px;background:rgba(255,45,74,.08);color:var(--red-soft);font-size:12px;line-height:1.7;
 }
 .dlg-alert[hidden]{display:none}
+
+/* ── 语音设置：紧凑弹窗 + 左侧分类 ─────────────────────────── */
+.dlg-settings{
+  width:min(94vw,620px);max-height:min(80vh,540px);padding:16px 18px 14px;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.dlg-settings form{flex:1;min-height:0;gap:8px}
+.dlg-settings .dlg-head{margin-bottom:0}
+.set-wrap{display:flex;gap:14px;flex:1;min-height:0;margin-top:10px}
+.set-nav{
+  display:flex;flex-direction:column;gap:3px;flex:0 0 auto;width:104px;
+  padding-right:8px;border-right:1px solid var(--line2);
+}
+.set-tab{
+  border:0;background:none;color:var(--muted);text-align:left;cursor:pointer;
+  padding:8px 10px;border-radius:8px;font-size:12.5px;font-family:inherit;
+}
+.set-tab:hover{background:var(--surface);color:var(--text)}
+.set-tab.on{background:rgba(255,45,74,.12);color:var(--red-soft);font-weight:600}
+.set-panes{flex:1;min-height:0;overflow-y:auto;padding-right:6px}
+.set-pane{display:flex;flex-direction:column;gap:6px}
+.set-pane[hidden]{display:none}
+.set-pane h3{margin:12px 0 2px;font-size:12.5px;font-weight:600;color:var(--text)}
+.set-pane .check{margin-top:8px}
+.dlg-settings .dlg-actions{margin-top:10px}
+/* 电平条：填充 = 实时音量，白线 = 当前阈值 */
+.meter{
+  position:relative;height:10px;margin-top:6px;border-radius:6px;overflow:hidden;
+  background:var(--surface);border:1px solid var(--line2);
+}
+.meter-fill{
+  display:block;height:100%;width:0;border-radius:6px;
+  background:linear-gradient(90deg,var(--red-soft),var(--red));
+  transition:width .09s linear;
+}
+.meter.gated .meter-fill{opacity:.42}
+.meter-mark{
+  position:absolute;top:0;bottom:0;left:30%;width:2px;margin-left:-1px;
+  background:var(--text);opacity:.8;box-shadow:0 0 6px rgba(0,0,0,.5);
+}
+.meter-legend{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:5px}
+/* 说话方式的分段单选 */
+.seg{display:flex;gap:8px;margin-top:4px}
+.seg-item{
+  flex:1;display:flex;align-items:flex-start;gap:8px;padding:10px;cursor:pointer;
+  border:1px solid var(--line2);border-radius:10px;background:var(--surface);
+  font-size:12.5px;color:var(--text);
+}
+.seg-item input{margin-top:2px;accent-color:var(--red)}
+.seg-item span{display:flex;flex-direction:column;gap:2px}
+.seg-item small{color:var(--dim);font-size:10.5px}
+.seg-item.on{border-color:var(--red);background:rgba(255,45,74,.08)}
+@media(max-width:620px){
+  .dlg-settings{width:calc(100vw - 24px);max-height:86vh}
+  .set-wrap{flex-direction:column;gap:8px}
+  .set-nav{
+    flex-direction:row;width:auto;overflow-x:auto;padding:0 0 8px;
+    border-right:0;border-bottom:1px solid var(--line2);
+  }
+  .set-tab{white-space:nowrap}
+}
 .toast{
   position:fixed;left:50%;bottom:calc(var(--bar) + 18px);transform:translateX(-50%);
   z-index:200;padding:10px 16px;border:1px solid var(--line2);border-radius:10px;

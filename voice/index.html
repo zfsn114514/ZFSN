@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#07070b">
 <title>ZF语音 · ZFSN</title>
 <link rel="icon" href="/favicon-32.png">
-<link rel="stylesheet" href="/voice/voice.css?v=20261115g">
+<link rel="stylesheet" href="/voice/voice.css?v=20261115h">
 <script>
 /* ── 保持登录：同步预登录判断 ──────────────────────────────────────
    这个脚本必须放在 <head> 且不能 defer：HTML 一解析到登录页就要决定
@@ -385,33 +385,68 @@
   </form>
 </dialog>
 
-<!-- ══ 语音设置抽屉 ════════════════════════════════════════════ -->
-<dialog class="dlg dlg-right" id="dlg-settings" aria-labelledby="dlg-settings-title">
+<!-- ══ 语音设置：小弹窗，左侧分类 ═════════════════════════════ -->
+<dialog class="dlg dlg-settings" id="dlg-settings" aria-labelledby="dlg-settings-title">
   <form id="form-settings" novalidate>
     <div class="dlg-head"><h2 id="dlg-settings-title">语音设置</h2><button type="button" class="dlg-x" data-close="dlg-settings" aria-label="关闭">×</button></div>
-    <label for="set-in">输入设备</label><select id="set-in"><option value="">系统默认麦克风</option></select>
-    <label for="set-out">输出设备</label><select id="set-out"><option value="">系统默认扬声器</option></select>
-    <label for="set-vol">输入音量 <span class="opt" id="vol-label">100%</span></label>
-    <input id="set-vol" type="range" min="0" max="200" value="100">
-    <h3>音频处理</h3>
-    <label class="check"><input type="checkbox" id="set-noise" checked> 降噪</label>
-    <label class="check"><input type="checkbox" id="set-echo" checked> 回声消除</label>
-    <label class="check"><input type="checkbox" id="set-agc" checked> 自动增益</label>
-    <h3>说话方式</h3>
-    <label class="check"><input type="checkbox" id="set-ptt"> 按键说话（Push-to-Talk）</label>
-    <label for="set-key">快捷键</label>
-    <div class="key-row"><input id="set-key" type="text" value="未设置" readonly><button type="button" class="btn-ghost" id="btn-set-key">设置</button></div>
-    <label class="check"><input type="checkbox" id="set-sounds" checked> 加入 / 离开提示音</label>
-    <h3>个人资料</h3>
-    <label for="profile-name">显示名称</label><input id="profile-name" type="text" maxlength="24" placeholder="频道里显示的名字">
-    <label for="profile-avatar">更换头像（jpg / png / webp，自动裁成方形并压缩）</label>
-    <div class="avatar-row"><span class="avatar-preview" id="profile-avatar-preview">Z</span><input id="profile-avatar" type="file" accept="image/jpeg,image/png,image/webp"></div>
-    <div class="profile-actions">
-      <button type="button" class="btn-primary" id="btn-profile-save">保存资料</button>
-      <button type="button" class="btn-ghost" id="btn-password">修改密码</button>
+    <div class="set-wrap">
+      <nav class="set-nav" role="tablist" aria-label="设置分类">
+        <button type="button" role="tab" class="set-tab on" data-pane="devices" aria-selected="true">设备</button>
+        <button type="button" role="tab" class="set-tab" data-pane="mic" aria-selected="false">麦克风</button>
+        <button type="button" role="tab" class="set-tab" data-pane="talk" aria-selected="false">说话方式</button>
+        <button type="button" role="tab" class="set-tab" data-pane="profile" aria-selected="false">个人资料</button>
+      </nav>
+      <div class="set-panes">
+        <!-- 设备 -->
+        <section class="set-pane" data-pane="devices" role="tabpanel">
+          <label for="set-in">输入设备</label>
+          <select id="set-in"><option value="">系统默认麦克风</option></select>
+          <label for="set-out">输出设备</label>
+          <select id="set-out"><option value="">系统默认扬声器</option></select>
+          <label for="set-vol">输入音量 <span class="opt" id="vol-label">100%</span></label>
+          <input id="set-vol" type="range" min="0" max="200" value="100">
+          <p class="dlg-help" id="set-device-help">切换麦克风或音频处理会重新申请麦克风权限。</p>
+        </section>
+        <!-- 麦克风 -->
+        <section class="set-pane" data-pane="mic" role="tabpanel" hidden>
+          <p class="dlg-note">由浏览器原生处理，改动后立即重新采集麦克风。</p>
+          <label class="check"><input type="checkbox" id="set-noise" checked> 降噪（noise suppression）</label>
+          <label class="check"><input type="checkbox" id="set-echo" checked> 回声消除（echo cancellation）</label>
+          <label class="check"><input type="checkbox" id="set-agc" checked> 自动增益（auto gain）</label>
+          <h3>麦克风激活阈值</h3>
+          <div class="meter" id="set-meter" role="img" aria-label="输入电平与激活阈值">
+            <span class="meter-fill" id="set-meter-fill"></span>
+            <span class="meter-mark" id="set-meter-mark"></span>
+          </div>
+          <div class="meter-legend"><span id="set-gate-state">进频道后显示电平</span><span id="threshold-label">30</span></div>
+          <input id="set-threshold" type="range" min="0" max="100" value="30" aria-label="麦克风激活阈值">
+          <p class="dlg-help">只有音量越过白线的部分才会发送，低于阈值自动静音（麦克风不会被关闭）。
+            环境嘈杂就调高，说话声音小就调低。切到「按键说话」后本项不生效。</p>
+        </section>
+        <!-- 说话方式 -->
+        <section class="set-pane" data-pane="talk" role="tabpanel" hidden>
+          <div class="seg" role="radiogroup" aria-label="说话方式">
+            <label class="seg-item" id="seg-voice"><input type="radio" name="set-talkmode" id="set-mode-voice" value="voice" checked><span>语音激活<small>超过阈值自动开麦</small></span></label>
+            <label class="seg-item" id="seg-ptt"><input type="radio" name="set-talkmode" id="set-mode-ptt" value="ptt"><span>按键说话<small>按住快捷键才发声</small></span></label>
+          </div>
+          <label for="set-key">快捷键 <span class="opt" id="set-key-hint">仅按键说话时使用</span></label>
+          <div class="key-row"><input id="set-key" type="text" value="未设置" readonly><button type="button" class="btn-ghost" id="btn-set-key">设置</button></div>
+          <label class="check"><input type="checkbox" id="set-sounds" checked> 加入 / 离开提示音</label>
+          <p class="dlg-help">语音激活下阈值在「麦克风」页调；按键说话时麦克风默认关闭，按住快捷键才发送。</p>
+        </section>
+        <!-- 个人资料 -->
+        <section class="set-pane" data-pane="profile" role="tabpanel" hidden>
+          <label for="profile-name">显示名称</label><input id="profile-name" type="text" maxlength="24" placeholder="频道里显示的名字">
+          <label for="profile-avatar">更换头像（jpg / png / webp，自动裁成方形并压缩）</label>
+          <div class="avatar-row"><span class="avatar-preview" id="profile-avatar-preview">Z</span><input id="profile-avatar" type="file" accept="image/jpeg,image/png,image/webp"></div>
+          <div class="profile-actions">
+            <button type="button" class="btn-primary" id="btn-profile-save">保存资料</button>
+            <button type="button" class="btn-ghost" id="btn-password">修改密码</button>
+          </div>
+          <p class="dlg-help" id="profile-hint">改完名字或头像后记得点「保存资料」。频道里的其他人会立刻看到新名字。</p>
+        </section>
+      </div>
     </div>
-    <p class="dlg-help" id="profile-hint">改完名字或头像后记得点「保存资料」。频道里的其他人会立刻看到新名字。</p>
-    <p class="dlg-help" id="set-device-help">切换麦克风或音频处理会重新申请麦克风权限。</p>
     <div class="dlg-actions"><button type="button" class="btn-ghost" id="btn-logout">退出登录</button><button type="button" class="btn-primary" data-close="dlg-settings">完成</button></div>
   </form>
 </dialog>
@@ -434,8 +469,8 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <!-- 2026-11-15a：升级缓存版本号，强制浏览器拉取全新脚本，避免新旧静态资源混用 -->
-<script defer src="/voice/auth.js?v=20261115g"></script>
-<script defer src="/voice/transport.js?v=20261115g"></script>
-<script defer src="/voice/voice.js?v=20261115g"></script>
+<script defer src="/voice/auth.js?v=20261115h"></script>
+<script defer src="/voice/transport.js?v=20261115h"></script>
+<script defer src="/voice/voice.js?v=20261115h"></script>
 </body>
 </html>

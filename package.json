@@ -22,7 +22,7 @@
     "voice:test:selfhost": "node --no-warnings tests/voice/voice-selfhost.test.mjs",
     "voice:test:e2e": "node --no-warnings tests/voice/voice-realtime.e2e.mjs",
     "voice:test:ui": "node --no-warnings tests/voice/voice-ui.cdp.mjs",
-    "voice:test:all": "npm run voice:test:entry && npm run voice:test && npm run voice:test:session && npm run voice:test:selfhost && npm run voice:test:e2e && npm run voice:test:ui",
+    "voice:test:all": "npm run voice:test:entry && npm run voice:test && npm run voice:test:session && npm run voice:test:selfhost && npm run voice:test:e2e && npm run voice:test:ui && npm run voice:test:settings",
     "voice:selfhost": "node --no-warnings tools/livekit/voice-media-server.mjs run",
     "voice:selfhost:check": "node --no-warnings tools/livekit/voice-media-server.mjs doctor",
 
@@ -33,7 +33,8 @@
     "migrate:seed": "wrangler d1 execute zfsn-db --remote --file=./tools/migrate/seed.sql",
     "migrate:media": "node tools/migrate/upload_media.mjs",
 
-    "password": "node tools/migrate/set_password.mjs"
+    "password": "node tools/migrate/set_password.mjs",
+    "voice:test:settings": "node --no-warnings tests/voice/voice-settings.cdp.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

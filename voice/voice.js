@@ -106,6 +106,8 @@
     user: null, channels: [], capabilities: {}, settings: {},
     preview: false, group: "all", current: null, expanded: {},
     members: [], mic: true, deaf: false, ptt: false, pttKey: "", pttDown: false,
+    // 说话方式：voice = 语音激活（靠激活阈值自动开麦），ptt = 按键说话
+    talkMode: "voice", threshold: 30,
     membersCollapsed: false, drawer: "", watching: true, sounds: true,
     chatMessages: [], chatUnread: 0, chatOpen: window.matchMedia("(max-width:760px)").matches ? false : true, chatPinned: true,
     room: null, transport: null, join: null, channelSettings: null,
@@ -426,10 +428,98 @@
 
   /* ── 真实房间 ──────────────────────────────────────────────── */
   function applyMic() {
-    var enabled = state.ptt ? state.pttDown : state.mic;
+    var enabled = state.talkMode === "ptt" ? state.pttDown : state.mic;
     if (state.transport) state.transport.setMic(enabled);
     renderUserbar();
     renderMemberList();
+  }
+
+  /* 阈值滑块的 0~100 → 传输层用的 RMS 线性值。
+     0.025 是旧版写死的「说话」判定线，对应滑块 20，所以默认给 30 略高一点，
+     刚好能滤掉键盘声和空调底噪。 */
+  function thresholdToRms(v) {
+    var n = Math.max(0, Math.min(100, Number(v) || 0));
+    return 0.005 + n * 0.001;
+  }
+  /** 把当前说话方式 / 阈值推给传输层（未进频道时什么都不做）。 */
+  function syncVoiceGate() {
+    if (!state.transport || !state.transport.setVoiceGate) return;
+    state.transport.setVoiceGate({
+      enabled: state.talkMode === "voice",
+      threshold: thresholdToRms(state.threshold)
+    });
+  }
+
+  /* ── 设置弹窗：分类切换 + 说话方式 + 电平表 ─────────────────── */
+  var setPane = "devices";
+  function showPane(name) {
+    setPane = name || "devices";
+    $$(".set-tab").forEach(function (b) {
+      var on = b.getAttribute("data-pane") === setPane;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    $$(".set-pane").forEach(function (p) {
+      p.hidden = p.getAttribute("data-pane") !== setPane;
+    });
+  }
+
+  function thresholdMarkPct(v) {
+    return Math.max(0, Math.min(100, Math.round(thresholdToRms(v) / 0.11 * 100)));
+  }
+
+  /** 统一设置 UI（打开弹窗和启动时都用它，避免两处状态对不上）。 */
+  function renderTalkUI() {
+    var voice = state.talkMode !== "ptt";
+    $("#seg-voice").classList.toggle("on", voice);
+    $("#seg-ptt").classList.toggle("on", !voice);
+    $("#set-mode-voice").checked = voice;
+    $("#set-mode-ptt").checked = !voice;
+    $("#set-threshold").value = String(state.threshold);
+    $("#set-threshold").disabled = !voice;
+    $("#threshold-label").textContent = "阈值 " + state.threshold;
+    $("#set-meter-mark").style.left = thresholdMarkPct(state.threshold) + "%";
+    $("#set-key-hint").textContent = voice ? "仅按键说话时使用" : "点「设置」后按一下要用的键";
+  }
+
+  function setTalkMode(mode, persist) {
+    state.talkMode = mode === "ptt" ? "ptt" : "voice";
+    state.ptt = state.talkMode === "ptt";
+    if (persist) {
+      localStorage.setItem("zf_voice_mode", state.talkMode);
+      // 旧版只认这个键，留着同步一下，降级回老页面时行为不至于突变
+      localStorage.setItem("zf_voice_ptt", state.ptt ? "1" : "0");
+      toast(state.ptt ? "已切换为按键说话：按住快捷键才会开麦" : "已切换为语音激活：超过阈值自动开麦");
+    }
+    renderTalkUI();
+    syncVoiceGate();
+    applyMic();
+    paintMeter();
+  }
+
+  var meterTimer = null;
+  /** 电平条 + 门限状态文字。只在弹窗打开时轮询，关掉就停，别白烧 CPU。 */
+  function paintMeter() {
+    var fill = $("#set-meter-fill"), meter = $("#set-meter"), label = $("#set-gate-state");
+    if (!fill) return;
+    var t = state.transport;
+    var pct = t ? Math.round((t.level || 0) * 100) : 0;
+    fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    if (meter) meter.classList.toggle("gated", !!t && t.gateEnabled && !t.gateOpen);
+    if (!label) return;
+    if (!t) label.textContent = "进频道后显示电平";
+    else if (!t.micOn) label.textContent = "麦克风已关闭";
+    else if (state.talkMode !== "voice") label.textContent = "按键说话模式，阈值不生效";
+    else label.textContent = t.gateOpen ? "说话中 · 正在发送" : "静音中 · 未到阈值";
+  }
+  function startMeter() {
+    clearInterval(meterTimer);
+    paintMeter();
+    meterTimer = setInterval(paintMeter, 120);
+  }
+  function stopMeter() {
+    clearInterval(meterTimer);
+    meterTimer = null;
   }
 
   function startStats() {
@@ -577,6 +667,9 @@
         agc: localStorage.getItem("zf_voice_agc") !== "0"
       });
       state.transport = transport;
+      // 先把说话方式 / 激活阈值交给传输层，再等它采集麦克风，
+      // 否则进频道最初那几秒会无视阈值一直发声音。
+      syncVoiceGate();
       transport.on("speaking", function (on) {
         if (cancelled()) return;
         var now = Date.now();
@@ -1115,7 +1208,7 @@
     $("#screen-video").addEventListener("dblclick", toggleScreenFullscreen);
     $("#btn-fullscreen").addEventListener("click", toggleScreenFullscreen);
 
-    /* 设置抽屉 */
+    /* 设置弹窗 */
     $("#btn-settings").addEventListener("click", function () {
       refreshDevices();
       $("#profile-name").value = state.user ? state.user.displayName : "";
@@ -1123,7 +1216,25 @@
       var previewUrl = safeCssUrl(state.user && state.user.avatarUrl);
       preview.textContent = previewUrl ? "" : (state.user ? state.user.displayName.slice(0, 1) : "Z");
       preview.style.backgroundImage = previewUrl ? 'url("' + previewUrl + "?v=" + Date.now() + '")' : "";
+      renderTalkUI();
+      showPane(setPane || "devices");
       openDlg("dlg-settings");
+      startMeter();
+    });
+    $("#dlg-settings").addEventListener("close", stopMeter);
+    $$(".set-tab").forEach(function (b) {
+      b.addEventListener("click", function () { showPane(b.getAttribute("data-pane")); });
+    });
+    $$('input[name="set-talkmode"]').forEach(function (r) {
+      r.addEventListener("change", function () { if (r.checked) setTalkMode(r.value, true); });
+    });
+    $("#set-threshold").addEventListener("input", function (e) {
+      state.threshold = Number(e.target.value) || 0;
+      localStorage.setItem("zf_voice_threshold", String(state.threshold));
+      $("#threshold-label").textContent = "阈值 " + state.threshold;
+      $("#set-meter-mark").style.left = thresholdMarkPct(state.threshold) + "%";
+      syncVoiceGate();
+      paintMeter();
     });
     /**
      * 头像压缩：浏览器端先裁成正方形、缩到 256px 再转 JPEG。
@@ -1213,12 +1324,6 @@
       localStorage.setItem("zf_voice_spk", e.target.value || ""); setSinkId(e.target.value || "");
       toast("输出设备已切换");
     });
-    $("#set-ptt").addEventListener("change", function (e) {
-      state.ptt = e.target.checked;
-      localStorage.setItem("zf_voice_ptt", state.ptt ? "1" : "0");
-      applyMic();
-      toast(state.ptt ? "已开启按键说话：按住设定的快捷键才会开麦" : "已关闭按键说话");
-    });
     $("#btn-set-key").addEventListener("click", function () {
       toast("请按下要用的快捷键（例如 V 或 空格），按 Esc 取消");
       var handler = function (ev) {
@@ -1239,12 +1344,12 @@
     $("#form-settings").addEventListener("submit", function (e) { e.preventDefault(); });
 
     document.addEventListener("keydown", function (e) {
-      if (!state.ptt || !state.pttKey || e.repeat) return;
+      if (state.talkMode !== "ptt" || !state.pttKey || e.repeat) return;
       if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
       if ((e.code || e.key) === state.pttKey && !state.pttDown) { state.pttDown = true; applyMic(); }
     });
     document.addEventListener("keyup", function (e) {
-      if (!state.ptt || !state.pttKey) return;
+      if (state.talkMode !== "ptt" || !state.pttKey) return;
       if ((e.code || e.key) === state.pttKey && state.pttDown) { state.pttDown = false; applyMic(); }
     });
 
@@ -1347,9 +1452,18 @@
       var saved = localStorage.getItem("zf_voice_theme");
       if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
       state.sounds = localStorage.getItem("zf_voice_sounds") !== "0";
-      state.ptt = localStorage.getItem("zf_voice_ptt") === "1";
+      // 说话方式：新键 zf_voice_mode 优先，老用户只有 zf_voice_ptt（0/1）
+      var savedMode = localStorage.getItem("zf_voice_mode");
+      if (savedMode !== "voice" && savedMode !== "ptt") {
+        savedMode = localStorage.getItem("zf_voice_ptt") === "1" ? "ptt" : "voice";
+      }
+      state.talkMode = savedMode;
+      state.ptt = state.talkMode === "ptt";
       state.pttKey = localStorage.getItem("zf_voice_ptt_key") || "";
-      $("#set-ptt").checked = state.ptt;
+      var savedTh = localStorage.getItem("zf_voice_threshold");
+      var thNum = Number(savedTh);
+      state.threshold = savedTh !== null && isFinite(thNum)
+        ? Math.max(0, Math.min(100, thNum)) : 30;
       $("#set-sounds").checked = state.sounds;
       $("#set-key").value = state.pttKey ? (state.pttKey === "Space" ? "空格" : state.pttKey.replace(/^Key/, "")) : "未设置";
       $("#set-vol").value = localStorage.getItem("zf_voice_vol") || "100";
@@ -1357,9 +1471,11 @@
       ["noise", "echo", "agc"].forEach(function (k) {
         $("#set-" + k).checked = localStorage.getItem("zf_voice_" + k) !== "0";
       });
+      renderTalkUI();
     } catch (_) {}
 
-    bindAuth(); bindApp(); bindLogout();
+    bindAuth(); bindApp();
+    renderTalkUI(); bindLogout();
 
     var params = new URLSearchParams(location.search);
     if (params.get("preview") === "1") {

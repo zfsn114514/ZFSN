@@ -225,6 +225,13 @@
     this.micOn = true;
     this.deaf = false;
     this.inputVolume = 1;
+    /* 语音激活（麦克风激活阈值）：rms 低于阈值时把本地音轨静音，
+       等于一个软门限——麦克风一直在采集，只是不发出去。 */
+    this.gateEnabled = false;
+    this.gateThreshold = 0.025;
+    this.gateOpen = true;
+    this.gateHold = 0;
+    this.level = 0;           // 0~1 的输入电平，给设置面板画电平条
     this.memberVolumes = {};
     this.elements = {};       // memberId -> { audio, video }
     this.settings = (this.opts.join && this.opts.join.settings) || { audio: {}, screen: {} };
@@ -273,6 +280,9 @@
     }
     this.buildAudioGraph();
     this.startVAD();
+    // 新音轨默认 enabled，如果门限当前是关的就立刻补一次，否则重采麦克风后
+    // 会出现「阈值已经生效但声音照发」的空窗。
+    this.applyGate(this.gateEnabled ? this.gateOpen : true);
     return this.localAudioTrack();
   };
 
@@ -308,17 +318,32 @@
     clearInterval(this.vadTimer);
     if (!this.analyser) return;
     var buf = new Uint8Array(this.analyser.fftSize);
-    var speaking = false, quiet = 0;
+    var speaking = false, quiet = 0, lastGate = null;
     this.vadTimer = setInterval(function () {
-      if (!self.analyser || !self.micOn) {
-        if (speaking) { speaking = false; self.emit("speaking", false); }
-        return;
-      }
+      if (!self.analyser) return;
       self.analyser.getByteTimeDomainData(buf);
       var sum = 0;
       for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
       var rms = Math.sqrt(sum / buf.length);
-      if (rms > 0.025) { quiet = 0; if (!speaking) { speaking = true; self.emit("speaking", true); } }
+      /* 0~0.11 的 RMS 映射成 0~1，设置面板的电平条直接用这个值。
+         上限取 0.11 是因为人声正常说话在 0.02~0.09 之间，留一点余量。 */
+      self.level = Math.max(0, Math.min(1, rms / 0.11));
+      self.emit("level", self.level);
+      if (!self.micOn) {
+        if (speaking) { speaking = false; self.emit("speaking", false); }
+        if (self.gateOpen) self.applyGate(false);
+        return;
+      }
+      var over = rms > self.gateThreshold;
+      if (self.gateEnabled) {
+        // 留 3 个采样周期（约 270ms）尾音：刚低于阈值就掐会把字尾吃掉
+        if (over) { self.gateHold = 3; self.applyGate(true); }
+        else if (self.gateHold > 0) self.gateHold--;
+        else self.applyGate(false);
+        if (lastGate !== self.gateOpen) { lastGate = self.gateOpen; self.emit("gate", self.gateOpen); }
+      }
+      var active = self.gateEnabled ? self.gateOpen : over;
+      if (active) { quiet = 0; if (!speaking) { speaking = true; self.emit("speaking", true); } }
       else if (++quiet > 6 && speaking) { speaking = false; self.emit("speaking", false); }
     }, 90);
   };
@@ -375,9 +400,32 @@
 
   VoiceTransportBase.prototype.setMic = function (on) {
     this.micOn = !!on;
-    if (this.micStream) this.micStream.getAudioTracks().forEach(function (t) { t.enabled = !!on; });
-    if (this.processedStream) this.processedStream.getAudioTracks().forEach(function (t) { t.enabled = !!on; });
+    // 开门限时只有「麦克风开着 + 门限也开着」才真正发声音，否则一按静音
+    // 又被下一轮 VAD 判定重新打开，静音按钮就失效了。
+    var live = this.micOn && (!this.gateEnabled || this.gateOpen);
+    if (this.micStream) this.micStream.getAudioTracks().forEach(function (t) { t.enabled = live; });
+    if (this.processedStream) this.processedStream.getAudioTracks().forEach(function (t) { t.enabled = live; });
     this.room.setState({ mic: this.micOn });
+  };
+
+  /** 麦克风激活阈值。threshold 是 RMS 线性值（0.002~0.2）。 */
+  VoiceTransportBase.prototype.setVoiceGate = function (cfg) {
+    cfg = cfg || {};
+    if (cfg.enabled !== undefined) this.gateEnabled = !!cfg.enabled;
+    if (cfg.threshold !== undefined) {
+      var t = Number(cfg.threshold);
+      if (isFinite(t) && t > 0) this.gateThreshold = Math.max(0.002, Math.min(0.2, t));
+    }
+    if (!this.gateEnabled) this.applyGate(true);
+    else this.applyGate(this.gateOpen);
+  };
+  /** 把门限状态应用到本地音轨：关的时候不停止采集，只是不发帧。 */
+  VoiceTransportBase.prototype.applyGate = function (open) {
+    open = !!open;
+    this.gateOpen = open;
+    var live = this.micOn && (!this.gateEnabled || open);
+    if (this.processedStream) this.processedStream.getAudioTracks().forEach(function (t) { t.enabled = live; });
+    else if (this.micStream) this.micStream.getAudioTracks().forEach(function (t) { t.enabled = live; });
   };
   VoiceTransportBase.prototype.setDeaf = function (on) {
     this.deaf = !!on;
@@ -1127,6 +1175,12 @@
     if (pub) {
       var p = on ? (pub.unmute && pub.unmute()) : (pub.mute && pub.mute());
       if (p && p.catch) p.catch(function () {});
+      /* SDK 的 unmute() 会把 mediaStreamTrack.enabled 改回 true，
+         这会把刚才关上的门限重新打开（表现为「安静时也一直发声音」）。
+         等 unmute 落地后再按门限状态补一次。 */
+      var self = this;
+      var settle = function () { self.applyGate(self.gateEnabled ? self.gateOpen : true); };
+      if (p && p.then) p.then(settle, settle); else settle();
     }
   };
   /**
