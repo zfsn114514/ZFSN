@@ -304,17 +304,19 @@
     this.screenStream = null;
     this.audioCtx = null;
     this.gain = null;
+    this.gateGain = null;
     this.analyser = null;
     this.vadTimer = null;
     this.micOn = true;
     this.deaf = false;
     this.inputVolume = 1;
-    /* 语音激活（麦克风激活阈值）：rms 低于阈值时把本地音轨静音，
+    /* 语音激活（麦克风激活阈值）：rms 低于阈值时把本地这一路增益压到 0，
        等于一个软门限——麦克风一直在采集，只是不发出去。 */
     this.gateEnabled = false;
     this.gateThreshold = 0.025;
     this.gateOpen = true;
     this.gateHold = 0;
+    this.silentMs = 0;        // 连续没有输入信号的时长，用来提示「麦克风没声音」
     this.level = 0;           // 0~1 的输入电平，给设置面板画电平条
     this.memberVolumes = {};
     this.elements = {};       // memberId -> { audio, video }
@@ -364,12 +366,28 @@
     }
     this.buildAudioGraph();
     this.startVAD();
-    // 新音轨默认 enabled，如果门限当前是关的就立刻补一次，否则重采麦克风后
-    // 会出现「阈值已经生效但声音照发」的空窗。
-    this.applyGate(this.gateEnabled ? this.gateOpen : true);
+    // 新麦克风一到就重新按门限判定一次：换设备后 audioCtx / 增益都是新的，
+    // 不补这一次就会出现「门限还开着、声音却一直往里发」或反过来卡死。
+    this.gateOpen = true;
+    this.gateHold = 0;
+    this.silentMs = 0;
+    this.applyGate(true);
     return this.localAudioTrack();
   };
 
+  /**
+   * 本地音频图：mic → 输入音量 → 门限增益 → 推流；另从 mic 分一支给分析器。
+   *
+   * 为什么门限要单独一个 GainNode，而不是直接关 track.enabled：
+   *   track.enabled=false 是「静音」语义，LiveKit 的 mute()/unmute()、换设备后的
+   *   replaceTrack 都会读写这个属性。门限也去改它，两个状态互相覆盖，一旦卡在
+   *   false 就再也开不回来——表现就是「阈值调到最低也说不了话」。
+   *   增益归零只影响这一路音频的样本，SDK 完全看不见，谁也不会覆盖谁。
+   *
+   * 分析器接在门限**之前**：门限关掉时麦克风照样在被分析，否则电平永远是 0，
+   * 门限再也不会打开（自锁死）。输入音量也放在门限之前，所以音量调到 0 不会
+   * 让门限失效，只是发出去的是静音。
+   */
   VoiceTransportBase.prototype.buildAudioGraph = function () {
     try {
       var AC = window.AudioContext || window.webkitAudioContext;
@@ -378,17 +396,21 @@
       var src = this.audioCtx.createMediaStreamSource(this.micStream);
       this.gain = this.audioCtx.createGain();
       this.gain.gain.value = this.inputVolume;
+      this.gateGain = this.audioCtx.createGain();
+      this.gateGain.gain.value = this.gateTarget();
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 512;
       var dest = this.audioCtx.createMediaStreamDestination();
       src.connect(this.gain);
-      this.gain.connect(this.analyser);
-      this.gain.connect(dest);
+      this.gain.connect(this.gateGain);
+      this.gateGain.connect(dest);
+      src.connect(this.analyser);   // 门限之前取样，永远能听到真实麦克风
       this.processedStream = dest.stream;
       if (this.audioCtx.state === "suspended") this.audioCtx.resume().catch(function () {});
     } catch (e) {
       console.warn("[voice] 音频处理不可用，回退原始麦克风", e);
       this.processedStream = null;
+      this.gateGain = null;
     }
   };
 
@@ -413,6 +435,9 @@
          上限取 0.11 是因为人声正常说话在 0.02~0.09 之间，留一点余量。 */
       self.level = Math.max(0, Math.min(1, rms / 0.11));
       self.emit("level", self.level);
+      /* 连续没有输入信号 → 提示「麦克风没声音」。0.004 大约是数字静音 + 一点点
+         底噪，正常麦克风就算不说话也会比这个高。 */
+      if (rms < 0.004) self.silentMs += 90; else self.silentMs = 0;
       if (!self.micOn) {
         if (speaking) { speaking = false; self.emit("speaking", false); }
         if (self.gateOpen) self.applyGate(false);
@@ -424,6 +449,9 @@
         if (over) { self.gateHold = 3; self.applyGate(true); }
         else if (self.gateHold > 0) self.gateHold--;
         else self.applyGate(false);
+        if (lastGate !== self.gateOpen) { lastGate = self.gateOpen; self.emit("gate", self.gateOpen); }
+      } else if (!self.gateOpen) {
+        self.applyGate(true);
         if (lastGate !== self.gateOpen) { lastGate = self.gateOpen; self.emit("gate", self.gateOpen); }
       }
       var active = self.gateEnabled ? self.gateOpen : over;
@@ -484,11 +512,11 @@
 
   VoiceTransportBase.prototype.setMic = function (on) {
     this.micOn = !!on;
-    // 开门限时只有「麦克风开着 + 门限也开着」才真正发声音，否则一按静音
-    // 又被下一轮 VAD 判定重新打开，静音按钮就失效了。
-    var live = this.micOn && (!this.gateEnabled || this.gateOpen);
-    if (this.micStream) this.micStream.getAudioTracks().forEach(function (t) { t.enabled = live; });
-    if (this.processedStream) this.processedStream.getAudioTracks().forEach(function (t) { t.enabled = live; });
+    /* track.enabled 只跟「静音按钮」走；门限静音交给 gateGain，两者互不覆盖。
+       （以前门限也改 enabled，结果是按一次静音、或换一次设备就会卡在 false） */
+    if (this.micStream) this.micStream.getAudioTracks().forEach(function (t) { t.enabled = this.micOn; }, this);
+    if (this.processedStream) this.processedStream.getAudioTracks().forEach(function (t) { t.enabled = this.micOn; }, this);
+    this.applyGate(this.gateEnabled ? this.gateOpen : true);
     this.room.setState({ mic: this.micOn });
   };
 
@@ -503,11 +531,38 @@
     if (!this.gateEnabled) this.applyGate(true);
     else this.applyGate(this.gateOpen);
   };
-  /** 把门限状态应用到本地音轨：关的时候不停止采集，只是不发帧。 */
+
+  /** 门限的目标增益：1 = 放行，0 = 静音。取消麦克风时一律 0。 */
+  VoiceTransportBase.prototype.gateTarget = function () {
+    if (!this.micOn) return 0;
+    if (!this.gateEnabled) return 1;
+    return this.gateOpen ? 1 : 0;
+  };
+
+  /** 把门限状态应用到音频图（没有 WebAudio 时退回 track.enabled）。 */
   VoiceTransportBase.prototype.applyGate = function (open) {
     open = !!open;
     this.gateOpen = open;
-    var live = this.micOn && (!this.gateEnabled || open);
+    var target = this.gateTarget();
+    if (this.gateGain && this.audioCtx) {
+      /* 自动播放策略可能把 AudioContext 挂在 suspended：这时推流是彻底静音的，
+         看上去和「阈值卡住」一模一样。每次判定顺手唤醒一次，成本可忽略。 */
+      if (this.audioCtx.state !== "running" && this.audioCtx.resume) {
+        this.audioCtx.resume().catch(function () {});
+      }
+      try {
+        var now = this.audioCtx.currentTime;
+        var p = this.gateGain.gain;
+        if (p.cancelScheduledValues) p.cancelScheduledValues(now);
+        /* 30ms 斜坡：直接 0/1 跳变会在每个字头尾留「咔」声，坡太慢又会吃掉
+           开头的音节，30ms 在听感上几乎无感。 */
+        if (p.setTargetAtTime) p.setTargetAtTime(target, now, 0.01);
+        else p.value = target;
+      } catch (_) { this.gateGain.gain.value = target; }
+      return;
+    }
+    // 没有音频图（WebAudio 不可用）时只能退回 enabled，此时门限与静音共用属性
+    var live = target > 0;
     if (this.processedStream) this.processedStream.getAudioTracks().forEach(function (t) { t.enabled = live; });
     else if (this.micStream) this.micStream.getAudioTracks().forEach(function (t) { t.enabled = live; });
   };
@@ -1450,11 +1505,12 @@
     }
     var old = {
       micStream: this.micStream, processedStream: this.processedStream, audioCtx: this.audioCtx,
-      gain: this.gain, analyser: this.analyser, micPublication: this.micPublication
+      gain: this.gain, gateGain: this.gateGain, analyser: this.analyser, micPublication: this.micPublication
     };
     clearInterval(this.vadTimer);
     this.micStream = stream; this.processedStream = null; this.audioCtx = null;
-    this.gain = null; this.analyser = null;
+    this.gain = null; this.gateGain = null; this.analyser = null;
+    this.gateOpen = true; this.gateHold = 0; this.silentMs = 0;
     this.buildAudioGraph();
     this.setInputVolume(this.inputVolume * 100);
     var fresh = this.localAudioTrack();
@@ -1474,6 +1530,7 @@
     if (old.processedStream && old.processedStream !== old.micStream) old.processedStream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} });
     if (old.audioCtx) { try { await old.audioCtx.close(); } catch (_) {} }
     this.startVAD();
+    this.applyGate(true);
     if (micFallback) this.emit("micFallback");
     return fresh;
   };
@@ -1531,7 +1588,7 @@
     clearInterval(this.vadTimer);
     if (this.micStream) this.micStream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} });
     this.micStream = null; this.processedStream = null;
-    this.analyser = null; this.gain = null;
+    this.analyser = null; this.gain = null; this.gateGain = null;
     if (this.audioCtx) { try { await this.audioCtx.close(); } catch (_) {} this.audioCtx = null; }
     var fresh = await this.publishAudio();
     try { await this.onAudioTrackReplaced(old, fresh); } catch (e) { console.warn("[voice] 替换音轨失败", e); }
@@ -1601,6 +1658,9 @@
     Object.keys(this.elements).forEach(function (id) { self.detach(id); });
     if (this.audioCtx) { try { await this.audioCtx.close(); } catch (_) {} }
     this.audioCtx = null;
+    this.gain = null;
+    this.gateGain = null;
+    this.analyser = null;
   };
 
   /* ── 工厂 ──────────────────────────────────────────────────── */

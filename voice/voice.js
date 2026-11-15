@@ -457,7 +457,8 @@
 
   /* 阈值滑块的 0~100 → 传输层用的 RMS 线性值。
      0.025 是旧版写死的「说话」判定线，对应滑块 20，所以默认给 30 略高一点，
-     刚好能滤掉键盘声和空调底噪。 */
+     刚好能滤掉键盘声和空调底噪。滑块拖到 0 = 关闭门限（一直开麦），
+     这样「调到最低」永远是一个能说话的确定状态，不会变成「更严格」。 */
   function thresholdToRms(v) {
     var n = Math.max(0, Math.min(100, Number(v) || 0));
     return 0.005 + n * 0.001;
@@ -466,7 +467,7 @@
   function syncVoiceGate() {
     if (!state.transport || !state.transport.setVoiceGate) return;
     state.transport.setVoiceGate({
-      enabled: state.talkMode === "voice",
+      enabled: state.talkMode === "voice" && Number(state.threshold) > 0,
       threshold: thresholdToRms(state.threshold)
     });
   }
@@ -488,6 +489,9 @@
   function thresholdMarkPct(v) {
     return Math.max(0, Math.min(100, Math.round(thresholdToRms(v) / 0.11 * 100)));
   }
+  function thresholdLabel(v) {
+    return Number(v) > 0 ? "阈值 " + v : "阈值 0 · 已关闭（一直开麦）";
+  }
 
   /** 统一设置 UI（打开弹窗和启动时都用它，避免两处状态对不上）。 */
   function renderTalkUI() {
@@ -498,7 +502,7 @@
     $("#set-mode-ptt").checked = !voice;
     $("#set-threshold").value = String(state.threshold);
     $("#set-threshold").disabled = !voice;
-    $("#threshold-label").textContent = "阈值 " + state.threshold;
+    $("#threshold-label").textContent = thresholdLabel(state.threshold);
     $("#set-meter-mark").style.left = thresholdMarkPct(state.threshold) + "%";
     $("#set-key-hint").textContent = voice ? "仅按键说话时使用" : "点「设置」后按一下要用的键";
   }
@@ -530,7 +534,9 @@
     if (!label) return;
     if (!t) label.textContent = "进频道后显示电平";
     else if (!t.micOn) label.textContent = "麦克风已关闭";
+    else if (t.silentMs > 4000) label.textContent = "麦克风没有声音信号 · 检查设备或系统静音";
     else if (state.talkMode !== "voice") label.textContent = "按键说话模式，阈值不生效";
+    else if (!t.gateEnabled) label.textContent = "阈值已关闭 · 一直开麦";
     else label.textContent = t.gateOpen ? "说话中 · 正在发送" : "静音中 · 未到阈值";
   }
   function startMeter() {
@@ -1259,7 +1265,7 @@
     $("#set-threshold").addEventListener("input", function (e) {
       state.threshold = Number(e.target.value) || 0;
       localStorage.setItem("zf_voice_threshold", String(state.threshold));
-      $("#threshold-label").textContent = "阈值 " + state.threshold;
+      $("#threshold-label").textContent = thresholdLabel(state.threshold);
       $("#set-meter-mark").style.left = thresholdMarkPct(state.threshold) + "%";
       syncVoiceGate();
       paintMeter();
