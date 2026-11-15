@@ -23,6 +23,9 @@ echo.
 echo   ZF Voice - starting self-hosted backend (LiveKit + Tunnel)...
 echo   Voice + screen share will be available on the website.
 echo   Keep this window open; close it to stop the backend.
+echo   Red marks like "CPU monitoring unsupported" are warnings, not failures.
+echo   If Windows firewall blocks UDP 50000-50100: right-click this file
+echo   -^> "Run as administrator" ONCE (it adds the rule permanently).
 echo.
 
 node --no-warnings tools/livekit/voice-media-server.mjs run

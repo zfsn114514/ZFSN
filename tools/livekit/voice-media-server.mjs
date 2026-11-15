@@ -99,8 +99,19 @@ async function syncD1WhenReady(host, url) {
     await sleep(2000);
   }
   if (ok) C.ok("隧道已在边缘可达。");
-  else C.warn("隧道暂未在边缘就绪；仍尝试同步，网页稍后会自动可用。");
+  else C.warn("隧道暂时还没在边缘生效；域名先同步过去，网页稍后刷新即可。");
   syncD1(host);
+  if (ok) return;
+  /* 边缘生效比 cloudflared 打印域名更慢，这里继续盯一会儿再给个明确结论，
+     免得用户看到「未就绪」就以为失败了。 */
+  for (let i = 0; i < 30; i++) {
+    await sleep(2000);
+    if (await httpUp(url + "/", 5000)) {
+      C.ok("隧道已在边缘可达，网页现在可以进自建频道了。");
+      return;
+    }
+  }
+  C.warn("隧道 2 分钟仍未生效：检查本机网络 / 代理设置后重开一次。");
 }
 
 /* 可选：隧道就绪后，把新域名自动写回 Cloudflare 后台（D1）。
@@ -353,6 +364,34 @@ function printBackendValues(st) {
   C.warn("这两个值必须和本机 livekit.yaml 完全一致，否则 Worker 签发的令牌会被 LiveKit 拒绝。");
 }
 
+/* Windows 防火墙默认会丢掉入站包：媒体走 UDP 50000-50100（TCP 7881 是回退），
+ * 没放行时典型表现是「能进频道，但听不到声音 / 共享黑屏」，很容易被误判成
+ * 后端没起来。这里做一次幂等放行；不是管理员时只提示，不阻塞启动。 */
+function ensureFirewall() {
+  if (process.platform !== "win32") return;
+  const rules = [
+    ["ZFVoice LiveKit UDP", "udp", "50000-50100"],
+    ["ZFVoice LiveKit TCP", "tcp", "7880-7881"]
+  ];
+  rules.forEach(function (r) {
+    execFile("netsh.exe", ["advfirewall", "firewall", "show", "rule", "name=" + r[0]],
+      { windowsHide: true }, function (err) {
+        if (!err) return; // 已放行过
+        execFile("netsh.exe", ["advfirewall", "firewall", "add", "rule",
+          "name=" + r[0], "dir=in", "action=allow", "protocol=" + r[1],
+          "localport=" + r[2], "profile=any", "enable=yes"],
+          { windowsHide: true }, function (e2) {
+            if (e2) {
+              C.warn("未能自动放行防火墙 " + r[2] + "/" + r[1] +
+                "（需要管理员权限）：右键 start-selfhost.bat → 以管理员身份运行一次即可。");
+            } else {
+              C.ok("已放行防火墙入站 " + r[1].toUpperCase() + " " + r[2]);
+            }
+          });
+      });
+  });
+}
+
 /* ── run：LiveKit + Tunnel 一起跑 ────────────────────────────── */
 async function run() {
   let st = readState();
@@ -369,17 +408,30 @@ async function run() {
   }
 
   C.title("启动 LiveKit Server（媒体转发）");
+  ensureFirewall();
   const lk = spawn(LK_EXE, ["--config", YAML_FILE], {
     cwd: HERE, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env: cleanEnv()
   });
   let lkAlive = true;
   lk.on("exit", function () { lkAlive = false; });
+  /* LiveKit 习惯用 ERROR / WARN 级别打环境探测告警（比如「CPU 监控不支持」
+     「外网 IP 校验被取消」），实例其实已经正常跑起来了。全标成红叉会让人
+     以为启动失败，所以只有 FATAL / panic 才算真错，其余降级为黄色提示。 */
+  let hinted = false;
   ["stdout", "stderr"].forEach(function (ch) {
     lk[ch].setEncoding("utf8");
     lk[ch].on("data", function (d) {
       String(d).split(/\r?\n/).filter(Boolean).forEach(function (line) {
-        if (/error|fatal/i.test(line)) C.err("[媒体] " + line.trim());
-        else if (process.env.ZF_VERBOSE) C.info("[媒体] " + line.trim());
+        const t = line.trim();
+        if (/FATAL|panic|failed to start|no such host|permission denied|address already in use/i.test(t)) {
+          C.err("[媒体] " + t);
+        } else if (/error|warn/i.test(t)) {
+          C.warn("[媒体] " + t);
+          if (!hinted) {
+            hinted = true;
+            C.info("（上面这类 WARN/ERROR 是 LiveKit 对环境探测的常规告警，不影响语音与共享）");
+          }
+        } else if (process.env.ZF_VERBOSE) C.info("[媒体] " + t);
       });
     });
   });
@@ -415,6 +467,9 @@ async function run() {
         C.ok("wss 域名：" + st.tunnelUrl + "（已写入 server.json）");
         printBackendValues(st);
         C.title("现在可以用了（关掉窗口或 Ctrl+C 会同时停掉两个服务）");
+        C.ok("窗口里出现过的红色 ✘ 如果是「CPU monitoring unsupported」「could not validate external IP」，都只是告警，不影响使用。");
+        C.info("接下来：刷新网页 → 点「家里电脑」频道 → 允许麦克风即可语音 / 共享屏幕。");
+        C.info("别人听不到你：先确认本机防火墙放行了 UDP 50000-50100（本脚本会自动尝试）。");
         C.info("局域网调试地址：ws://" + localIP() + ":" + PORT);
         if (process.env.ZF_SYNC_D1) {
           syncD1WhenReady(st.publicHost, st.tunnelUrl);

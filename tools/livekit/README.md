@@ -102,7 +102,16 @@ npx wrangler secret put LIVEKIT_API_SECRET
 | UDP 媒体 | UDP 50000–50100 | **媒体主要走这里**，见下节 |
 | 房间上限 / 超时 | 20 人 / 空房 300 秒 | `livekit.example.yaml` 里可调 |
 
-Windows 防火墙第一次启动时会询问，放行 `livekit-server.exe` 与 `cloudflared.exe`。
+Windows 防火墙**不会**因为后台启动而弹窗询问（`livekit-server.exe` 是被脚本拉起的，
+没有交互桌面），所以 `start-selfhost.bat` 会自动幂等地添加两条入站放行规则
+（`ZFVoice LiveKit UDP` 50000-50100 / `ZFVoice LiveKit TCP` 7880-7881）。
+添加规则需要管理员权限：如果窗口里出现「未能自动放行防火墙」，右键该 bat →
+**以管理员身份运行一次**即可，规则是持久的，之后普通双击就行。
+手动确认：
+
+```powershell
+Get-NetFirewallRule -DisplayName 'ZFVoice*' | Select DisplayName,Enabled,Action
+```
 
 ---
 
