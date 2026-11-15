@@ -456,6 +456,17 @@
     }).catch(function(){ /* 静默 */ });
   }
 
+  /* 给动画等待加超时兜底：标签页隐藏时 WAAPI 动画会被暂停，.finished 永远
+   * 不 resolve —— 旧版 go() 会因此永久卡在 switching=true，之后所有导航全部
+   * 失效（用户点了链接马上切后台就可能踩中）。这里用「动画完成 OR 超时」竞速，
+   * 超时略长于动画时长，正常情况下动画先完成，观感不变；异常时也能继续切页。 */
+  function animDone(anim, ms){
+    return Promise.race([
+      anim.finished.catch(function(){}),
+      new Promise(function(res){ setTimeout(res, ms); })
+    ]);
+  }
+
   async function go(key){
     if (!pages[key]) return;
     if (switching){ pendingPage = key; return; }
@@ -467,13 +478,13 @@
       document.body.dataset.switching = "true";
       if (animated) {
         wipe.classList.add("on");
-        await previous.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translate3d(0,-7px,0)'}],
-          {duration:110,easing:'cubic-bezier(.4,0,1,1)'}).finished.catch(function(){});
+        await animDone(previous.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translate3d(0,-7px,0)'}],
+          {duration:110,easing:'cubic-bezier(.4,0,1,1)'}), 400);
       }
       setActive(key);
       if (animated && document.documentElement.dataset.motion !== "off") {
-        await pages[key].animate([{opacity:0,transform:'translate3d(0,14px,0)'},{opacity:1,transform:'none'}],
-          {duration:280,easing:'cubic-bezier(.16,1,.3,1)'}).finished.catch(function(){});
+        await animDone(pages[key].animate([{opacity:0,transform:'translate3d(0,14px,0)'},{opacity:1,transform:'none'}],
+          {duration:280,easing:'cubic-bezier(.16,1,.3,1)'}), 600);
       }
     } finally {
       wipe.classList.remove("on");

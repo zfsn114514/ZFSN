@@ -1,6 +1,10 @@
 /* Inspired by the game's post-load main menu, not its marketing website. */
 :root{--bg:#070d16;--bg2:#0c1824;--surface:rgba(6,17,27,.88);--surface2:#142833;--text:#dbefed;--muted:#89a9b0;--red:#ff4d5c;--red-soft:#ff6876;--line:rgba(255,77,92,.24);--line2:rgba(255,77,92,.55);--cyan:#75eeec;--r:0px}
-body{background:var(--bg);font-family:'Segoe UI','Microsoft YaHei',sans-serif}body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:linear-gradient(90deg,var(--bg) 0%,rgba(7,13,22,.94) 28%,rgba(7,13,22,.45) 68%,rgba(7,13,22,.22)),url('../works/w20261002-033301-f20b6784.png') 75% center/cover no-repeat;opacity:.75}body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(60,160,190,.025) 3px 4px)}canvas#bg,.grain,.glow{display:none}.vignette{background:linear-gradient(180deg,rgba(3,10,18,.35),transparent 35%,#050b12)}
+body{background:var(--bg);font-family:'Segoe UI','Microsoft YaHei',sans-serif}body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background:linear-gradient(90deg,var(--bg) 0%,rgba(7,13,22,.94) 28%,rgba(7,13,22,.45) 68%,rgba(7,13,22,.22)),url('../works/w20261002-033301-f20b6784.png') 75% center/cover no-repeat;opacity:.75}
+/* ★ 性能：背景图优先用 AVIF（74KB vs PNG 133KB）。单独一条 background-image
+   覆盖：不支持 image-set 的老浏览器会丢弃这条、保留上面的 PNG 回退。 */
+@supports (background-image:image-set(url('') type('image/avif'))){body::before{background-image:linear-gradient(90deg,var(--bg) 0%,rgba(7,13,22,.94) 28%,rgba(7,13,22,.45) 68%,rgba(7,13,22,.22)),image-set(url('../works/w20261002-033301-f20b6784.avif') type('image/avif'),url('../works/w20261002-033301-f20b6784.png') type('image/png'))}}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(60,160,190,.025) 3px 4px)}canvas#bg,.grain,.glow{display:none}.vignette{background:linear-gradient(180deg,rgba(3,10,18,.35),transparent 35%,#050b12)}
 .topbar,.topbar.scrolled{padding:24px 36px;background:linear-gradient(#070e18,transparent);border:0;backdrop-filter:none;box-shadow:none}.topbar .mark{color:var(--c1);font-family:Consolas,monospace;font-size:13px;letter-spacing:.17em}.topbar .mark .dot{height:2px;width:20px;box-shadow:none;border-radius:0;background:var(--c1);animation:none}.topbar .mark-label,.terminal-tag,.terminal-rail{display:none}
 .nav,.topbar.scrolled ~ .nav{top:15px;right:35px;gap:1px}.nav button{border-radius:0;font-size:11px;color:#c15e69;padding:10px 16px;border:0;border-bottom:1px solid rgba(255,77,92,.35)}.nav button:hover,.nav button.active{color:var(--cyan);background:rgba(117,238,236,.045);border-color:var(--cyan)}.nav button.active:after{width:100%;left:0;transform:none;height:1px;box-shadow:none;background:var(--cyan)}
 body[data-page=home]>.nav{display:none}#page-home{padding:100px 8vw 70px;min-height:calc(100vh - 80px)}#page-home.active{display:block}.hero{max-width:none;text-align:left;margin:0;width:100%;position:relative;min-height:650px}.profile-header{display:contents}.profile-eyebrow{display:block;color:var(--cyan);font:10px Consolas,monospace;letter-spacing:.2em;margin:15px 0 25px}.profile-eyebrow span{color:#b76470;margin-right:15px}.hero .name{display:block;opacity:1;transform:skew(-7deg);font-size:clamp(80px,9vw,150px);letter-spacing:-.08em;font-style:italic;font-weight:900;line-height:.95;background:none;color:#f3e600;text-shadow:3px 2px 0 #e43e57;animation:menu-logo .3s steps(3) 1;margin:0 0 18px;max-width:480px}.hero .name:after{display:none}.hero .name:hover{letter-spacing:-.08em}.hero .tagline{margin:0 0 46px;font:11px Consolas,monospace;color:#b46470;letter-spacing:.12em;min-height:18px}.caret{background:var(--c1);height:11px;width:3px}.profile-actions,.portal-label,.hero>.links,.hero>.home-stats{display:none}
@@ -87,14 +91,15 @@ body[data-page=home]>.nav{display:none}#page-home{padding:100px 8vw 70px;min-hei
   opacity:.85;
 }
 
-/* ── 全息扫描脉冲：每 7s 自上而下扫过一屏 ────────────────                        */
+/* ── 全息扫描脉冲：每 7s 自上而下扫过一屏 ────────────────
+   ★ 性能：transform 代替 top 动画（避免逐帧重排），去掉 mix-blend-mode。 */
 .vignette::before{
-  content:"";position:absolute;left:0;right:0;height:190px;pointer-events:none;
-  background:linear-gradient(180deg,transparent,rgba(117,238,236,.045) 45%,rgba(243,230,0,.06) 52%,rgba(117,238,236,.045) 58%,transparent);
-  mix-blend-mode:screen;
+  content:"";position:absolute;left:0;right:0;top:0;height:190px;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(117,238,236,.055) 45%,rgba(243,230,0,.07) 52%,rgba(117,238,236,.055) 58%,transparent);
   animation:nc-scan 7s linear infinite;
+  will-change:transform;
 }
-@keyframes nc-scan{from{top:-200px}to{top:110%}}
+@keyframes nc-scan{from{transform:translateY(-200px)}to{transform:translateY(110vh)}}
 /* 雨夜微尘：青色噪点轻微漂移 */
 .vignette::after{
   content:"";position:absolute;inset:-12%;pointer-events:none;opacity:.5;
@@ -102,7 +107,6 @@ body[data-page=home]>.nav{display:none}#page-home{padding:100px 8vw 70px;min-hei
     radial-gradient(circle,rgba(117,238,236,.5) 0 1px,transparent 1.6px),
     radial-gradient(circle,rgba(243,230,0,.32) 0 .8px,transparent 1.4px);
   background-size:230px 270px,160px 190px;
-  mix-blend-mode:screen;
   animation:nc-drift 26s linear infinite alternate;
 }
 @keyframes nc-drift{from{transform:translate3d(0,0,0)}to{transform:translate3d(-60px,42px,0)}}
@@ -125,13 +129,16 @@ body[data-page=home]>.nav{display:none}#page-home{padding:100px 8vw 70px;min-hei
   100%{transform:translateX(5px) skewX(0)}
 }
 
-/* ── Logo：全息微光呼吸 ───────────────────────────────                        */
+/* ── Logo：全息微光呼吸 ───────────────────────────────
+   ★ 性能：旧版逐帧动画 filter:drop-shadow(...)，每帧都要重新栅格化整张
+   SVG logo。改为静态 drop-shadow（见上方基础规则）+ 轻微 opacity 呼吸
+   （合成器属性），观感同样是"全息微光在呼吸"，但不再触发逐帧重绘。 */
 .hero .name .nightcity-logo{
   animation:nc-holo 4.8s ease-in-out infinite;
 }
 @keyframes nc-holo{
-  0%,100%{filter:drop-shadow(0 0 13px rgba(245,237,0,.07)) drop-shadow(0 0 2px rgba(117,238,236,.12))}
-  50%{filter:drop-shadow(0 0 26px rgba(245,237,0,.20)) drop-shadow(0 0 5px rgba(117,238,236,.3))}
+  0%,100%{opacity:.88}
+  50%{opacity:1}
 }
 
 /* ── 卡片悬停：RGB 撕裂 ───────────────────────────────                        */

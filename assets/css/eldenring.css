@@ -91,12 +91,14 @@ body::before{
     radial-gradient(circle,rgba(216,180,106,.55) 0 .7px,transparent 1.3px);
   background-size:340px 380px,260px 300px,190px 230px,140px 170px;
   background-position:0 0,120px 60px,40px 160px,90px 20px;
-  mix-blend-mode:screen;
   will-change:transform;
 }
 .vignette::before{opacity:.42;animation:er-ash 38s ease-in-out infinite alternate}
 .vignette::after{opacity:.30;background-size:220px 260px,170px 210px,120px 150px,90px 120px;animation:er-ash 23s ease-in-out infinite alternate-reverse}
-.grain{opacity:.045;filter:sepia(.9) saturate(.7) brightness(1.05);mix-blend-mode:soft-light}
+/* ★ 性能：grain 去掉 filter + mix-blend-mode:soft-light。这两者叠加在持续
+   动画的噪点层上会强制逐帧重栅格化 + 实时混合。噪点本身极淡，直接用 opacity
+   呈现，观感几乎不变。 */
+.grain{opacity:.05}
 
 /* ── 顶栏 ─────────────────────────────────────────────────────────── */
 .topbar,.topbar.scrolled{
@@ -192,13 +194,14 @@ body::before{
   display:grid;grid-template-columns:minmax(0,1.06fr) minmax(0,.94fr);
   column-gap:clamp(30px,5vw,84px);align-items:start;
 }
-/* 破碎法环的巨大残影 */
+/* 破碎法环的巨大残影。★ 性能：去掉 drop-shadow filter —— 该层在持续旋转，
+   filter 会迫使每帧重新栅格化整张 780px 的 SVG。残影本身 opacity 仅 .085，
+   辉光几乎不可见，去掉后观感不变。 */
 #page-home .hero::before{
   content:"";position:absolute;z-index:-1;right:-150px;top:-120px;
   width:min(780px,86vw);aspect-ratio:1;pointer-events:none;
   background:url("../branding/elden-seal.svg") center/contain no-repeat;
   opacity:.085;animation:er-turn 260s linear infinite;
-  filter:drop-shadow(0 0 40px rgba(216,180,106,.18));
 }
 
 /* 首页不使用顶栏导航，改由下方"赐福"菜单承担 */

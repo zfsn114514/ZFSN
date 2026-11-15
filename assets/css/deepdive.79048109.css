@@ -67,7 +67,9 @@ footer{margin-left:248px;border-top:1px solid var(--line);font:9px Consolas,mono
   opacity:.9;
 }
 @keyframes dd-radar{to{transform:rotate(360deg)}}
-/* 声呐屏前景扫掠亮扇（叠在环上） */
+/* 声呐屏前景扫掠亮扇（叠在环上）。
+   ★ 性能：去掉 mix-blend-mode:screen —— 混合模式会强制该图层与背景实时
+   合成、无法缓存；亮扇本身是半透明红色，直接叠加观感几乎一致。 */
 .hero::after{
   content:"";position:absolute;right:-140px;bottom:-120px;z-index:0;
   width:min(620px,58vw);aspect-ratio:1;pointer-events:none;border-radius:50%;
@@ -75,7 +77,6 @@ footer{margin-left:248px;border-top:1px solid var(--line);font:9px Consolas,mono
   mask:radial-gradient(circle,#000 62%,transparent 70%);
   -webkit-mask:radial-gradient(circle,#000 62%,transparent 70%);
   animation:dd-radar 3.6s linear infinite;
-  mix-blend-mode:screen;
 }
 
 /* ── 周期性信号故障：Logo ─────────────────────────────                        */
@@ -133,14 +134,13 @@ footer{margin-left:248px;border-top:1px solid var(--line);font:9px Consolas,mono
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 4px);
   opacity:.5;
 }
-/* 缓慢上浮的悬浮颗粒（海雪） */
+/* 缓慢上浮的悬浮颗粒（海雪）。★ 性能：去掉 mix-blend-mode:screen。 */
 .vignette::after{
   content:"";position:absolute;inset:-12%;pointer-events:none;opacity:.55;
   background-image:
     radial-gradient(circle,rgba(255,160,170,.4) 0 1px,transparent 1.5px),
     radial-gradient(circle,rgba(255,64,93,.28) 0 .8px,transparent 1.3px);
   background-size:280px 320px,190px 220px;
-  mix-blend-mode:screen;
   animation:dd-marine 34s linear infinite;
 }
 @keyframes dd-marine{from{transform:translate3d(0,10%,0)}to{transform:translate3d(24px,-10%,0)}}

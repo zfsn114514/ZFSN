@@ -102,25 +102,31 @@ canvas#bg{opacity:.28}.grain{opacity:.016;animation:none}.glow{opacity:.28;backg
   background:repeating-linear-gradient(0deg,rgba(2,8,12,.22) 0 1px,transparent 1px 3px);
   opacity:.55;
 }
-/* 下行扫描光带：每 8s 扫过一整屏 */
+/* 下行扫描光带：每 8s 扫过一整屏。
+   ★ 性能：用 transform:translateY 代替动画 top —— top 是布局属性，每帧都触发
+   重排；transform 走合成器，零布局开销。同时去掉 mix-blend-mode:screen
+   （混合模式会强制与背景实时合成、破坏图层缓存），光带本身极淡，观感几乎不变。 */
 .vignette::after{
-  content:"";position:absolute;left:0;right:0;height:140px;pointer-events:none;
-  background:linear-gradient(180deg,transparent,rgba(105,228,234,.05) 42%,rgba(243,230,0,.07) 50%,rgba(105,228,234,.05) 58%,transparent);
+  content:"";position:absolute;left:0;right:0;top:0;height:140px;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(105,228,234,.06) 42%,rgba(243,230,0,.08) 50%,rgba(105,228,234,.06) 58%,transparent);
   animation:cp-scan 8s linear infinite;
-  mix-blend-mode:screen;
+  will-change:transform;
 }
-@keyframes cp-scan{from{top:-160px}to{top:110%}}
+@keyframes cp-scan{from{transform:translateY(-160px)}to{transform:translateY(110vh)}}
 /* 整机闪烁：幅度压到 2%，只是"活"的感觉 */
 .vignette{animation:cp-flicker 4.6s steps(60) infinite}
 @keyframes cp-flicker{0%,100%{opacity:1}31%{opacity:.985}32%{opacity:1}67%{opacity:.978}68%{opacity:1}}
 
-/* 荧光黄标题呼吸辉光 */
+/* 荧光黄标题呼吸辉光。
+   ★ 性能：旧版逐帧动画 text-shadow，每帧重绘整块标题文字。改为静态辉光
+   + 轻微 opacity 呼吸（合成器属性），"呼吸感"保留，逐帧重绘消除。 */
 .hero .name,.phead h2{
+  text-shadow:3px 3px 0 rgba(255,64,93,.8),0 0 26px rgba(243,230,0,.3);
   animation:cp-glow 5.2s ease-in-out infinite;
 }
 @keyframes cp-glow{
-  0%,100%{text-shadow:0 0 22px rgba(243,230,0,.18)}
-  50%{text-shadow:0 0 34px rgba(243,230,0,.42),0 0 70px rgba(243,230,0,.14)}
+  0%,100%{opacity:.9}
+  50%{opacity:1}
 }
 
 /* 顶栏终端标签：闪烁的 REC 光点 */
