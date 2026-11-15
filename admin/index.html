@@ -2306,6 +2306,7 @@ $("#p-save").addEventListener("click", function(){
  * 只做「设置」，不回显旧 PIN —— 服务端存的是 PBKDF2 哈希，
  * 压根没有可回显的明文。忘记 PIN 就直接重设一个新的。
  */
+var pinLoadState = null;
 (function initPinSettings(){
   var save = $("#pin-save");
   if (!save) return;
@@ -2320,7 +2321,11 @@ $("#p-save").addEventListener("click", function(){
       }
     }).catch(function(){ /* 读不到就不显示时间，不影响设置 */ });
   }
-  loadPinState();
+  pinLoadState = loadPinState;
+  /* 这段 IIFE 在解析期就执行，此时 localStorage 里可能还没有 token
+     （首次登录、或刷新后要等 boot() 校验会话）。没 token 就发请求会直接
+     401，控制台留一条红字；改成有 token 才读，登录成功后由 refreshAll 再补一次。 */
+  if (localStorage.getItem(TOKEN_KEY)) loadPinState();
 
   save.addEventListener("click", function(){
     var p1 = $("#pin-new").value.trim();
@@ -2511,6 +2516,8 @@ function refreshAll(){
   loadStats().catch(function(){});
   loadMessages();
   loadWorks();
+  /* 登录成功后补读一次私密 PIN 状态（首次进入时 token 才刚写入） */
+  if (pinLoadState) pinLoadState();
 }
 })();
 </script>

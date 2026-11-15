@@ -161,9 +161,13 @@
       try { cb(data); } catch (e) { console.warn("[voice] 事件处理异常", name, e); }
     });
   };
-  VoiceRoomClient.prototype.connect = function () {
+  VoiceRoomClient.prototype.connect = function (internal) {
     var self = this;
     this.closed = false;
+    /* internal=true 表示这是网络抖动后的内部重试，不重置计数；
+       用户手动进频道（无参）时清零，保证下一次是全新的两次重试机会。 */
+    if (!internal) this._netTries = 0;
+    if (typeof this._netTries !== "number") this._netTries = 0;
     // 上一轮 onclose 排下的重连任务必须作废，否则「先断开再重连」会让
     // 老定时器在稍后再建一条连接，把 self.ws 覆盖掉，留下无人管理的幽灵连接。
     clearTimeout(this.reconnectTimer);
@@ -186,11 +190,24 @@
         if (settled) return;
         settled = true;
         try { ws.close(); } catch (_) {}
+        /* 超时同样先重试一次：10 秒连不上更可能是网络被拦/抖动，
+           静默重连一次比直接甩一句「请切换网络」有用。 */
+        if (self._netTries < 1 && !self.closed) {
+          self._netTries++;
+          self.emit("notice", { text: "连接超时，正在重试…" });
+          clearTimeout(self.reconnectTimer);
+          self.reconnectTimer = setTimeout(function () {
+            self.reconnectTimer = null;
+            if (!self.closed) self.connect(true).catch(function () {});
+          }, 500);
+          return;
+        }
         reject(new Error("房间连接超时，请切换网络后重试"));
       }, 10000);
       ws.onopen = function () {
         // 已被新连接取代：立刻关掉自己，且不要 resolve/reject 调用方。
         if (self.ws !== ws) { try { ws.close(1000, "superseded"); } catch (_) {} return; }
+        self._netTries = 0;
         // close() 可能在 CONNECTING 阶段就被调用（快速切换频道时很常见），
         // 此时连接仍会打开；必须立刻关掉，否则会变成没人管理的幽灵连接。
         if (self.closed) {
@@ -239,7 +256,26 @@
             : (ev.reason || "房间连接已结束") });
           return;
         }
-        if (!settled) { settled = true; clearTimeout(connectTimer); reject(new Error("房间连接被拒绝（" + ev.code + "）")); return; }
+        if (!settled) {
+          settled = true;
+          clearTimeout(connectTimer);
+          /* 1006 = 连接被异常关闭、没有关闭帧。国内网络到 Cloudflare 的
+             WebSocket 经常这样抖一下就断（同一域名连发三次请求，可能一次
+             通、两次直接失败）。这种属于网络瞬断，不该立刻报错让用户重进，
+             静默重试两次成功率明显更高；真不通再报出来。 */
+          if (ev.code === 1006 && self._netTries < 2 && !self.closed) {
+            self._netTries++;
+            self.emit("notice", { text: "网络抖动，正在重连房间连接…（第 " + self._netTries + " 次）" });
+            clearTimeout(self.reconnectTimer);
+            self.reconnectTimer = setTimeout(function () {
+              self.reconnectTimer = null;
+              if (!self.closed) self.connect(true).catch(function () {});
+            }, 400 * self._netTries);
+            return;
+          }
+          reject(new Error("房间连接被拒绝（" + ev.code + "）"));
+          return;
+        }
         // 断线自动重连：票据 5 分钟有效，过期后请上层重新调用 join 接口
         if (self.retries < 6) {
           var delay = Math.min(6000, 600 * Math.pow(1.6, self.retries++));

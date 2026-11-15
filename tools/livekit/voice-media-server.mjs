@@ -442,6 +442,22 @@ function clearLock() {
   try { if (readLockPid() === process.pid) fs.unlinkSync(LOCK_FILE); } catch (_) {}
 }
 
+/* 固定域名（命名隧道）配置：tools/livekit/tunnel.env，两行即可
+     ZF_TUNNEL_TOKEN=eyJhIjoi...（Cloudflare 控制台建隧道时给的那串）
+     ZF_TUNNEL_HOST=voice.example.com（已在 Cloudflare 上接管、指向这条隧道的域名）
+   没有这个文件时退回临时 trycloudflare 隧道（域名每次重启都变）。 */
+const TUNNEL_ENV = path.join(HERE, "tunnel.env");
+function readTunnelEnv() {
+  const out = {};
+  try {
+    fs.readFileSync(TUNNEL_ENV, "utf8").split(/\r?\n/).forEach(function (line) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.+?)\s*$/);
+      if (m) out[m[1]] = m[2];
+    });
+  } catch (_) {}
+  return out;
+}
+
 /* ── run：LiveKit + Tunnel 一起跑 ────────────────────────────── */
 async function run() {
   let st = readState();
@@ -527,36 +543,74 @@ async function run() {
 
   let cf = null;
   if (fs.existsSync(CF_EXE)) {
-    C.title("启动 Cloudflare Tunnel（给 HTTPS 站点一个可信的 wss 域名）");
-    ensureQuickCfg();
-    cf = spawn(CF_EXE, ["tunnel", "--no-autoupdate",
-      "--config", CF_QUICK_CFG,
-      "--url", "http://127.0.0.1:" + PORT],
-      { cwd: HERE, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env: cleanEnv() });
-    const onData = function (d) {
-      const m = String(d).match(/https:\/\/([a-z0-9-]+\.trycloudflare\.com)/i);
-      if (m && st.publicHost !== m[1]) {
-        st.publicHost = m[1];
-        st.tunnelUrl = "https://" + m[1];
-        st.publicPort = 443;
-        writeState(st);
-        C.ok("wss 域名：" + st.tunnelUrl + "（已写入 server.json）");
-        printBackendValues(st);
-        C.title("现在可以用了（关掉窗口或 Ctrl+C 会同时停掉两个服务）");
-        C.ok("「CPU monitoring unsupported」这类是环境探测告警，可以忽略；" +
-          "「could not validate external IP」不是可以忽略的告警，出现就按下面的提示检查端口映射。");
-        C.info("接下来：刷新网页 → 点「家里电脑」频道 → 允许麦克风即可语音 / 共享屏幕。");
-        C.info("别人听不到你：先确认路由器把 UDP " + udpRangeText() + " 转发到本机，且防火墙已放行（本脚本会自动尝试）。");
-        C.info("局域网调试地址：ws://" + localIP() + ":" + PORT);
-        if (process.env.ZF_SYNC_D1) {
-          syncD1WhenReady(st.publicHost, st.tunnelUrl);
-        } else {
-          C.warn("注意：临时隧道域名每次重启都会变，变了就要回后台更新那条服务器记录。");
-        }
+    const tenv = readTunnelEnv();
+    const token = String(process.env.ZF_TUNNEL_TOKEN || tenv.ZF_TUNNEL_TOKEN || "").trim();
+    const fixedHost = String(process.env.ZF_TUNNEL_HOST || tenv.ZF_TUNNEL_HOST || "").trim()
+      .replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+
+    /* 两种模式共用的收尾提示 */
+    const announce = function () {
+      writeState(st);
+      C.ok("wss 域名：" + st.tunnelUrl + "（已写入 server.json）");
+      printBackendValues(st);
+      C.title("现在可以用了（关掉窗口或 Ctrl+C 会同时停掉两个服务）");
+      C.ok("「CPU monitoring unsupported」这类是环境探测告警，可以忽略；" +
+        "「could not validate external IP」不是可以忽略的告警，出现就按下面的提示检查端口映射。");
+      C.info("接下来：刷新网页 → 点「家里电脑」频道 → 允许麦克风即可语音 / 共享屏幕。");
+      C.info("别人听不到你：先确认路由器把 UDP " + udpRangeText() + " 转发到本机，且防火墙已放行（本脚本会自动尝试）。");
+      C.info("局域网调试地址：ws://" + localIP() + ":" + PORT);
+      if (process.env.ZF_SYNC_D1) {
+        syncD1WhenReady(st.publicHost, st.tunnelUrl);
+      } else if (!fixedHost) {
+        C.warn("注意：临时隧道域名每次重启都会变，变了就要回后台更新那条服务器记录。");
       }
     };
-    cf.stdout.setEncoding("utf8"); cf.stdout.on("data", onData);
-    cf.stderr.setEncoding("utf8"); cf.stderr.on("data", onData);
+
+    if (token && fixedHost) {
+      /* 命名隧道：域名固定，重启不变，也不用担心随机子域名被运营商拦 */
+      C.title("启动 Cloudflare Tunnel（固定域名 " + fixedHost + "）");
+      cf = spawn(CF_EXE, ["tunnel", "--no-autoupdate", "run", "--token", token],
+        { cwd: HERE, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env: cleanEnv() });
+      let announced = false;
+      const useFixed = function () {
+        if (announced) return;
+        announced = true;
+        st.publicHost = fixedHost;
+        st.tunnelUrl = "https://" + fixedHost;
+        st.publicPort = 443;
+        announce();
+      };
+      const onNamed = function (d) {
+        const t = String(d);
+        if (/Registered tunnel connection|Connection [0-9a-f-]+ registered/i.test(t)) useFixed();
+        else if (/failed|error|invalid|Unauthorized/i.test(t) && process.env.ZF_VERBOSE) C.warn("[隧道] " + t.trim());
+      };
+      cf.stdout.setEncoding("utf8"); cf.stdout.on("data", onNamed);
+      cf.stderr.setEncoding("utf8"); cf.stderr.on("data", onNamed);
+      /* 有些版本不打 Registered，超时兜底：固定域名本来就不需要解析，直接宣布 */
+      setTimeout(useFixed, 8000);
+    } else {
+      C.title("启动 Cloudflare Tunnel（给 HTTPS 站点一个可信的 wss 域名）");
+      if (!fixedHost) {
+        C.info("想固定域名（推荐，重启不变且更少被运营商拦）：在 tools/livekit/tunnel.env 填 ZF_TUNNEL_TOKEN / ZF_TUNNEL_HOST。");
+      }
+      ensureQuickCfg();
+      cf = spawn(CF_EXE, ["tunnel", "--no-autoupdate",
+        "--config", CF_QUICK_CFG,
+        "--url", "http://127.0.0.1:" + PORT],
+        { cwd: HERE, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env: cleanEnv() });
+      const onData = function (d) {
+        const m = String(d).match(/https:\/\/([a-z0-9-]+\.trycloudflare\.com)/i);
+        if (m && st.publicHost !== m[1]) {
+          st.publicHost = m[1];
+          st.tunnelUrl = "https://" + m[1];
+          st.publicPort = 443;
+          announce();
+        }
+      };
+      cf.stdout.setEncoding("utf8"); cf.stdout.on("data", onData);
+      cf.stderr.setEncoding("utf8"); cf.stderr.on("data", onData);
+    }
     cf.on("exit", function () { C.warn("Tunnel 进程已退出"); });
   } else {
     C.warn("没有 cloudflared，跳过隧道。只能局域网内用 ws:// 调试（HTTPS 页面会被混合内容拦截）。");

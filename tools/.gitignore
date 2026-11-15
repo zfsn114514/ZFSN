@@ -30,3 +30,6 @@ livekit/livekit-server.exe
 
 # 后端单实例锁（运行时生成）
 livekit/backend.lock
+
+# 命名隧道凭据（含 token，绝不提交）
+livekit/tunnel.env
