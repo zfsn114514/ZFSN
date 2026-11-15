@@ -595,3 +595,297 @@ html[data-theme="light"] .chip-select option{background:#fff;color:#111}
 html[data-voice-authed="1"] #auth-view:not([hidden]){display:none!important}
 html[data-voice-authed="1"] #app-view[hidden]{display:grid!important}
 html[data-voice-authed="1"] .restore-mask{display:flex}
+
+/* ══════════════════════════════════════════════════════════════
+ *  手机端（≤760px）：按黑盒语音的移动版重排
+ *  · 左栏 = 圆形服务器图标（选中带光环）
+ *  · 频道抽屉 = 大 banner 卡 + 邀请按钮 + 分组频道行（右侧人数）
+ *  · 频道内 = 吸顶频道条 + 方形成员卡 + 底部「消息胶囊 + 圆形按钮组」
+ *  · 聊天 = 全屏上滑面板（关闭 × / 居中标题）
+ *  只作用于窄屏，桌面端（≥761px）完全不受影响。
+ * ══════════════════════════════════════════════════════════════ */
+.m-only{display:none}
+
+@media(max-width:760px){
+  .m-only{display:block}
+  button.m-only{display:inline-flex}
+  :root{--top:50px;--rail:56px;--ch:min(86vw,330px)}
+
+  /* 骨架：底栏高度随内容自适应，进频道后顶栏让位给吸顶频道条 */
+  .app{grid-template-rows:var(--top) minmax(0,1fr) auto}
+  .app.room-open{grid-template-rows:0 minmax(0,1fr) auto}
+  /* ⚠ 这里不能写 display:none：顶栏一旦退出网格流，v-layout 就会顶到第 1 行
+     （0px），底栏被撑成整个 1fr 行 —— 手机端底栏占满全屏就是这么来的。
+     保留 flex + 高度 0 + overflow:hidden，行高已经是 0，视觉上一样是收起。 */
+  .app.room-open .v-topbar{
+    display:flex;height:0;min-height:0;padding:0;border:0;
+    overflow:hidden;opacity:0;pointer-events:none;
+  }
+  .app.drawer-open .userbar{display:none}
+
+  /* ── 顶栏 ── */
+  .v-topbar{position:relative;padding:0 8px;gap:6px;border-bottom:1px solid var(--line);background:#111116}
+  .back-home{display:none}
+  .v-title{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);gap:0;pointer-events:none}
+  .v-logo{font-size:15px;font-weight:600;letter-spacing:.12em}
+  .v-sub{display:none}
+  #btn-theme{display:none}
+  .v-top-actions{margin-left:0;width:100%;justify-content:space-between}
+  #btn-menu{order:-1}
+  .icon-btn{width:36px;height:36px;border-radius:10px;background:transparent;border-color:transparent}
+  .env-badge{position:absolute;right:76px;top:16px;font-size:10px}
+
+  /* ── 左栏：圆形服务器图标 ── */
+  .rail{width:var(--rail);padding:10px 0;gap:14px;background:#0d0d12;border-right:1px solid rgba(255,255,255,.05)}
+  .rail-btn{
+    width:42px;height:42px;border:0;border-radius:15px;background:#22222a;
+    color:var(--muted);font-size:13px;font-weight:600;
+  }
+  .rail-btn svg{width:20px;height:20px}
+  .rail-btn.active{
+    color:#fff;background:linear-gradient(150deg,#ff2d4a,#8d1a30);
+    box-shadow:0 0 0 2px #0d0d12,0 0 0 4px rgba(255,45,74,.75);
+  }
+  .rail-add{background:rgba(255,255,255,.04);border:1px dashed var(--line2);font-size:22px}
+  .rail-sep{flex:1}
+
+  /* ── 频道抽屉：整屏高度，覆盖底栏 ── */
+  .channels,.members{
+    position:fixed;top:0;bottom:0;left:var(--rail);right:auto;
+    width:var(--ch);z-index:60;transform:translateX(-115%);
+    background:#14141a;border-right:1px solid var(--line2);
+    box-shadow:16px 0 48px rgba(0,0,0,.5);overflow-y:auto;
+  }
+  .members{left:auto;right:0;transform:translateX(115%);border-left:1px solid var(--line2);border-right:0;box-shadow:-16px 0 48px rgba(0,0,0,.5)}
+  .v-layout.drawer-channels .channels{transform:none}
+  .v-layout.drawer-members .members{transform:none}
+  .panel-head{display:none}
+  .panel-foot{font-size:10.5px;padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
+
+  /* banner 卡 */
+  .ch-banner{
+    position:relative;display:flex;align-items:flex-end;height:128px;margin:12px 10px 0;
+    padding:12px;border-radius:18px;overflow:hidden;
+    background:linear-gradient(155deg,#42121f 0%,#241528 52%,#0f0f16 100%);
+    border:1px solid rgba(255,255,255,.08);
+  }
+  .ch-banner-art{
+    position:absolute;inset:0;pointer-events:none;
+    background:
+      radial-gradient(120px 90px at 82% 16%,rgba(255,45,74,.45),transparent 70%),
+      radial-gradient(140px 110px at 14% 92%,rgba(63,214,63,.16),transparent 72%);
+  }
+  .ch-banner-art span{position:absolute;height:3px;border-radius:2px;background:rgba(255,255,255,.22)}
+  .ch-banner-art span:nth-child(1){left:18px;top:22px;width:44px}
+  .ch-banner-art span:nth-child(2){left:18px;top:32px;width:24px;opacity:.6}
+  .ch-banner-art span:nth-child(3){left:18px;top:42px;width:12px;opacity:.35}
+  .ch-banner-body{position:relative;z-index:1;display:grid;grid-template-columns:44px 1fr;gap:2px 10px;align-items:center;width:100%;min-width:0}
+  .ch-banner-body::before{
+    content:"Z";grid-row:span 2;display:grid;place-items:center;width:44px;height:44px;
+    border-radius:14px;border:2px solid rgba(255,255,255,.16);
+    background:linear-gradient(140deg,#ff2d4a,#7a1830);color:#fff;font-weight:700;font-size:17px;
+  }
+  .ch-banner-body strong{font-size:14.5px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ch-banner-body small{font-size:11px;color:rgba(255,255,255,.62)}
+  .ch-banner-more{
+    position:absolute;right:10px;top:10px;z-index:2;width:30px;height:30px;border:0;border-radius:50%;
+    background:rgba(0,0,0,.42);color:#fff;font-size:16px;line-height:1;
+  }
+  .btn-invite{
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    width:calc(100% - 20px);margin:10px;padding:11px;border-radius:12px;
+    border:1px solid rgba(255,255,255,.1);background:#2b2b34;color:var(--text);
+    font-size:13.5px;font-weight:500;
+  }
+  .btn-invite svg{width:17px;height:17px}
+  .btn-invite:active{background:#353540}
+
+  /* 分组 + 频道行 */
+  .group-head{padding:10px 14px 4px;font-size:11.5px;color:var(--dim);letter-spacing:.04em}
+  .group-head::before{content:"▾";margin-right:6px;font-size:9px;opacity:.7}
+  .mini-add{width:26px;height:26px;border-radius:8px}
+  .channel-list{padding:0 8px 8px;flex:none;overflow:visible}
+  .channel-item{margin-bottom:1px}
+  .channel-row{min-height:46px;padding:10px 10px;gap:10px;border-radius:10px}
+  .ch-icon{width:22px;height:22px;color:var(--muted)}
+  .ch-icon svg{width:18px;height:18px}
+  .ch-name{font-size:14px;color:#dcdce6}
+  .ch-n{font-size:12px;color:var(--dim);flex:none}
+  .channel-row .badge{display:none}
+  .channel-row .badge.offline{display:inline-block;font-size:10px;padding:0 5px}
+  .channel-row.active{background:rgba(255,45,74,.12);border-color:transparent}
+  .channel-row.active .ch-name{font-weight:600}
+  .ch-members{padding-left:34px}
+  .ch-members li{font-size:12.5px;padding:3px 4px}
+
+  /* ── 频道内 ── */
+  .stage{overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .room{padding:0 12px 18px;min-height:100%}
+  .room-head{
+    position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:8px;flex-wrap:nowrap;
+    margin:0 -12px 12px;padding:8px 10px;
+    background:rgba(12,12,17,.94);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.06);
+  }
+  .room-back{
+    display:grid;place-items:center;width:34px;height:34px;flex:none;
+    border:0;border-radius:10px;background:none;color:var(--text);font-size:20px;line-height:1;
+  }
+  .room-title{flex:1;min-width:0}
+  .room-head h2{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .room-meta{gap:7px;margin-top:1px;font-size:11px;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
+  #room-quality{display:none}
+  /* 后端标签文案太长（云 · Cloudflare Worker），手机上会把人数挤出去 */
+  .room-meta #room-backend{display:none}
+  .room-actions{gap:6px;flex:none}
+  .room-actions .btn-ghost{width:34px;height:34px;padding:0;justify-content:center;border-radius:10px}
+  .room-actions .btn-ghost .lbl{display:none}
+  .room-actions .btn-ghost svg{width:18px;height:18px}
+  .room-actions .icon-btn{width:34px;height:34px;border-radius:10px}
+  .chat-mobile-toggle{display:none}
+  #btn-members-m{display:inline-flex;align-items:center;justify-content:center}
+
+  /* 成员卡：方形大卡。头像居中，名牌压在左下角，状态徽标在右上（对齐截图） */
+  .member-grid{grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px}
+  .member-card{
+    position:relative;flex-direction:column;justify-content:center;align-items:center;
+    aspect-ratio:1/1;padding:14px;
+    border-radius:18px;background:#1c1c23;border:1px solid rgba(255,255,255,.06);
+  }
+  .member-card:hover{transform:none}
+  .member-card .avatar{width:74px;height:74px;font-size:26px}
+  .member-card .m-body{
+    position:absolute;left:10px;right:10px;bottom:10px;
+    align-items:flex-start;gap:0;width:auto;
+  }
+  .member-card .name{
+    display:inline-block;max-width:100%;font-size:12px;padding:3px 10px;border-radius:9px;
+    background:rgba(0,0,0,.55);color:#fff;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .member-card .tags{display:none}
+  .member-card .m-flags{
+    position:absolute;right:8px;top:8px;flex-direction:column;align-items:flex-end;gap:4px;
+  }
+  .member-card .m-flags .muted-icon,.member-card .m-flags .badge{font-size:9.5px;padding:1px 6px;background:rgba(0,0,0,.5);border-radius:6px}
+  .welcome{padding:22px 16px 40px}
+  .welcome h2{font-size:22px}
+  .screen-main{border-radius:14px;aspect-ratio:4/3}
+  /* 占位文案要往上让出工具条的位置，否则会跟「全屏/画中画/音量」叠在一起 */
+  .screen-main .screen-placeholder{padding:20px 16px 92px}
+  .screen-tools{left:8px;right:8px;bottom:8px;gap:6px}
+  .screen-strip{scrollbar-width:none}
+  .screen-strip::-webkit-scrollbar{height:0}
+  .chip{font-size:10.5px;padding:4px 8px}
+  .chip.stat{display:none}
+
+  /* ── 聊天：全屏上滑面板 ── */
+  .chat-panel{
+    position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;
+    margin:0;border:0;border-radius:0;background:var(--bg);max-height:none;overflow:hidden;
+  }
+  .chat-panel.collapsed{display:none}
+  .chat-panel.chat-drawer-open{display:flex}
+  .chat-grab{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:38px;height:4px;border-radius:3px;background:rgba(255,255,255,.22);z-index:2}
+  .chat-head{
+    position:relative;display:flex;align-items:center; justify-content:center;
+    padding:20px 52px 12px;border-bottom:1px solid rgba(255,255,255,.06);background:var(--bg);
+  }
+  .chat-head strong{flex:0 0 auto;font-size:15px;font-weight:600;text-align:center}
+  .chat-head #chat-unread{margin-left:6px}
+  /* 这条必须比 `.chat-panel.chat-drawer-open #btn-chat-toggle` 更具体，
+     否则那条老规则会把「收起」按钮重新显示出来，标题被挤到左边 */
+  .chat-panel .chat-head #btn-chat-toggle{display:none}
+  /* 选择器要比 `.chat-head button` 更具体，才能去掉那圈默认边框 */
+  .chat-panel .chat-close{
+    position:absolute;left:8px;top:14px;width:36px;height:36px;
+    border:0;border-radius:50%;background:none;color:var(--text);font-size:18px;line-height:1;
+  }
+  .chat-empty{margin:auto;padding:40px 20px;text-align:center;font-size:12.5px;color:var(--dim)}
+  .chat-body{flex:1;display:flex;flex-direction:column;min-height:0}
+  .chat-messages{
+    flex:1;height:auto;min-height:0;padding:12px 12px 8px;gap:14px;
+    background:var(--bg);overflow-y:auto;
+  }
+  .chat-message{max-width:86%;gap:9px}
+  .chat-avatar{width:34px;height:34px;font-size:12px}
+  .chat-content{padding:8px 11px;border-radius:14px;background:#22222a;border:1px solid rgba(255,255,255,.05)}
+  .chat-message.own{align-self:flex-end;flex-direction:row-reverse}
+  .chat-message.own .chat-content{background:linear-gradient(160deg,#ff3a55,#b41d33);border-color:transparent}
+  .chat-message.own .chat-content p,.chat-message.own .chat-meta,.chat-message.own .chat-meta time{color:#fff}
+  .chat-message.own .chat-meta strong{color:rgba(255,255,255,.85)}
+  .chat-meta{font-size:10.5px;gap:6px}
+  .chat-content p{font-size:13px;line-height:1.55}
+  .chat-form{
+    align-items:center;gap:8px;padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+    border-top:1px solid rgba(255,255,255,.06);background:var(--bg);
+  }
+  .chat-form textarea{
+    height:40px;min-height:40px;max-height:96px;padding:10px 14px;border-radius:20px;resize:none;
+    background:#1c1c22;border:1px solid rgba(255,255,255,.08);font-size:13.5px;line-height:20px;
+    overflow-y:auto;scrollbar-width:none;
+  }
+  .chat-form textarea::-webkit-scrollbar{width:0;height:0}
+  .chat-compose{gap:0}
+  .chat-compose small{display:none}
+  .chat-compose .btn-primary{width:auto;padding:9px 14px;border-radius:18px;font-size:12.5px}
+  .chat-new{right:12px;bottom:76px}
+
+  /* ── 底栏：消息胶囊 + 圆形按钮组 ── */
+  .userbar{
+    flex-wrap:wrap;gap:0;padding:8px 12px calc(10px + env(safe-area-inset-bottom));
+    border-top:1px solid rgba(255,255,255,.06);background:#111116;
+  }
+  .me{display:none}
+  .m-msg-pill{
+    display:flex;align-items:center;gap:9px;width:100%;height:40px;margin-bottom:12px;
+    padding:0 16px;border:1px solid rgba(255,255,255,.08);border-radius:20px;
+    background:#1c1c23;color:var(--muted);font-size:12.5px;text-align:left;
+  }
+  .m-msg-pill svg{width:16px;height:16px;flex:none}
+  .m-msg-pill span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .controls{width:100%;margin-left:0;justify-content:space-around;gap:12px}
+  .ctl{
+    position:relative;width:52px;height:52px;flex:none;border:0;border-radius:50%;
+    background:#24242b;color:var(--text);margin-bottom:16px;
+  }
+  .ctl:active{background:#2f2f38}
+  .ctl svg{width:22px;height:22px}
+  .ctl::after{
+    content:attr(data-label);position:absolute;left:50%;bottom:-17px;transform:translateX(-50%);
+    font-size:10.5px;color:var(--muted);white-space:nowrap;pointer-events:none;
+  }
+  .ctl.off{background:rgba(255,45,74,.18);color:#ff8a9b;border:0}
+  .ctl-sep{display:none}
+  .call-info{display:contents}
+  .call-info[hidden]{display:none}
+  .conn,.rtt{display:none}
+  .hangup{
+    position:relative;display:grid;place-items:center;width:52px;height:52px;flex:none;
+    padding:0;border:0;border-radius:50%;background:var(--red);color:#fff;margin-bottom:16px;
+  }
+  .hangup svg{display:block;width:22px;height:22px}
+  .hangup .lbl{
+    position:absolute;left:50%;bottom:-17px;transform:translateX(-50%);
+    font-size:10.5px;color:var(--muted);white-space:nowrap;
+  }
+
+  /* ── 弹窗 / toast ── */
+  .dlg{width:calc(100vw - 20px);max-height:88vh;padding:18px;border-radius:16px}
+  .dlg-settings{width:calc(100vw - 16px);padding:14px}
+  .toast{left:12px;right:12px;bottom:136px;transform:none;text-align:center}
+  .auth-view{padding:20px 14px}
+  .auth-card{padding:18px;border-radius:16px}
+}
+
+/* 聊天日期分隔线（移动端与桌面共用，纯展示） */
+.chat-day{
+  align-self:center;margin:4px 0 2px;padding:3px 10px;border-radius:8px;
+  background:rgba(255,255,255,.05);font-size:10.5px;color:var(--muted);
+}
+
+/* 消息胶囊上的未读角标 */
+.m-msg-pill .pill-unread{
+  flex:none;min-width:18px;height:18px;padding:0 5px;border-radius:9px;
+  background:var(--red);color:#fff;font-size:10.5px;line-height:18px;text-align:center;
+}
+.m-msg-pill .pill-unread[hidden]{display:none}

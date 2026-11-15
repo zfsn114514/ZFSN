@@ -234,6 +234,12 @@
   function renderChannels() {
     var list = visibleChannels();
     $("#channel-count").textContent = String(list.length);
+    /* 手机端 banner 卡：在线总人数 / 频道总数 */
+    var onlineAll = 0;
+    state.channels.forEach(function (c) { onlineAll += Number(c.online) || 0; });
+    var bo = $("#banner-online"), bc = $("#banner-channels");
+    if (bo) bo.textContent = String(onlineAll);
+    if (bc) bc.textContent = String(state.channels.length);
     var html = "";
     list.forEach(function (ch) {
       var active = state.current === ch.id;
@@ -292,6 +298,13 @@
   function renderRoom() {
     var ch = channelById(state.current);
     if (!ch) return;
+    /* 手机端：进频道后顶栏让位给吸顶频道条 */
+    var appEl = $("#app-view");
+    if (appEl) appEl.classList.add("room-open");
+    var input = $("#chat-input");
+    if (input) input.placeholder = "发送给 " + ch.name;
+    var pillText = $("#msg-pill-text");
+    if (pillText) pillText.textContent = "发送消息给 " + ch.name;
     $("#room-name").textContent = ch.name;
     $("#room-backend").textContent = ch.offline ? "离线" : (ch.backend === "cloudflare" ? "云 · Cloudflare Worker" : "自建 · LiveKit");
     $("#room-backend").className = "badge " + (ch.offline ? "offline" : (ch.backend === "cloudflare" ? "cloud" : "self"));
@@ -348,26 +361,53 @@
     $("#btn-stop-watch").textContent = state.watching ? "不观看" : "重新观看";
   }
 
+  /** 日期分隔文案：今天 / 昨天 / M月D日（跨年份再带年份） */
+  function dayLabel(ts) {
+    var d = new Date(ts), now = new Date();
+    var same = function (a, b) {
+      return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    };
+    if (same(d, now)) return "今天";
+    var y = new Date(now.getTime() - 86400000);
+    if (same(d, y)) return "昨天";
+    return (d.getFullYear() === now.getFullYear() ? "" : d.getFullYear() + "年") + (d.getMonth() + 1) + "月" + d.getDate() + "日";
+  }
+
   function renderChat() {
-    var list = $("#chat-messages"), html = "";
+    var list = $("#chat-messages"), html = "", lastDay = "";
     state.chatMessages.forEach(function (m) {
       var own = m.memberId === me().id;
-      var time = new Date(Number(m.ts) || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      var ts = Number(m.ts) || Date.now();
+      var day = new Date(ts).toDateString();
+      if (day !== lastDay) {
+        lastDay = day;
+        html += '<div class="chat-day">' + esc(dayLabel(ts)) + "</div>";
+      }
+      var time = new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       html += '<article class="chat-message' + (own ? " own" : "") + '">' +
         avatarHTML({ name: m.name, color: m.color, avatarUrl: m.avatarUrl }, "chat-avatar") +
         '<div class="chat-content"><div class="chat-meta"><strong>' + esc(m.name) + "</strong><time>" + esc(time) +
         '</time></div><p></p></div></article>';
     });
-    list.innerHTML = html;
+    list.innerHTML = html || '<p class="chat-empty">还没有消息，打个招呼吧</p>';
     var texts = list.querySelectorAll(".chat-content p");
     state.chatMessages.forEach(function (m, i) { if (texts[i]) texts[i].textContent = m.text; });
     $("#chat-unread").hidden = state.chatUnread < 1 || state.chatOpen;
     $("#chat-unread").textContent = state.chatUnread ? String(state.chatUnread) : "";
     $("#chat-mobile-unread").hidden = state.chatUnread < 1;
     $("#chat-mobile-unread").textContent = state.chatUnread ? String(state.chatUnread) : "";
+    var pu = $("#msg-pill-unread");
+    if (pu) {
+      pu.hidden = state.chatUnread < 1;
+      pu.textContent = state.chatUnread ? String(state.chatUnread) : "";
+    }
     $("#chat-panel").classList.toggle("collapsed", !state.chatOpen);
     $("#btn-chat-toggle").textContent = state.chatOpen ? "收起" : "展开";
     $("#btn-chat-toggle").setAttribute("aria-expanded", String(state.chatOpen));
+    /* 手机端全屏聊天面板的显隐完全由 chat-drawer-open 控制 */
+    if (window.matchMedia("(max-width:760px)").matches) {
+      $("#chat-panel").classList.toggle("chat-drawer-open", state.chatOpen);
+    }
   }
   function renderUserbar() {
     var m = me();
@@ -396,10 +436,15 @@
 
   function renderAll() {
     renderChannels(); renderMemberList(); renderRoom(); renderChat(); renderUserbar();
+    /* 手机端：进频道后隐藏顶栏（吸顶频道条接手），离开展示回来 */
+    var appEl = $("#app-view");
+    if (appEl) appEl.classList.toggle("room-open", !!state.current);
     $("#v-layout").classList.toggle("no-members", state.membersCollapsed);
     $("#v-layout").classList.toggle("drawer-channels", state.drawer === "channels");
     $("#v-layout").classList.toggle("drawer-members", state.drawer === "members");
     $("#btn-menu").setAttribute("aria-expanded", String(state.drawer === "channels"));
+    /* 手机端抽屉铺满左侧时，底栏那半截露出来很难看，打标记让 CSS 收掉 */
+    if (appEl) appEl.classList.toggle("drawer-open", !!state.drawer);
   }
 
   /* ── 视图切换 ──────────────────────────────────────────────── */
@@ -805,6 +850,7 @@
   /* ── 预览模式（仅布局验收） ───────────────────────────────── */
   function previewJoin(id) {
     state.current = id;
+    state.drawer = "";
     state.expanded[id] = true;
     $("#welcome").hidden = true;
     $("#room").hidden = false;
@@ -998,6 +1044,11 @@
 
   /* ── 应用内交互 ────────────────────────────────────────────── */
   function bindApp() {
+    /* 手机端输入框改成单行高（rows=2 会在 40px 高度里挤出滚动条） */
+    if (window.matchMedia("(max-width:760px)").matches) {
+      var ci = $("#chat-input");
+      if (ci) ci.rows = 1;
+    }
     $("#screen-video").addEventListener("loadedmetadata", function () { renderRoom(); });
     $("#screen-video").addEventListener("playing", function () { renderRoom(); });
     $("#btn-theme").addEventListener("click", function () {
@@ -1074,8 +1125,19 @@
       if (state.chatOpen) state.chatUnread = 0;
       renderChat();
     }
+    /* 同一个按钮只绑一次：2026-11-15 之前 #btn-chat-toggle 绑了两遍，
+       两次 toggle 互相抵消，手机端点「聊天」永远打不开面板。 */
     $("#btn-chat-toggle").addEventListener("click", toggleChat);
     $("#btn-chat-mobile").addEventListener("click", toggleChat);
+    var pill = $("#btn-msg-pill");
+    if (pill) pill.addEventListener("click", function () {
+      if (state.current) { state.chatOpen = true; state.chatUnread = 0; renderChat(); }
+      else { state.drawer = "channels"; renderAll(); toast("先选一个频道再聊天"); }
+    });
+    var chatClose = $("#btn-chat-close");
+    if (chatClose) chatClose.addEventListener("click", function () {
+      state.chatOpen = false; renderChat();
+    });
     $("#btn-hangup").addEventListener("click", function () { leaveChannel(false); });
     $("#btn-mic").addEventListener("click", function () {
       state.mic = !state.mic;
@@ -1089,17 +1151,6 @@
       renderUserbar(); renderMemberList();
     });
 
-    $("#btn-chat-toggle").addEventListener("click", function () {
-      if (window.matchMedia("(max-width:760px)").matches) {
-        state.chatOpen = !state.chatOpen;
-        $("#chat-panel").classList.toggle("chat-drawer-open", state.chatOpen);
-      } else {
-        state.chatOpen = !state.chatOpen;
-        renderChat();
-      }
-      if (state.chatOpen) state.chatUnread = 0;
-      renderChat();
-    });
     $("#btn-members").addEventListener("click", function () {
       if (window.matchMedia("(max-width:760px)").matches) state.drawer = state.drawer === "members" ? "" : "members";
       else {
@@ -1110,6 +1161,32 @@
     });
     $("#btn-menu").addEventListener("click", function () {
       state.drawer = state.drawer === "channels" ? "" : "channels"; renderAll();
+    });
+    /* 手机端吸顶频道条左侧「←」= 打开频道抽屉（等同顶栏菜单按钮） */
+    var backBtn = $("#btn-room-back");
+    if (backBtn) backBtn.addEventListener("click", function () {
+      state.drawer = "channels"; renderAll();
+    });
+    /* 手机端吸顶条上的成员按钮：打开右侧成员抽屉 */
+    var membersM = $("#btn-members-m");
+    if (membersM) membersM.addEventListener("click", function () {
+      state.drawer = state.drawer === "members" ? "" : "members"; renderAll();
+    });
+    /* banner 上的「⋯」与「邀请」 */
+    var bannerMore = $("#btn-banner-more");
+    if (bannerMore) bannerMore.addEventListener("click", function () {
+      state.drawer = ""; renderAll(); openDlg("dlg-settings");
+    });
+    var invite = $("#btn-invite");
+    if (invite) invite.addEventListener("click", async function () {
+      var link = location.origin + "/voice/";
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(link);
+        else throw new Error("no clipboard");
+        toast("邀请链接已复制：" + link);
+      } catch (_) {
+        toast("邀请链接：" + link);
+      }
     });
     $("#voice-main").addEventListener("click", function () {
       if (state.drawer) { state.drawer = ""; renderAll(); }

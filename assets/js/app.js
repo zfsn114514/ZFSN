@@ -7,12 +7,44 @@
  */
 (function(){
   "use strict";
-  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var $  = function(s){ return document.querySelector(s); };
   var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
 
+  /* 数据 JSON 的缓存策略：
+   * 旧写法 `?_=Date.now()` + cache:"no-store" 每次访问都换个新 URL 全量重下，
+   * CDN 和浏览器缓存全部作废（steam_family.json 有 230 KB）。
+   * 改成 cache:"no-cache"：**每次使用前先向服务器校验**（带 ETag/Last-Modified
+   * 的条件请求），数据没变就回 304（几百字节），变了才拉新内容 ——
+   * 新鲜度和原来完全一样，但 URL 稳定、可命中 CDN，重复访问几乎零流量。
+   * （_headers 里这几个 JSON 本来就配了 must-revalidate，语义一致。） */
   function fetchSiteData(file){
-    return fetch(file + "?_=" + Date.now(), { cache: "no-store" });
+    return fetch(file, { cache: "no-cache" });
+  }
+
+  /* 把「首屏不急着要」的重活推迟到浏览器空闲时再做。
+   * Steam/B站/Xbox 三份 JSON 加起来约 370 KB，旧版在脚本一执行就同步
+   * fetch + 解析 + 渲染上千张卡片，正好和首屏绘制、入场动画抢主线程，
+   * 表现为「打开首页头一两秒明显卡」。requestIdleCallback 让浏览器先画完
+   * 首屏、跑完入场动画，再在空闲帧里处理数据；timeout 兜底保证最迟也会执行
+   * （不支持 requestIdleCallback 的老浏览器退化为短延时）。 */
+  function whenIdle(fn, timeout){
+    if ("requestIdleCallback" in window){
+      window.requestIdleCallback(fn, { timeout: timeout || 2000 });
+    } else {
+      setTimeout(fn, 200);
+    }
+  }
+
+  /* ═══ 统一动画调度器 ═══
+   * 旧版有三个各自独立的 requestAnimationFrame 循环（粒子 / 拖尾 / 光晕），
+   * 永久运行：切到后台标签页、关闭动效、甚至弹窗盖住整屏时都还在空转。
+   * 现在合并成**一个**主循环，并在以下情况真正停帧（cancelAnimationFrame）：
+   *   · document.hidden（标签页不可见）
+   *   · 用户 / 系统关闭了动效（data-motion=off 或 prefers-reduced-motion）
+   * 事件（可见性变化、外观设置变化、鼠标移动）负责按需唤醒，避免空转烧 CPU/GPU。 */
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function motionEnabled(){
+    return !reduce && document.documentElement.dataset.motion !== "off";
   }
 
   /* ═══ 粒子网络 ═══ */
@@ -24,28 +56,30 @@
     W = window.innerWidth; H = window.innerHeight;
     cv.width = W * dpr; cv.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    var n = Math.round(Math.min(120, (W * H) / 16000));
+    var n = Math.round(Math.min(110, (W * H) / 18000));
     pts = [];
     for (var i = 0; i < n; i++){
       pts.push({
         x: Math.random() * W, y: Math.random() * H,
         vx: (Math.random() - .5) * .32, vy: (Math.random() - .5) * .32,
-        r: Math.random() * 1.5 + .6
+        r: Math.random() * 1.5 + .6, near: 0
       });
     }
   }
 
   var LINK = 132;
   /* 连线按距离分 3 档批量描边。
-   * 旧写法对**每一对**粒子都单独 beginPath + stroke()，满屏能到上千次绘制调用，
-   * 是 PageSpeed「最大限度地减少主线程工作 6.2 秒 / 强制自动重排」的主因。
-   * 现在每档只 stroke 一次 —— 3 次绘制调用搞定，视觉上只是线的淡层次数变少。 */
+   * 旧写法对**每一档**都完整遍历一遍所有粒子对（O(n²)×3），满屏上千次
+   * 距离计算 + 绘制调用，是 PageSpeed「减少主线程工作 / 强制自动重排」的主因。
+   * 现在**只遍历一遍**粒子对，按距离把线段丢进对应的 Path2D，最后每档 stroke
+   * 一次 —— 距离计算量降到原来的 1/3，绘制调用恒为 3 次。 */
   var TIER = [
-    { lo: 0,   hi: 46,     a: .26 },
-    { lo: 46,  hi: 88,     a: .16 },
-    { lo: 88,  hi: LINK,   a: .08 }
+    { hi: 46,     a: .26 },
+    { hi: 88,     a: .16 },
+    { hi: LINK,   a: .08 }
   ];
-  function draw(){
+  var HI2 = TIER.map(function(t){ return t.hi * t.hi; });
+  function drawParticles(){
     ctx.clearRect(0, 0, W, H);
 
     // ① 只更新位置（顺带做鼠标斥力），不画任何东西
@@ -56,34 +90,36 @@
       if (p.y < 0 || p.y > H) p.vy *= -1;
 
       var dxm = p.x - mouse.x, dym = p.y - mouse.y;
-      var dm = Math.sqrt(dxm * dxm + dym * dym);
-      p.near = dm < 190 ? (1 - dm / 190) : 0;
-      if (dm < 130 && dm > 0.01){
+      var dm2 = dxm * dxm + dym * dym;
+      p.near = dm2 < 36100 ? (1 - Math.sqrt(dm2) / 190) : 0;   // 190² = 36100
+      if (dm2 < 16900 && dm2 > 0.01){                          // 130² = 16900
+        var dm = Math.sqrt(dm2);
         p.x += dxm / dm * .55;
         p.y += dym / dm * .55;
       }
     }
 
-    // ② 连线：每档一次 beginPath + stroke
-    ctx.lineWidth = .6;
-    for (var t = 0; t < TIER.length; t++){
-      var lo2 = TIER[t].lo * TIER[t].lo, hi2 = TIER[t].hi * TIER[t].hi;
-      ctx.beginPath();
-      var any = false;
-      for (var a = 0; a < pts.length; a++){
-        var pa = pts[a];
-        for (var b = a + 1; b < pts.length; b++){
-          var pb = pts[b];
-          var dx = pa.x - pb.x, dy = pa.y - pb.y;
-          var d2 = dx * dx + dy * dy;           // 先比平方，省掉开方
-          if (d2 >= hi2 || d2 <= lo2) continue;
-          ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
-          any = true;
-        }
+    // ② 连线：单遍粒子对，按距离分桶进 3 个 Path2D
+    var paths = [new Path2D(), new Path2D(), new Path2D()];
+    var used = [false, false, false];
+    for (var a = 0; a < pts.length; a++){
+      var pa = pts[a];
+      for (var b = a + 1; b < pts.length; b++){
+        var pb = pts[b];
+        var dx = pa.x - pb.x, dy = pa.y - pb.y;
+        var d2 = dx * dx + dy * dy;
+        if (d2 >= HI2[2]) continue;
+        var tier = d2 < HI2[0] ? 0 : (d2 < HI2[1] ? 1 : 2);
+        paths[tier].moveTo(pa.x, pa.y);
+        paths[tier].lineTo(pb.x, pb.y);
+        used[tier] = true;
       }
-      if (!any) continue;
+    }
+    ctx.lineWidth = .6;
+    for (var t = 0; t < 3; t++){
+      if (!used[t]) continue;
       ctx.strokeStyle = "rgba(150,158,178," + TIER[t].a + ")";
-      ctx.stroke();
+      ctx.stroke(paths[t]);
     }
 
     // ③ 粒子：普通 / 被鼠标点亮 两批，各 fill 一次
@@ -104,17 +140,10 @@
         : "rgba(160,166,186,.5)";
       ctx.fill();
     }
-
-    requestAnimationFrame(draw);
   }
 
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", function(){ resize(); sizeTrail(); });
   resize();
-  if (!reduce) draw();
-  else {
-    ctx.fillStyle = "rgba(160,166,186,.35)";
-    pts.forEach(function(p){ ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832); ctx.fill(); });
-  }
 
   /* ═══ 鼠标拖尾 ═══ */
   var tc = $("#trail"), tctx = tc.getContext("2d");
@@ -127,39 +156,103 @@
     tctx.setTransform(tdpr, 0, 0, tdpr, 0, 0);
   }
   sizeTrail();
-  window.addEventListener("resize", sizeTrail);
 
   var lastX = null, lastY = null;
-  function trailLoop(){
+  function drawTrail(){
     /* 没有拖尾时什么都不画：上一帧已经把画布清干净了，
      * 空转的 clearRect(全屏) 在高分屏上也是实打实的带宽浪费。 */
-    if (tails.length){
-      tctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      if (!reduce){
-        for (var i = tails.length - 1; i >= 0; i--){
-          var t = tails[i];
-          t.life -= .028;
-          if (t.life <= 0){ tails.splice(i, 1); continue; }
-          t.x += t.vx; t.y += t.vy;
-          t.vx *= .95; t.vy *= .95;
-          var rr = t.r * t.life;
-          var g = tctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, rr * 3.4);
-          g.addColorStop(0, "rgba(255,90,115," + (t.life * .5) + ")");
-          g.addColorStop(.45, "rgba(255,45,74," + (t.life * .16) + ")");
-          g.addColorStop(1, "rgba(255,45,74,0)");
-          tctx.fillStyle = g;
-          tctx.beginPath(); tctx.arc(t.x, t.y, rr * 3.4, 0, 6.2832); tctx.fill();
-        }
-      }
+    if (!tails.length) return;
+    tctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    for (var i = tails.length - 1; i >= 0; i--){
+      var t = tails[i];
+      t.life -= .028;
+      if (t.life <= 0){ tails.splice(i, 1); continue; }
+      t.x += t.vx; t.y += t.vy;
+      t.vx *= .95; t.vy *= .95;
+      var rr = t.r * t.life;
+      var g = tctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, rr * 3.4);
+      g.addColorStop(0, "rgba(255,90,115," + (t.life * .5) + ")");
+      g.addColorStop(.45, "rgba(255,45,74," + (t.life * .16) + ")");
+      g.addColorStop(1, "rgba(255,45,74,0)");
+      tctx.fillStyle = g;
+      tctx.beginPath(); tctx.arc(t.x, t.y, rr * 3.4, 0, 6.2832); tctx.fill();
     }
-    requestAnimationFrame(trailLoop);
   }
-  trailLoop();
+
+  /* ═══ 光标光晕 ═══ */
+  var glow = $("#glow");
+  var gx = window.innerWidth / 2, gy = window.innerHeight / 2, tX = gx, tY = gy;
+  /* 位置用 transform 而不是 left/top：后者每帧改动都会触发布局 + 重绘，
+   * 鼠标一动就是一次强制重排（PageSpeed 明确点了这条）。transform 走合成器。
+   * 居中由 CSS 的 margin:-310px 0 0 -310px 负责（620px 直径的一半），
+   * 这里只管鼠标坐标的位移，不要在这里再减半径，否则会偏移两次。 */
+  glow.style.transform = "translate3d(" + gx + "px," + gy + "px,0)";
+  function followGlow(){
+    var nx = gx + (tX - gx) * .12, ny = gy + (tY - gy) * .12;
+    if (Math.abs(nx - gx) > .05 || Math.abs(ny - gy) > .05){   // 静止时不再写样式
+      gx = nx; gy = ny;
+      glow.style.transform = "translate3d(" + gx.toFixed(1) + "px," + gy.toFixed(1) + "px,0)";
+    }
+  }
+
+  /* ── 主循环：按需起停 ── */
+  var rafId = 0, looping = false;
+  function overlayOpen(){
+    /* 弹窗 / 大图预览盖住整屏时停帧：它们自带 backdrop-filter 模糊，
+     * 若背后的画布还在动，浏览器就得每帧重新模糊整屏，是弹窗卡顿的主因。
+     * 停帧后画布静止，模糊结果可以被缓存，弹窗立刻顺滑。 */
+    return document.body.classList.contains("locked");
+  }
+  function frame(){
+    rafId = 0;
+    if (!motionEnabled() || document.hidden || overlayOpen()){ looping = false; return; }
+    drawParticles();
+    drawTrail();
+    followGlow();
+    looping = true;
+    rafId = requestAnimationFrame(frame);
+  }
+  function startLoop(){
+    if (looping || !motionEnabled() || document.hidden || overlayOpen()) return;
+    looping = true;
+    rafId = requestAnimationFrame(frame);
+  }
+  function stopLoop(){
+    looping = false;
+    if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }
+  }
+  document.addEventListener("visibilitychange", function(){
+    if (document.hidden) stopLoop(); else startLoop();
+  });
+  /* 弹窗开/关通过 body.locked 类标记 —— 用 MutationObserver 监听它来起停循环 */
+  new MutationObserver(function(){
+    if (overlayOpen()) stopLoop(); else startLoop();
+  }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  /* 外观设置（含动效开关）变化时同步起停；关闭时顺手清掉画布残留帧。 */
+  document.addEventListener("zfsn:appearance", function(){
+    if (motionEnabled()) startLoop();
+    else {
+      stopLoop();
+      ctx.clearRect(0, 0, W, H);
+      tctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      tails.length = 0;
+    }
+  });
+
+  if (motionEnabled()){
+    startLoop();
+  } else {
+    /* 关闭动效：画布只画一帧静态粒子（CSS 随后会把画布隐藏），不再起循环。 */
+    ctx.fillStyle = "rgba(160,166,186,.35)";
+    pts.forEach(function(p){ ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832); ctx.fill(); });
+  }
 
   /* ═══ 指针事件 ═══ */
   function pointerMove(x, y){
     mouse.x = x; mouse.y = y;
-    if (reduce) return;
+    tX = x; tY = y;
+    if (!motionEnabled()) return;
+    startLoop();   // 鼠标动了就唤醒主循环（可能因后台/关动效停着）
     if (lastX === null){ lastX = x; lastY = y; }
     var dx = x - lastX, dy = y - lastY;
     var dist = Math.sqrt(dx * dx + dy * dy);
@@ -183,24 +276,6 @@
   window.addEventListener("touchmove", function(e){
     if (e.touches[0]) pointerMove(e.touches[0].clientX, e.touches[0].clientY);
   }, { passive: true });
-
-  /* ═══ 光标光晕 ═══ */
-  var glow = $("#glow");
-  var gx = window.innerWidth / 2, gy = window.innerHeight / 2, tX = gx, tY = gy;
-  window.addEventListener("mousemove", function(e){ tX = e.clientX; tY = e.clientY; });
-  /* 位置用 transform 而不是 left/top：后者每帧改动都会触发布局 + 重绘，
-   * 鼠标一动就是一次强制重排（PageSpeed 明确点了这条）。transform 走合成器。
-   * 居中由 CSS 的 margin:-310px 0 0 -310px 负责（620px 直径的一半），
-   * 这里只管鼠标坐标的位移，不要在这里再减半径，否则会偏移两次。 */
-  glow.style.transform = "translate3d(" + gx + "px," + gy + "px,0)";
-  (function follow(){
-    var nx = gx + (tX - gx) * .12, ny = gy + (tY - gy) * .12;
-    if (Math.abs(nx - gx) > .05 || Math.abs(ny - gy) > .05){   // 静止时不再写样式
-      gx = nx; gy = ny;
-      glow.style.transform = "translate3d(" + gx.toFixed(1) + "px," + gy.toFixed(1) + "px,0)";
-    }
-    requestAnimationFrame(follow);
-  })();
 
   /* ═══ 卡片聚光 + 3D 倾斜 ═══
    * getBoundingClientRect() 是强制布局的经典触发点：在 mousemove 里读它，
@@ -335,6 +410,9 @@
     //   页面一旦可见，测量才有意义，所以切页时再判一次。
     //   markClamped 幂等（__clampChecked），重复调用无害。
     if (key === "guest" && window.__zfsnRemarkClamped) window.__zfsnRemarkClamped();
+    // 留言数据平时推迟到空闲帧加载；若用户提前进了留言页，立刻补拉一次，
+    // 不让骨架屏干等。msgRequested 防止与空闲加载重复请求。
+    if (key === "guest" && !msgRequested) loadMessages();
     countView(key);
   }
 
@@ -1887,7 +1965,9 @@
     return loadSteamDataPending;
   }
 
-  loadSteamData();
+  /* 首屏只先画首页；三份游戏/视频数据推迟到空闲帧再拉取与渲染，
+   * 避免和首屏绘制抢主线程。首页概览卡会在数据就绪后自动填上。 */
+  whenIdle(loadSteamData, 2500);
 
   /* ═══ B站数据 ═══
      数据结构（由 tools/build_bili.py 生成）：
@@ -2114,7 +2194,7 @@
     return loadBiliDataPending;
   }
 
-  loadBiliData();
+  whenIdle(loadBiliData, 2500);
 
   /* ═══ Xbox 数据 ═══ */
   var xgrid = $("#xgrid"), xcount = $("#xbox-count");
@@ -2214,7 +2294,7 @@
     return loadXboxDataPending;
   }
 
-  loadXboxData();
+  whenIdle(loadXboxData, 2500);
 
   function addDataRefresh(label, loader){
     if (!label) return;
@@ -2737,7 +2817,9 @@
     return lines.join("<br>");
   }
 
+  var msgRequested = false;
   function loadMessages(){
+    msgRequested = true;
     api("/api/messages").then(function(d){
       renderMessages(d.items);
       if (gcount) gcount.textContent = d.count;
@@ -2767,6 +2849,8 @@
     gmerr.textContent = "";
     gmask.classList.add("on");
     document.body.classList.add("locked");
+    // 「我的位置」平时推迟加载；弹窗打开时若还没结果就立刻补拉
+    if (!myGeo) loadMyGeo();
     // Turnstile：首次打开弹窗才拉取 sitekey + 渲染 widget（未配置则零开销）
     tsPrepare();
     // 重置附件：之前留的图、录音；避免上次写一半的内容混进来
@@ -3036,8 +3120,10 @@
 
   /* 页面打开就预探测后端，这样点「写留言」时已经就绪 */
   detectAPI();
-  loadMessages();
-  loadMyGeo();
+  /* 留言板列表与「我的位置」都只在留言页/写留言弹窗里用到，首屏不需要，
+   * 推迟到空闲帧再拉，避免和首屏抢主线程与网络。 */
+  whenIdle(loadMessages, 3000);
+  whenIdle(loadMyGeo, 3000);
 
   /* 首次进入也计一次 —— 页面刚打开时不会触发 setActive（没有页面切换），
      只靠 setActive 里的上报会漏掉「直接打开首页/直接打开分享的作品链接」

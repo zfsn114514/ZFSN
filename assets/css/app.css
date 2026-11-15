@@ -340,9 +340,13 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,[contenteditable
 .card{
   position:relative;display:flex;align-items:center;gap:14px;
   padding:17px 26px;border-radius:var(--r);
-  background:var(--surface);border:1px solid var(--line);
+  /* ★ 性能：去掉了 backdrop-filter:blur(10px)。
+     卡片正好压在持续动画的粒子画布上，实时模糊会让浏览器**每帧**把这 6 块
+     区域重新模糊一遍，是首页 GPU 占用与掉帧的最大来源。改用半透明实底，
+     观感几乎一致（背景粒子本就很淡），却完全省掉逐帧模糊。
+     各主题自带不透明卡片底色，不受影响。 */
+  background:rgba(13,13,20,.72);border:1px solid var(--line);
   color:var(--text);text-decoration:none;overflow:hidden;
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   transition:transform .35s var(--ease),border-color .35s,box-shadow .35s;
   min-width:206px;
   /* 3D 倾斜。perspective 写在卡片自己身上（不是父容器）——
