@@ -1,153 +1,158 @@
-# 自建 LiveKit SFU 部署包（可选高级模式 · 中文说明）
+# ZF语音 · 本机语音媒体后端（中文说明）
 
-> **默认不需要看这份文档。**
-> ZF语音的生产后端**全部在 Cloudflare Worker 里**，你的电脑只是浏览器客户端，
-> 用来「添加私有频道」。私有频道是 D1 里的一条记录，媒体仍走 Cloudflare SFU。
->
-> 只有当你明确想把媒体服务器放到自己电脑上时才用这个部署包。
-> 使用前还需要在管理后台打开「允许普通用户添加自建 SFU 频道」。
-
----
-
-## 1. 文件说明
-
-| 文件 | 作用 |
-|---|---|
-| `livekit.example.yaml` | 配置模板，含端口、UDP 范围、房间上限、API Key / Secret 占位 |
-| `start.bat` | 双击启动（CMD） |
-| `start.ps1` | PowerShell 启动，可用 `-Config` / `-Binary` 覆盖 |
-| `.env.example` | 复制成 `.env`，只用来指定 `livekit-server.exe` 的路径 |
-| `README.md` | 本说明 |
-
-`livekit.yaml` 与 `.env` 含真实密钥，已被 `.gitignore` 排除，**不要提交**。
-这两个脚本刻意只写 ASCII 字符，避免 Windows 批处理 / PowerShell 5.1 的中文编码乱码。
+> **职责边界（按你的要求固定下来）**
+> 你的电脑**只负责语音频道和屏幕共享的媒体转发**（LiveKit SFU）。
+> 网页上的账号、登录、邀请码、频道列表、私有频道、房间信令和审计日志，
+> **依旧全部以 Cloudflare Worker 为后端**，本机不保存也不接触任何用户数据。
+> Worker 签发短期令牌，浏览器拿令牌直连你电脑上的媒体服务。
 
 ---
 
-## 2. 安装 LiveKit Server（Windows）
+## 1. 三步跑起来
 
-1. 到 LiveKit 官方发布页下载 Windows 版 `livekit-server.exe`
-   （<https://github.com/livekit/livekit/releases>），放到本目录，
-   或把绝对路径写进 `.env` 的 `LIVEKIT_BIN`。
-2. 生成一对 API Key / Secret（只含字母数字，长度建议 ≥ 32）：
+### 第 1 步：双击 `tools/livekit/start.bat`
 
-   ```powershell
-   node -e "const c=require('crypto');console.log('KEY='+c.randomBytes(12).toString('hex'));console.log('SECRET='+c.randomBytes(32).toString('base64url'))"
-   ```
+第一次启动会自动完成（需要联网，约 72 MB，只下一次）：
 
-3. 复制模板并替换占位：
+- 从 LiveKit 官方 GitHub Release 下载 `livekit-server.exe`
+- 从 Cloudflare 官方 Release 下载 `cloudflared.exe`
+- 随机生成一对 API Key / Secret，写出 `livekit.yaml`
+- 启动 LiveKit，监听本机 `7880`
+- 启动 Cloudflare Tunnel，自动拿到一个可信的 `https://xxx.trycloudflare.com` 域名
 
-   ```powershell
-   Copy-Item livekit.example.yaml livekit.yaml
-   # 把 keys: 下的 REPLACE_WITH_API_KEY / REPLACE_WITH_API_SECRET 换成第 2 步的值
-   ```
+窗口里会打印出**后台该填的值**和**要注入 Worker 的两个密钥**。
+**这个窗口不要关**，关掉或按 `Ctrl+C` 会同时停掉媒体服务和隧道。
 
-4. 启动：
-
-   ```powershell
-   .\start.bat
-   # 或
-   powershell -ExecutionPolicy Bypass -File .\start.ps1
-   ```
-
-5. 本机自检：浏览器打开 `http://127.0.0.1:7880`，能看到 LiveKit 的响应即正常。
-
-> LiveKit 单节点不需要 Redis；模板里 Redis 段是注释掉的。
-> 房间上限设了 20 人，与 ZF语音的设计容量一致。
-
----
-
-## 3. 让 HTTPS 页面能连上：三种方案
-
-ZF语音页面是 HTTPS。浏览器会**直接拦截 `ws://` 明文连接**（混合内容），
-而纯 IP 地址基本申请不到受信任的 TLS 证书。所以添加频道时填 `ws://192.168.x.x:7880`
-会被前端和 Worker 双重拒绝，并给出中文指引。
-
-### 方案 A：Cloudflare Tunnel（推荐）
-
-不用公网 IP、不用路由器端口转发、证书由 Cloudflare 托管。
+自检随时可跑：
 
 ```powershell
-# 1) 安装 cloudflared 并登录
-cloudflared login
-
-# 2) 创建隧道
-cloudflared tunnel create zf-voice
-
-# 3) 写 config.yml（路径按 cloudflared 安装位置调整）
-@'
-tunnel: <TUNNEL-UUID>
-credentials-file: C:\cloudflared\<TUNNEL-UUID>.json
-ingress:
-  - hostname: voice.example.com
-    service: http://127.0.0.1:7880
-  - service: http_status:404
-'@ | Set-Content -Encoding utf8 C:\cloudflared\config.yml
-
-# 4) 绑定域名并启动
-cloudflared tunnel route dns zf-voice voice.example.com
-cloudflared tunnel --config C:\cloudflared\config.yml run zf-voice
+powershell -ExecutionPolicy Bypass -File .\start.ps1 -Command doctor
 ```
 
-之后在 ZF语音添加频道时填 **域名 `voice.example.com` + 端口 443 + 开启 TLS**，
-实际得到 `wss://voice.example.com`。
-媒体 UDP 走 Cloudflare TURN（Worker 已配 `TURN_KEY_ID` / `TURN_KEY_API_TOKEN`），
-这种情况下可以把 `livekit.yaml` 的 `rtc.use_external_ip` 设为 `false`。
+### 第 2 步：把密钥注入 Cloudflare Worker
 
-### 方案 B：域名 + DDNS + Let's Encrypt
-
-1. 用 DDNS 把 `voice.example.com` 指向家宽公网 IP
-2. 路由器转发 TCP 443 / 7880、UDP 50000–50100
-3. 用反向代理（Caddy / nginx）为 7880 终结 TLS，证书走 Let's Encrypt
-4. Windows 防火墙放行上述端口
-
-### 方案 C：仅本机调试
-
-填 `localhost` 且不勾 TLS，浏览器对 localhost 放行混合内容限制。
-**只适合自己一台机器测试，别人连不上。**
-
----
-
-## 4. 端口与防火墙速查
-
-| 用途 | 协议 / 端口 | 路由器转发 | Windows 防火墙 |
-|---|---|---|---|
-| 信令 / 健康检查 | TCP 7880（TLS 时常 7443 或由 Tunnel 终结） | Tunnel 方案不需要 | 放行 `livekit-server.exe` |
-| TCP 媒体回退 | TCP 7881 | 建议 | 放行 |
-| UDP 媒体 | UDP 50000–50100 | **非 Tunnel 方案必须** | 放行 |
-| TURN / TLS | TCP 443 / 5349 | 视方案 | 放行 |
-| STUN | UDP 3478 | 视方案 | 放行 |
-
-UDP 不通的典型症状：**能进频道、成员列表正常，但互相听不到声音**。
-
----
-
-## 5. Worker 侧配置
-
-浏览器永远拿不到 API Secret；短期 JWT 由 Cloudflare Worker 签发。
+在项目根目录 `D:\ZFSNwebsite` 另开一个终端，用窗口里打印的值：
 
 ```bash
-npx wrangler secret put LIVEKIT_API_KEY       # 与 livekit.yaml 里同一个 Key
-npx wrangler secret put LIVEKIT_API_SECRET    # 与 livekit.yaml 里同一个 Secret
-npx wrangler secret put TURN_KEY_ID           # 建议，媒体中继
-npx wrangler secret put TURN_KEY_API_TOKEN
-npx wrangler deploy
+npx wrangler secret put LIVEKIT_API_KEY
+npx wrangler secret put LIVEKIT_API_SECRET
 ```
 
-JWT 内容：`iss = API Key`、`sub = 用户 id`、`exp = now + 3600`，
-带 `video.roomJoin / canPublish / canSubscribe`，HS256 签名。
+也可以直接复制 `tools/livekit/worker-secrets.txt` 里的两行值。
+**两边必须完全一致**：Worker 用它签 JWT，LiveKit 用同一对密钥验签，
+不一致的表现是「能拿到令牌但连不上服务器（401）」。
+
+### 第 3 步：在后台改那条服务器记录
+
+`/admin/` → 「ZF语音」→「自建 SFU 服务器」面板，把截图里那条
+`ZFSN / wss://zfsnb.dpdns.org:7880 / unknown` 改成窗口打印的值：
+
+| 字段 | 填什么 |
+|---|---|
+| 名称 | `家里电脑`（随意） |
+| 域名 | `xxxx.trycloudflare.com` ← **不要带 `https://`** |
+| 端口 | `443` ← **不是 7880**，Worker 会拼成 `wss://域名:443` |
+| 使用 TLS (wss) | 勾选 |
+
+保存后点「测试连接」，状态应从 `unknown` 变成可达。
+
+> 为什么原来那条不通：LiveKit 自己只提供 `ws://`，**不终止 TLS**；
+> `zfsnb.dpdns.org` 也没有解析到你家宽的公网 IP。Tunnel 把本机 7880
+> 包装成一个带可信证书的 HTTPS/WSS 域名，这一步就解决了。
+>
+> ⚠ 临时隧道域名**每次重启都会变**。重启 `start.bat` 后要回后台把域名改成新的。
+> 想要固定域名，按第 6 节配 Named Tunnel。
 
 ---
 
-## 6. 在 ZF语音里启用
+## 2. 把语音频道切到本机后端
 
-1. `/admin/` → 「ZF语音」→ 系统设置 → 打开「允许普通用户添加自建 SFU 频道」
-2. 「自建服务器」面板添加一条：名称、域名、端口、勾选 TLS
-   （纯 IP + 非 TLS 会被 `checkHost()` 直接拒绝，并给出中文原因）
-3. `/voice` 左栏「+」→ 后端选「自建 SFU」→ 填地址 → 点「测试连接」
-4. 测试连接会由 Worker 发 HTTP 探测并显示延迟；注意它**只能验证 HTTP 端口**，
-   UDP 媒体端口和证书仍需按第 4 节自行确认
-5. 保存后频道带「自建」标识；服务不可达时显示「离线」，**不影响其他 Cloudflare 频道**
+后台「系统设置」里打开「允许普通用户添加自建 SFU 频道」，然后：
+
+1. `/voice` 左栏点「+」→ 后端选「自建 SFU」→ 选刚加的服务器 → 点「测试连接」
+2. 保存后频道带「自建」标识，加入时 Worker 返回 `transport: livekit` +
+   短期令牌，前端 `LiveKitTransport` 连你电脑上的 LiveKit
+3. **不要动现有的 3 个 Cloudflare 频道**：本机没开机时，自建频道会显示「离线」，
+   其它频道照常走 Worker + 浏览器直连降级，互不影响
+
+房间上限 20 人（与站点设计容量一致），单节点 LiveKit 不需要 Redis。
+
+---
+
+## 3. 命令速查
+
+| 命令 | 作用 |
+|---|---|
+| `start.bat` / `.\start.ps1` | 一键启动（= `run`），保持窗口打开 |
+| `.\start.ps1 -Command setup` | 只初始化：生成密钥、配置、下载两个二进制 |
+| `.\start.ps1 -Command doctor` | 自检：二进制 / 端口 / 隧道 / 公网 IP / UDP 限制 |
+| `.\start.ps1 -Command print` | 重新打印后台填写值与 Worker 密钥 |
+| `.\start.ps1 -Command stop` | 停止占用 7880 的媒体服务 |
+
+等价写法：`node tools/livekit/voice-media-server.mjs <setup|run|doctor|print|stop>`
+
+---
+
+## 4. 端口与防火墙
+
+| 用途 | 协议 / 端口 | 说明 |
+|---|---|---|
+| 信令 / 健康检查 | TCP 7880 → Tunnel 443 | `wss` 由 Cloudflare 终结，本机不用证书 |
+| TCP 媒体回退 | TCP 7881 | 外网建议路由器转发 |
+| UDP 媒体 | UDP 50000–50100 | **媒体主要走这里**，见下节 |
+| 房间上限 / 超时 | 20 人 / 空房 300 秒 | `livekit.example.yaml` 里可调 |
+
+Windows 防火墙第一次启动时会询问，放行 `livekit-server.exe` 与 `cloudflared.exe`。
+
+---
+
+## 5. 必须知道的网络限制
+
+**信令一定通，媒体不一定通** —— 这是 WebRTC 的本质，不是程序 bug。
+
+- WebSocket 信令走 Cloudflare Tunnel 的 443，HTTPS 页面不会拦，`wss` 证书由
+  Cloudflare 托管，所以「测试连接」会成功。
+- 语音和屏幕共享的媒体包是 **WebRTC over UDP 50000–50100**（TCP 7881 回退）。
+  Cloudflare Tunnel 只转发 HTTP/WebSocket，**不转发 UDP**。
+- 如果家宽有公网 IPv4：在路由器转发 UDP 50000–50100 + TCP 7881 即可，
+  LiveKit 的 `use_external_ip: true` 会通过 STUN 把公网地址通告给客户端。
+- 如果家宽是运营商大内网（CGNAT，出口 IP 与路由器 WAN 地址不一致）：
+  外网朋友的媒体包到不了这台电脑，典型症状是**能进频道、成员列表正常、
+  互相听不到声音**。可选解法：
+  1. 与朋友用 Tailscale / ZeroTier 组虚拟局域网（最省事）；
+  2. 双方都有公网 IPv6 时，LiveKit 可通过 IPv6 直连；
+  3. 向运营商申请公网 IPv4 后做端口转发。
+- **同一 WiFi / 局域网内不受影响**：可直接用 `ws://<本机IP>:7880` 调试。
+
+后台的「测试连接」只发一次 HTTP 探测，**只能验证信令端口**，
+不能验证 UDP 媒体和证书链；`doctor` 命令会帮你把这些信息一次列全。
+
+---
+
+## 6. 想要固定域名（可选，进阶）
+
+临时 `trycloudflare.com` 域名重启会变。要固定域名，用 Named Tunnel
+（需要你的 Cloudflare 账号里已托管一个域名，例如站点用的 `zfsnnb.dpdns.org`）：
+
+```powershell
+.\cloudflared.exe tunnel login          # 浏览器授权，选域名
+.\cloudflared.exe tunnel create zf-voice
+.\cloudflared.exe tunnel route dns zf-voice voice.zfsnnb.dpdns.org
+```
+
+写 `config.yml`：
+
+```yaml
+tunnel: <TUNNEL-UUID>
+credentials-file: C:\path\to\<TUNNEL-UUID>.json
+ingress:
+  - hostname: voice.zfsnnb.dpdns.org
+    service: http://127.0.0.1:7880
+  - service: http_status:404
+```
+
+启动 `cloudflared.exe tunnel --config config.yml run zf-voice`，
+后台固定填 `voice.zfsnnb.dpdns.org` + 端口 `443` + 勾选 TLS，以后就不用改了。
 
 ---
 
@@ -155,21 +160,34 @@ JWT 内容：`iss = API Key`、`sub = 用户 id`、`exp = now + 3600`，
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 提示「浏览器会拦截 ws:// 连接（混合内容）」 | 填了 `ws://` + 非 localhost | 用方案 A / B 换 wss 域名 |
-| 提示「纯 IP 一般签不到受信任的 TLS 证书」 | 填了 IP 但勾了 TLS | 绑定域名后填域名 |
-| 测试连接超时 | 服务没起 / Tunnel ingress 不对 / 防火墙 | 先本机 `http://127.0.0.1:7880` 自检 |
-| 能进频道听不到声音 | UDP 端口未转发或 TURN 未配 | 转发 UDP 50000–50100 或配置 Cloudflare TURN |
-| 加入时报「未配置自建服务的 API Key / Secret」 | Worker secrets 缺失 | 按第 5 节注入并重新部署 |
-| 后台删除服务器后频道异常 | 频道仍指向已删的 server_id | 代码会自动把频道回落到 `cloudflare` 后端 |
+| 后台状态一直 `unknown` | 没跑 `start.bat`，或域名/端口填错 | 端口必须是 443、域名不带 `https://` |
+| 提示「浏览器会拦截 ws:// 连接」 | 填了非 localhost 的明文地址 | 用 Tunnel 的 wss 域名 |
+| 提示「纯 IP 一般签不到 TLS 证书」 | 填了 IP 又勾了 TLS | 换成 Tunnel 域名 |
+| 加入时报「未配置 API Key / Secret」 | Worker secrets 没注入 | 按第 1 步第 2 节注入并重部署 |
+| 拿到令牌却连不上（401） | 本机与 Worker 的密钥不一致 | `print` 查本机值，重新 `wrangler secret put` |
+| 能进频道、听不到声音 | UDP 媒体不通 | 见第 5 节；先确认两台设备在同一 WiFi 能不能通 |
+| 重启后连不上 | 临时隧道域名变了 | 重新看启动窗口，回后台更新域名 |
+| `测试连接` 成功但仍没声音 | 它只测 HTTP 信令 | 属正常，按第 5 节排查 UDP |
 
 ---
 
-## 8. 安全提醒
+## 8. 文件与安全
 
-- `livekit.yaml`、`.env` 含明文密钥，绝不提交、绝不放到静态资源目录
-- `tools/` 已在 `.assetsignore` 中排除，不会被部署成可下载文件
-- 不要把 LiveKit 的 7880 直接暴露到公网裸奔；优先用 Tunnel 或 TLS 反代
-- 用完记得在后台关掉「允许普通用户添加自建 SFU 频道」，回到默认纯 Cloudflare 架构
+| 文件 | 说明 |
+|---|---|
+| `voice-media-server.mjs` | 主程序：下载 / 生成密钥 / 启动 / 隧道 / 自检，零第三方 npm 依赖 |
+| `start.bat` / `start.ps1` | 一键启动（内容刻意保持 ASCII，避免 Windows 编码乱码） |
+| `livekit.example.yaml` | 配置模板，可改 UDP 范围与房间上限 |
+| `livekit.yaml` | **自动生成的真实配置，含密钥** |
+| `server.json` | 运行时状态（密钥、隧道域名），**含密钥** |
+| `worker-secrets.txt` | 供复制注入 Worker 的密钥，**含密钥** |
+| `livekit-server.exe` / `cloudflared.exe` | 自动下载的官方二进制 |
+
+后四类文件已全部加入 `.gitignore`，`tools/` 也被 `.assetsignore` 排除，
+不会进仓库、不会被部署成可下载文件。**不要把密钥贴到聊天、截图或提交记录里**。
+
+用完不想跑了：关掉窗口即可；后台把频道切回 Cloudflare、关掉
+「允许普通用户添加自建 SFU 频道」，站点就完全回到纯 Cloudflare 架构。
 
 官方参考：<https://docs.livekit.io/home/self-hosting/local/> ·
 <https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/>

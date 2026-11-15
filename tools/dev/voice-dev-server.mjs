@@ -281,7 +281,16 @@ const server = http.createServer(async function (req, res) {
     });
   }
   res.statusCode = response.status;
-  response.headers.forEach(function (v, k) { res.setHeader(k, v); });
+  // Node 的 Headers.forEach 会为每一条 set-cookie 单独回调一次，
+  // 而 res.setHeader 同名覆盖 —— 登录下发的两条 Cookie 就只剩最后一条了。
+  // 这里显式收集成数组一次性写出，保证本地行为与 Workers 运行时一致。
+  const allCookies = typeof response.headers.getSetCookie === "function"
+    ? response.headers.getSetCookie() : null;
+  response.headers.forEach(function (v, k) {
+    if (k === "set-cookie" && allCookies) return;
+    res.setHeader(k, v);
+  });
+  if (allCookies && allCookies.length) res.setHeader("set-cookie", allCookies);
   const buf = Buffer.from(await response.arrayBuffer());
   res.end(req.method === "HEAD" ? undefined : buf);
 });

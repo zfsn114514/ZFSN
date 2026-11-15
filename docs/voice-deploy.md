@@ -446,3 +446,199 @@ ZF语音是**独立目录 + 独立路由 + 独立表**，不影响主站：
 - D1 迁移 — <https://developers.cloudflare.com/d1/wrangler-commands/>
 - Turnstile — <https://developers.cloudflare.com/turnstile/get-started/>
 - LiveKit Server（可选高级模式） — <https://docs.livekit.io/home/self-hosting/local/>
+- 创建 SFU App / TURN Key 的账号 API — <https://developers.cloudflare.com/api/resources/calls/subresources/sfu/methods/create/>
+
+---
+
+## 15. 实际上线记录（2026-11-14，北京时间）
+
+| 项目 | 结果 |
+|---|---|
+| Worker | `zfsn` 已部署，最终版本 `2eb19ec6-7e28-40cc-85cd-7625c644226d`，154.38 KiB / gzip 39.46 KiB |
+| D1 | `zfsn-db` 远程执行 `schema/0003_voice.sql`，共 20 张表；首个管理员 `admin` 已创建 |
+| Durable Object | `env.VOICE_ROOM (VoiceRoomDO)` 绑定生效，`new_sqlite_classes` 迁移 `v1` 已应用 |
+| Secrets | `VOICE_ROOM_SECRET`、`VOICE_CAPTCHA_SECRET` 已注入（明文不落仓库） |
+| 页面 | `/voice`、`/voice/` 200；主站 `/`、`/admin/`、`/api/health`、`/pvz/pvz-portable` 均 200，主站未受影响 |
+| 接口 | `/api/voice/config` 200；线上管理员登录、bootstrap（3 个预置频道）、join 票据签发全部通过 |
+| WebSocket | `wss://www.zfsnnb.dpdns.org/api/voice/room/:id/ws` 返回 **101 Switching Protocols** |
+
+线上验证用的临时验证码挑战与测试会话已删除；`tools/migrate/voice_admin_init.sql`
+（含密码哈希）执行后已删除。
+
+### 15.1 上线时修掉的真实缺陷
+
+`src/index.js` 的 default export 有一层统一 CORS 包装，会把 `worker.fetch` 的结果用
+`new Response(response.body, { status: response.status, ... })` 重建。Cloudflare Workers
+运行时**不允许构造 `status: 101`**（只允许 200~599），于是 Durable Object 的 WebSocket
+升级响应被重建时抛 `RangeError`，客户端拿到 500（`error code: 1101`）。
+
+修复：包装层遇到 101 / 带 `webSocket` 的响应直接原样返回：
+
+```js
+if (response.status === 101 || response.webSocket) return response;
+```
+
+本地 `tools/dev/voice-dev-server.mjs` 用自己的 upgrade handler，不走这层包装，
+所以这个缺陷只有在线上验证时才暴露——**新增 WebSocket 路由后必须做一次线上升级验证**。
+
+### 15.2 仍需账号持有人处理（可选，不影响当前可用）
+
+Cloudflare Realtime（Serverless SFU / TURN）要求先在控制台
+**Activate Cloudflare Realtime** 并绑定支付方式 / 账单信息（基础费 $0/月，按量计费）。
+这一步涉及个人支付信息，只能由账号持有人本人完成。
+
+**未激活不影响当前使用**：`join` 返回 `transport: mesh`，2~3 人语音和屏幕共享走浏览器
+点对点直连；十几人同频道或严格 NAT 环境才真正需要 SFU 转发。
+
+激活后补齐（API 需要带 `Calls Write` 权限的 **API Token**，Wrangler 的 OAuth token
+直接调用 `api.cloudflare.com` 会返回 10000 认证错误，建议用控制台创建）：
+
+1. 控制台 Realtime 创建 SFU App，或 `POST /accounts/{account_id}/calls/apps` 拿 `uid` 与 `secret`
+2. `printf '%s' "$APP_ID" | npx wrangler secret put REALTIME_SFU_APP_ID`
+3. `printf '%s' "$APP_SECRET" | npx wrangler secret put REALTIME_SFU_APP_SECRET`
+4. 可选 TURN：`POST /accounts/{account_id}/calls/turn_keys` → `TURN_KEY_ID` / `TURN_KEY_API_TOKEN`
+5. 重新进入频道，`join` 应返回 `transport: cloudflare`
+
+## 16. 线上缺陷修复：来回切换频道出现重复管理员（2026-11-14 晚）
+
+**现象**：在 `/voice` 里来回点两个频道后，成员列表里堆出一堆同名管理员，
+旧频道里的自己没有正常退出。
+
+### 16.1 根因（两层叠加）
+
+1. **前端异步竞态**。`joinChannel()` 依次是 `await leaveChannel()` →
+   `await api(.../join)` → `new VoiceRoomClient()`。快速切换时，第二次
+   `leaveChannel()` 执行时 `state.room` 还是 `null`（第一次的连接尚未建立），
+   没有东西可关；而第一次的 `/join` 请求随后返回，照样建立 WebSocket，
+   成为无人管理的「幽灵连接」，反复切换就不断累积。
+   第一版代号修复还踩过一个坑：在 `await leaveChannel()` **之后**才读
+   `joinSeq`，连续点击时所有流程会读到同一个值，全部被误判为有效。
+2. **后端没有去重**。`VoiceRoomDO.attach()` 不限制同一账号的连接数，
+   `members()` 直接遍历 `state.getWebSockets()`，同一 `user_id` 的每条连接
+   都算一个成员；客户端收到 4402 关闭后还会自动重连，与 DO 互相踢，
+   形成连接风暴（实测一次快速切换创建了 23 条 WebSocket）。
+
+### 16.2 修复
+
+- `voice/voice.js`：新增 `joinSeq` 加入代号，**进入函数时同步 `++state.joinSeq`**；
+  每个异步节点都校验代号，失效时立刻 `dispose()` 关闭自己建立的房间 / 传输；
+  `leaveChannel(silent, seq)` 由调用方传代号，独立的挂断 / 被踢才自增；
+  离开时先同步 `room.close()` 再做媒体清理。
+- `voice/transport.js`：`onopen` 检查 `self.closed`（CONNECTING 阶段被取消也会关掉）；
+  `4401 / 4402 / 4403 / 4404` 关闭码一律**不自动重连**。
+- `src/voice-room.js`：`attach()` 先踢掉同 `user_id` 的旧连接（4402）；
+  `members()` 按 id 去重、`find()` 优先最新连接；
+  `onClose()` 在同账号仍有连接时不误报「离开了频道」。
+
+### 16.3 回归测试与验证
+
+- `tests/voice/voice-realtime.e2e.mjs` 新增「同一账号重复连接」用例：
+  旧连接收到 4402、成员广播无重复 id。
+- `tests/voice/voice-ui.cdp.mjs` 新增「连续点击 5 次来回切换」用例：
+  包裹原生 WebSocket 统计创建数 / 存活数，断言成员列表里自己只出现一次。
+- `npm run voice:test:all` **70 项全通过**（入口 4 + 鉴权 26 + 端到端 28 + 浏览器 12）；
+  `wrangler deploy --dry-run` 为 155.18 KiB / gzip 39.70 KiB。
+- 已重新部署到 `zfsn`，线上 `/voice/voice.js`、`/voice/transport.js`
+  与 Worker 脚本均确认包含新逻辑；`/`、`/api/health`、`/voice/`、`/admin/` 全部 200。
+
+### 16.4 顺手加固
+
+`.assetsignore` 补上 `docs/`：中文部署文档含账号名、密钥清单与上线细节，
+不应作为静态资源公开发行。线上 `/docs/voice-deploy.md` 现返回 404，
+站点功能不受影响（代码里对 `docs/` 的引用只是注释文字，没有真实链接）。
+
+**复测方式**：在 `/voice` 按 `Ctrl+F5` 强制刷新，然后连续来回点两个频道，
+成员列表里自己应始终只有一条。
+
+---
+
+## 17. 保持登录：Cookie 自动登录（2026-11-14 晚，增量需求）
+
+用户反馈「每次都要从登录页面重新进去，有点慢」。原来的实现虽然已有
+HttpOnly 会话 Cookie，但有三个体验问题：固定 7 天且**不会续期**、页面每次
+都先渲染登录表单再异步切界面（弱网下明显闪屏）、已登录时仍会请求两张
+用不上的验证码图。本次一并解决。
+
+### 17.1 两个 Cookie
+
+登录 / 注册 / 续期会**一次下发两条独立的 `Set-Cookie`**，登出时成对清除：
+
+| 名称 | HttpOnly | 值 | 作用 |
+|---|---|---|---|
+| `zf_voice_sid` | 是 | 随机令牌 | 真正的身份凭据，库里只存 SHA-256 |
+| `zf_voice_si` | 否 | 恒为 `1` | 只标记「这台浏览器可能还登录着」，供 `<head>` 同步读，不含任何身份信息 |
+
+两者都是 `Path=/; SameSite=Lax`，HTTPS 下加 `Secure`（本地 `http://127.0.0.1`
+不加，否则浏览器不落盘）。**伪造 `zf_voice_si` 不能登录**：它最多让页面多显示
+一秒「正在恢复登录态…」，`/api/voice/me` 随即用 HttpOnly Cookie 判定未登录并
+退回登录页。
+
+### 17.2 有效期规则
+
+- 登录框新增「保持登录 30 天」，**默认勾选**；注册页同样有该选项。
+- 勾选：`Max-Age=2592000`（30 天）。每次打开页面走 `/me` 或 `/bootstrap`
+  时**滑动续期**：剩余寿命不足 7 天才回写，续回 30 天，且沿用同一令牌
+  （不轮换，避免并发请求互相顶掉）。从签发日起累计最多 **90 天**，之后
+  必须重新登录，防止被盗令牌无限续命。
+- 不勾选：两个 Cookie 都**不带 `Max-Age`**（浏览器关闭即失效），数据库里
+  仍留 12 小时兜底，避免残留孤儿会话。
+- 令牌首字符标记类型：`r` = 保持登录、`s` = 临时；升级前签发的纯 hex 令牌
+  一律按旧规则 7 天处理，**老用户不会掉线**，但也不会被悄悄延长，重新登录
+  一次即切到 30 天。这样不必对线上 D1 表加列、也不必跑新迁移。
+- `/me` 与 `/bootstrap` 的响应里多了 `session: { remember, expiresAt, renewed }`，
+  便于排查；它不改变 `user` 字段结构，旧前端照常工作。
+
+### 17.3 前端为什么变快了
+
+1. `voice/index.html` 的 `<head>` 里有一段**同步、非 defer** 的脚本，读到
+   `zf_voice_si=1` 就给 `<html>` 打上 `data-voice-authed="1"`；CSS 直接据此
+   隐藏登录页、显示应用壳，并盖一层「正在恢复登录态…」。JS 还没下载完，
+   登录表单就已经不会出现了。
+2. `voice/auth.js` 把 `/config` 与 `/me` 改成**并行**请求；已登录时完全不申请
+   验证码、不加载 Turnstile 外链脚本（原来固定 2 次 `/captcha`）。打开页面
+   从 5 个请求降到 2 个。
+3. 公开资料（昵称 / 头像 / 底色）缓存在 `localStorage`，恢复期间先把用户栏
+   填上；`/api/voice/bootstrap` 回来后 `showApp()` 撤掉遮罩并把标记改成
+   `ready`。缓存不参与任何鉴权。
+4. 会话失效（过期、被禁用、被管理员删除）时自动清标记并退回登录页，
+   同时提示「登录状态已过期，请重新登录」。
+
+### 17.4 一条容易踩的坑：多条 `Set-Cookie`
+
+`src/index.js` 的全局 CORS 包装层会 `new Headers(response.headers)` 重建响应，
+不同运行时对多值头的折叠行为不一致，因此那里显式用 `getSetCookie()` /
+`getAll("Set-Cookie")` 拆开重放。本地 `tools/dev/voice-dev-server.mjs` 也有
+同样的坑：Node 的 `Headers.forEach` 会为每条 `set-cookie` 单独回调，而
+`res.setHeader` 同名覆盖，实测登录只剩第二条、主 Cookie 直接丢失；现已改成
+收集成数组一次性写出。`tests/voice/voice-session.test.mjs` 里有一条**真实
+HTTP** 用例专门守着这件事，别删。
+
+### 17.5 运维
+
+```bash
+# 强制所有人重新登录（例如怀疑令牌泄露）
+npx wrangler d1 execute zfsn-db --remote --command="DELETE FROM voice_sessions"
+
+# 只踢某个人：先查 id，再按 user_id 删
+npx wrangler d1 execute zfsn-db --remote --command="DELETE FROM voice_sessions WHERE user_id='<用户ID>'"
+```
+
+浏览器清掉两个 Cookie 后也会立即回到登录页。管理员在后台「禁用 / 删除」
+用户时会同时删掉该用户的会话（原逻辑已有），前端刷新后不会停留在频道里。
+
+### 17.6 本次改动与验证
+
+- 服务端：`src/voice-core.js`（常量 / 两条 Cookie / 令牌类型）、
+  `src/voice-auth.js`（`issueSession` / `touchSession` / 四个路由）、
+  `src/voice-realtime.js`（bootstrap 续期）、`src/index.js`（多值头重放）。
+- 前端：`voice/index.html`（head 脚本 / 恢复遮罩 / 两个勾选 / 脚本版本号
+  `?v=20261114c`）、`voice/auth.js`、`voice/voice.js`、`voice/voice.css`。
+- 工具与测试：`tools/dev/voice-dev-server.mjs`、`tests/voice/voice-session.test.mjs`
+  （21 项）、`tests/voice/voice-ui.cdp.mjs`（新增浏览器用例）、`package.json`
+  新增 `voice:test:session` 并纳入 `voice:test:all`。
+- `npm run voice:test:all` **92 项全通过**（入口 4 + 鉴权 26 + Cookie 21 +
+  端到端 28 + 浏览器 13）。浏览器用例在 `DOMContentLoaded` 埋点断言登录页
+  `display:none`，即「一次都不闪」。
+- 部署后请按 `Ctrl+F5` 强刷一次 `/voice/`，否则旧缓存的 `auth.js` /
+  `voice.js` 不会加载新逻辑。
+

@@ -1325,9 +1325,12 @@ export default {
     if (origin) {
       try {
         const url = new URL(origin);
+        /* 本机 IIS 镜像用 apex 域名 + 8443 端口访问（https://zfsnnb.dpdns.org:8443），
+           静态资源由 IIS 出，/api 直连线上 Worker，属于跨源请求，这里必须放行，
+           否则留言板等接口会被预检 403 拦掉。apex 与 www 同属本站，放行无安全影响。 */
         allowed = origin === url.origin &&
           (url.protocol === "http:" || url.protocol === "https:") &&
-          (["localhost", "127.0.0.1", "[::1]", CANON_HOST].includes(url.hostname) ||
+          (["localhost", "127.0.0.1", "[::1]", CANON_HOST, "zfsnnb.dpdns.org"].includes(url.hostname) ||
            origin === "http://192.168.0.100:88");
       } catch (_) { /* An opaque or invalid origin is not a local web preview. */ }
     }
@@ -1343,6 +1346,17 @@ export default {
     // 所以这类响应必须原样透传，否则房间连接会整批变成 500。
     if (response.status === 101 || response.webSocket) return response;
     const headers = new Headers(response.headers);
+    // ZF语音 登录 / 续期会一次下发两条 Set-Cookie（HttpOnly 主会话 +
+    // 前端可读的「可能已登录」标记）。不同运行时对多值头的折叠行为不一致，
+    // 这里显式拆开重放，避免被合成一行导致第二个 Cookie 被浏览器忽略。
+    const setCookies = typeof response.headers.getSetCookie === "function"
+      ? response.headers.getSetCookie()
+      : (typeof response.headers.getAll === "function"
+        ? response.headers.getAll("Set-Cookie") : null);
+    if (setCookies && setCookies.length > 1) {
+      headers.delete("Set-Cookie");
+      setCookies.forEach(function (c) { headers.append("Set-Cookie", c); });
+    }
     headers.append("Vary", "Origin");
     if (allowed) {
       headers.set("Access-Control-Allow-Origin", origin);

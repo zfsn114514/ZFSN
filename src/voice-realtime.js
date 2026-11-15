@@ -33,7 +33,7 @@
 
 import * as L from "./lib.js";
 import * as C from "./voice-core.js";
-import { currentUser, adminContext, getSettings, saveSettings, audit } from "./voice-auth.js";
+import { currentUser, touchSession, adminContext, getSettings, saveSettings, audit } from "./voice-auth.js";
 
 const PREFIX = "/api/voice/";
 const OWNED = [
@@ -45,7 +45,11 @@ const OWNED = [
 ];
 
 function err(msg, status) { return L.fail(msg, status || 400); }
-function ok(data, status) { return L.json(Object.assign({ ok: true }, data || {}), status || 200); }
+function ok(data, status, cookies) {
+  const res = L.json(Object.assign({ ok: true }, data || {}), status || 200);
+  (cookies || []).forEach(function (c) { res.headers.append("Set-Cookie", c); });
+  return res;
+}
 
 function originOK(request) {
   const o = request.headers.get("origin");
@@ -215,7 +219,8 @@ async function iceServers(env) {
       {
         method: "POST",
         headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ ttl: 3600 })
+        body: JSON.stringify({ ttl: 3600 }),
+        signal: AbortSignal.timeout(2500)
       }
     );
     if (!r.ok) return { iceServers: list, turn: false };
@@ -229,11 +234,16 @@ async function iceServers(env) {
 
 /* ── 可选高级模式：LiveKit 短期令牌（JWT HS256） ────────────── */
 
+/** 显示名可以是中文，而 btoa() 只接受 Latin1 字符；先显式 UTF-8 编码，
+ *  再逐字节转成二进制串，否则自建频道遇到中文昵称会直接 500。 */
 function b64url(str) {
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const bytes = new TextEncoder().encode(String(str));
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function livekitToken(env, server, user, channelId) {
+export async function livekitToken(env, server, user, channelId) {
   const apiKey = env[server.api_key_ref || "LIVEKIT_API_KEY"] || env.LIVEKIT_API_KEY || "";
   const secret = env[server.secret_ref || "LIVEKIT_API_SECRET"] || env.LIVEKIT_API_SECRET || "";
   if (!apiKey || !secret) return { error: "未配置自建服务的 API Key / Secret（Worker 密钥）" };
@@ -249,9 +259,15 @@ async function livekitToken(env, server, user, channelId) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(header + "." + payload));
+  // ⚠ 签名是**原始随机字节**，绝不能再用 b64url()——那个函数内部会做
+  //   TextEncoder（UTF-8）编码，把每个 ≥0x80 的字节扩成两字节，签名直接损坏，
+  //   LiveKit 侧表现为 "token signature is invalid" → 401（浏览器 Failed to fetch）。
+  //   这里必须对原始字节直接 base64url 编码。
+  const sigBytes = new Uint8Array(sig);
   let bin = "";
-  new Uint8Array(sig).forEach(function (b) { bin += String.fromCharCode(b); });
-  return { token: header + "." + payload + "." + b64url(bin) };
+  for (let i = 0; i < sigBytes.length; i++) bin += String.fromCharCode(sigBytes[i]);
+  const sigB64 = btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return { token: header + "." + payload + "." + sigB64 };
 }
 
 /* ── 连接地址校验（HTTPS 混合内容 / 纯 IP 证书） ────────────── */
@@ -286,11 +302,14 @@ export async function handleVoiceRealtime(request, env, ctx, url) {
 
   /* ── 前端一次性引导 ───────────────────────────────────────── */
   if (p === "/api/voice/bootstrap" && m === "GET") {
-    const u = await currentUser(env, request);
+    // 打开页面必走的入口：顺便做滑动续期，常来的用户永远不用重新登录
+    const t = await touchSession(env, request);
+    const u = t.user;
     const user = u && u.status === "active" ? C.publicUser(u) : null;
-    const channels = user ? await listChannels(env, user) : [];
+    const channels = user ? await listChannels(env, u) : [];
     return ok({
       user: user,
+      session: t.session,
       channels: channels,
       settings: {
         allowUserPrivateChannels: settings.allowUserPrivateChannels !== false,
@@ -304,7 +323,7 @@ export async function handleVoiceRealtime(request, env, ctx, url) {
         livekit: !!env.LIVEKIT_API_KEY,
         screenShare: true
       }
-    });
+    }, 200, t.cookies);
   }
 
   /* ── 频道列表 ─────────────────────────────────────────────── */
@@ -372,6 +391,65 @@ export async function handleVoiceRealtime(request, env, ctx, url) {
     await audit(env, ctx, request, wr.user.username, "channel.create", id,
       { name: nv.value, visibility: visibility, backend: isSelf ? "self_hosted" : "cloudflare" });
     return ok({ channel: (await listChannels(env, wr.user)).filter(function (c) { return c.id === id; })[0] }, 201);
+  }
+
+  /* ── 频道所有者修改 / 删除 ───────────────────────────────── */
+  const ownedChannelMatch = p.match(/^\/api\/voice\/channels\/([^/]+)$/);
+  if (ownedChannelMatch && (m === "PATCH" || m === "DELETE")) {
+    const wr = await requireUser(env, request);
+    if (wr.error) return wr.error;
+    if (!originOK(request)) return err("请求来源不合法（跨站请求已被拒绝）", 403);
+    if (!await L.rateAllow(env, "voice:channel-edit:" + wr.user.id, 20, 60000)) return err("操作太频繁，请稍后再试", 429);
+    const id = decodeURIComponent(ownedChannelMatch[1]);
+    const row = await env.DB.prepare("SELECT * FROM channels WHERE id = ?").bind(id).first();
+    if (!row) return err("频道不存在或已被删除", 404);
+    if (row.owner_id !== wr.user.id && wr.user.role !== "admin") return err("只有频道创建者或管理员可以操作", 403);
+    if (m === "DELETE") {
+      const rs = await roomState(env, id);
+      if (rs.count > 0) return err("频道内还有 " + rs.count + " 人，请先让成员离开", 409);
+      await env.DB.prepare("DELETE FROM channels WHERE id = ?").bind(id).run();
+      await env.DB.prepare("DELETE FROM channel_settings WHERE channel_id = ?").bind(id).run();
+      await env.DB.prepare("DELETE FROM voice_sfu_sessions WHERE channel_id = ?").bind(id).run();
+      if (row.server_id) await env.DB.prepare("DELETE FROM self_hosted_servers WHERE id = ? AND created_by = ?")
+        .bind(row.server_id, row.owner_id).run();
+      await roomCall(env, id, "/close", "POST", {});
+      await audit(env, ctx, request, wr.user.username, "channel.delete", id, { ownerId: row.owner_id });
+      return ok({});
+    }
+    const b = await readBody(request);
+    if (!b) return err("请求内容无效");
+    const sets = [], args = [];
+    if (b.name !== undefined) {
+      const nv = C.validateChannelName(b.name);
+      if (!nv.ok) return err(nv.error);
+      sets.push("name = ?"); args.push(nv.value);
+    }
+    if (b.descr !== undefined) { sets.push("descr = ?"); args.push(L.clean(b.descr, 120)); }
+    if (b.visibility !== undefined) {
+      if (["private", "public"].indexOf(b.visibility) < 0) return err("频道可见范围无效");
+      sets.push("visibility = ?"); args.push(b.visibility);
+    }
+    if (b.password !== undefined) {
+      if (String(b.password).length > 64) return err("频道口令不能超过 64 个字符");
+      sets.push("password_hash = ?");
+      args.push(b.password ? await C.sha256Hex("zfch|" + id + "|" + String(b.password)) : null);
+    }
+    if (b.max_users !== undefined || b.maxUsers !== undefined) {
+      const max = Math.max(1, Math.min(wr.user.role === "admin" ? 200 : Number(settings.maxUsersPerChannel) || 20,
+        Number(b.max_users === undefined ? b.maxUsers : b.max_users) || 20));
+      sets.push("max_users = ?"); args.push(max);
+    }
+    if (!sets.length) return err("没有需要修改的字段");
+    sets.push("revision = revision + 1", "updated_at = ?"); args.push(Date.now(), id);
+    await env.DB.prepare("UPDATE channels SET " + sets.join(", ") + " WHERE id = ?").bind(...args).run();
+    const fresh = await env.DB.prepare("SELECT * FROM channels WHERE id = ?").bind(id).first();
+    const st = await settingsFor(env, id);
+    const rs = await roomState(env, id);
+    await roomCall(env, id, "/channel", "POST", { name: fresh.name });
+    const visible = await listChannels(env, wr.user);
+    const updated = visible.filter(function (c) { return c.id === id; })[0] || publicChannel(fresh, wr.user, st, rs);
+    await audit(env, ctx, request, wr.user.username, "channel.update", id, { fields: Object.keys(b) });
+    return ok({ channel: updated });
   }
 
   /* ── 加入频道：鉴权 / 上限 / 房间票据 / ICE / 令牌 ─────────── */

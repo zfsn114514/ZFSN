@@ -6,10 +6,80 @@
 <meta name="theme-color" content="#07070b">
 <title>ZF语音 · ZFSN</title>
 <link rel="icon" href="/favicon-32.png">
-<link rel="stylesheet" href="/voice/voice.css">
+<link rel="stylesheet" href="/voice/voice.css?v=20261115g">
+<script>
+/* ── 保持登录：同步预登录判断 ──────────────────────────────────────
+   这个脚本必须放在 <head> 且不能 defer：HTML 一解析到登录页就要决定
+   显不显示。Cookie 里只有一个不含身份信息的标记（zf_voice_si=1），
+   它跟 HttpOnly 会话 Cookie 同生共死；真正的身份仍由 /api/voice/me
+   用 HttpOnly Cookie 校验，伪造标记最多只是多闪一下恢复动画。
+
+   除 Cookie 外再看一眼 localStorage 的「最近登录过」时间戳：浏览器清掉
+   Cookie、或从另一个同站子域进来时，标记会丢，但本地痕迹还在。此时先
+   显示恢复动画、让 /me 去判定，避免「先跳登录页、登录完再跳回来」的
+   来回闪跳。两条线索都没有才直接显示登录页。                        */
+(function () {
+  try {
+    var hasHint = /(?:^|;\s*)zf_voice_si=1(?:;|$)/.test(document.cookie);
+    if (!hasHint) {
+      var seen = Number(localStorage.getItem("zf_voice_seen") || 0);
+      if (seen > 0 && Date.now() - seen < 100 * 24 * 3600 * 1000) hasHint = true;
+    }
+    if (hasHint) document.documentElement.setAttribute("data-voice-authed", "1");
+  } catch (_) { /* Cookie / localStorage 被禁用时按未登录处理 */ }
+})();
+
+/* ── 全局脚本异常提示条 ─────────────────────────────────────────
+   任何未被捕获的 JS 异常 / Promise 拒绝都会在这里显示出来，并带上
+   出错文件与行号，方便定位（而不是只在控制台里留一行）。仅供排错，
+   不影响正常功能；出错后点 × 即可关闭。                          */
+(function () {
+  function showBanner(msg) {
+    try {
+      var b = document.getElementById("zf-err-banner");
+      if (!b) {
+        b = document.createElement("div");
+        b.id = "zf-err-banner";
+        b.setAttribute("role", "alert");
+        var css = "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;" +
+          "max-width:720px;margin:0 auto;padding:12px 38px 12px 14px;" +
+          "background:rgba(30,8,12,.96);border:1px solid #ff2d4a;color:#ffd7dd;" +
+          "border-radius:10px;font:13px/1.5 system-ui,'Microsoft YaHei',sans-serif;" +
+          "box-shadow:0 10px 30px rgba(0,0,0,.5);white-space:pre-wrap;word-break:break-word";
+        b.style.cssText = css;
+        var x = document.createElement("button");
+        x.textContent = "×";
+        x.style.cssText = "position:absolute;top:6px;right:8px;border:0;background:none;" +
+          "color:#ff8a9b;font-size:18px;line-height:1;cursor:pointer";
+        x.onclick = function () { b.remove(); };
+        b.appendChild(x);
+        (document.body || document.documentElement).appendChild(b);
+      }
+      b.firstChild && b.firstChild.nodeType === 3 && b.removeChild(b.firstChild);
+      b.insertAdjacentText("afterbegin", "⚠️ 页面脚本错误：\n" + msg + "\n");
+    } catch (_) {}
+  }
+  window.addEventListener("error", function (e) {
+    var f = e.filename || "", l = e.lineno || 0, c = e.colno || 0;
+    var where = f ? (f.split("/").pop() + ":" + l + (c ? ":" + c : "")) : "内联脚本";
+    showBanner((e.message || "未知错误") + "\n  @ " + where);
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var r = e.reason || {};
+    showBanner("未处理的 Promise 拒绝：" + (r.message || r.error || r) +
+      (r.stack ? "\n  " + String(r.stack).split("\n").slice(0, 3).join("\n  ") : ""));
+  });
+})();
+</script>
 </head>
 <body>
 <a class="skip-link" href="#voice-main">跳到主内容</a>
+
+<!-- 预登录期间盖住空白应用壳，等 /me 回来再撤掉 -->
+<div id="restore-mask" class="restore-mask" role="status" aria-live="polite">
+  <span class="restore-spin" aria-hidden="true"></span>
+  <div class="restore-text"><strong>正在恢复登录态…</strong><small>已记住这台设备，马上进入语音大厅</small></div>
+</div>
 
 <!-- ══ 未登录：登录 / 注册 ══════════════════════════════════════ -->
 <section id="auth-view" class="auth-view" aria-labelledby="auth-title">
@@ -42,6 +112,11 @@
           <input id="login-captcha" name="captcha" type="text" inputmode="numeric" maxlength="5" placeholder="图中数字" autocomplete="off">
           <button type="button" class="captcha-img" id="captcha-login" aria-label="点击刷新验证码"><span class="captcha-loading">加载中…</span></button>
         </div>
+        <label class="auth-remember" for="login-remember">
+          <input type="checkbox" id="login-remember" checked>
+          <span>保持登录 30 天</span>
+          <small>不勾选则关闭浏览器后需要重新登录</small>
+        </label>
         <button type="submit" class="btn-primary">登录</button>
       </form>
 
@@ -79,6 +154,11 @@
           <input id="reg-captcha" name="captcha" type="text" inputmode="numeric" maxlength="5" placeholder="图中数字" autocomplete="off">
           <button type="button" class="captcha-img" id="captcha-register" aria-label="点击刷新验证码"><span class="captcha-loading">加载中…</span></button>
         </div>
+        <label class="auth-remember" for="reg-remember">
+          <input type="checkbox" id="reg-remember" checked>
+          <span>保持登录 30 天</span>
+          <small>不勾选则关闭浏览器后需要重新登录</small>
+        </label>
         <button type="submit" class="btn-primary">创建账号</button>
       </form>
 
@@ -150,6 +230,7 @@
       <!-- 频道内 -->
       <section class="room" id="room" hidden aria-labelledby="room-name">
         <div class="room-head">
+          <button type="button" class="btn-ghost chat-mobile-toggle" id="btn-chat-mobile">聊天 <span id="chat-mobile-unread" hidden></span></button>
           <div>
             <h2 id="room-name">频道</h2>
             <p class="room-meta"><span id="room-backend" class="badge">云</span><span id="room-online">0 人在线</span><span id="room-quality">连接质量：—</span></p>
@@ -169,15 +250,28 @@
         <!-- 成员卡片网格 -->
         <div class="member-grid" id="member-grid"></div>
 
+        <section class="chat-panel" id="chat-panel" aria-label="频道聊天">
+          <div class="chat-head"><strong>聊天</strong><span id="chat-unread" hidden></span><button type="button" id="btn-chat-toggle" aria-expanded="true">收起</button></div>
+          <div class="chat-body" id="chat-body">
+            <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
+            <button type="button" class="chat-new" id="chat-new" hidden>有新消息 ↓</button>
+            <form class="chat-form" id="chat-form">
+              <textarea id="chat-input" maxlength="500" rows="2" placeholder="发送频道消息…（Enter 发送，Shift+Enter 换行）"></textarea>
+              <div class="chat-compose"><small id="chat-remaining">500</small><button type="submit" class="btn-primary">发送</button></div>
+            </form>
+          </div>
+        </section>
+
         <!-- 有人共享屏幕时的大画面 + 成员条 -->
         <div class="screen-stage" id="screen-stage" hidden>
-          <div class="screen-main">
+          <div class="screen-main" id="screen-main">
             <video id="screen-video" autoplay playsinline muted aria-label="共享的屏幕画面"></video>
             <div class="screen-placeholder" id="screen-placeholder">
               <strong id="screen-owner">有人正在共享屏幕</strong>
               <span id="screen-sub">等待画面…</span>
             </div>
             <div class="screen-tools">
+              <button type="button" class="chip" id="btn-fs-screen" aria-label="全屏查看共享画面" title="全屏查看（也可以双击画面）">全屏</button>
               <button type="button" class="chip" id="btn-pip" aria-label="画中画">画中画</button>
               <button type="button" class="chip" id="btn-stop-watch" aria-label="不观看此共享">不观看</button>
               <select class="chip chip-select" id="screen-quality" aria-label="观看画质">
@@ -249,11 +343,13 @@
         <input id="add-password" type="password" maxlength="64" placeholder="留空则不需要口令" autocomplete="new-password">
       </div>
     </div>
-    <label for="add-backend">媒体后端</label>
-    <select id="add-backend">
-      <option value="cloudflare">Cloudflare 频道（推荐，无需自建服务）</option>
-      <option value="self_hosted">自建 SFU（可选高级模式，需要 wss 域名）</option>
-    </select>
+    <div id="add-backend-group">
+      <label for="add-backend">媒体后端</label>
+      <select id="add-backend">
+        <option value="cloudflare">Cloudflare 频道（推荐，无需自建服务）</option>
+        <option value="self_hosted">自建 SFU（可选高级模式，需要 wss 域名）</option>
+      </select>
+    </div>
     <div id="add-self-fields" hidden>
       <div class="two-col">
         <div><label for="add-host">服务器域名</label><input id="add-host" type="text" placeholder="voice.example.com"></div>
@@ -282,7 +378,7 @@
     <label for="share-bitrate">码率 <span class="opt" id="bitrate-label">自动</span></label>
     <input id="share-bitrate" type="range" min="0" max="8000" step="250" value="0">
     <label for="share-hint">内容类型</label>
-    <select id="share-hint"><option value="motion">画面流畅（游戏 / 视频）</option><option value="detail" selected>文字清晰（代码 / 文档）</option></select>
+    <select id="share-hint"><option value="motion" selected>画面流畅（游戏 / 视频 / 桌面操作）</option><option value="detail">文字清晰（代码 / 文档）</option></select>
     <label class="check"><input id="share-audio" type="checkbox"> 同时共享系统 / 标签页音频</label>
     <div class="dlg-actions"><button type="button" class="btn-ghost" data-close="dlg-share">取消</button><button type="submit" class="btn-primary">开始共享</button></div>
     <p class="dlg-help">iOS / iPadOS 的 Safari 无法发起屏幕共享，只能观看他人的共享。</p>
@@ -306,14 +402,40 @@
     <label for="set-key">快捷键</label>
     <div class="key-row"><input id="set-key" type="text" value="未设置" readonly><button type="button" class="btn-ghost" id="btn-set-key">设置</button></div>
     <label class="check"><input type="checkbox" id="set-sounds" checked> 加入 / 离开提示音</label>
+    <h3>个人资料</h3>
+    <label for="profile-name">显示名称</label><input id="profile-name" type="text" maxlength="24" placeholder="频道里显示的名字">
+    <label for="profile-avatar">更换头像（jpg / png / webp，自动裁成方形并压缩）</label>
+    <div class="avatar-row"><span class="avatar-preview" id="profile-avatar-preview">Z</span><input id="profile-avatar" type="file" accept="image/jpeg,image/png,image/webp"></div>
+    <div class="profile-actions">
+      <button type="button" class="btn-primary" id="btn-profile-save">保存资料</button>
+      <button type="button" class="btn-ghost" id="btn-password">修改密码</button>
+    </div>
+    <p class="dlg-help" id="profile-hint">改完名字或头像后记得点「保存资料」。频道里的其他人会立刻看到新名字。</p>
     <p class="dlg-help" id="set-device-help">切换麦克风或音频处理会重新申请麦克风权限。</p>
     <div class="dlg-actions"><button type="button" class="btn-ghost" id="btn-logout">退出登录</button><button type="button" class="btn-primary" data-close="dlg-settings">完成</button></div>
   </form>
 </dialog>
 
+<dialog class="dlg" id="dlg-channel-actions" aria-labelledby="dlg-channel-actions-title">
+  <div class="dlg-head"><h2 id="dlg-channel-actions-title">频道设置</h2><button type="button" class="dlg-x" data-close="dlg-channel-actions" aria-label="关闭">×</button></div>
+  <p id="channel-action-name" class="dlg-note"></p>
+  <div class="dlg-actions"><button type="button" class="btn-ghost" id="btn-channel-edit">编辑设置</button><button type="button" class="btn-ghost" id="btn-channel-delete">删除频道</button></div>
+</dialog>
+
+<dialog class="dlg" id="dlg-password" aria-labelledby="dlg-password-title">
+  <form id="form-password" novalidate>
+    <div class="dlg-head"><h2 id="dlg-password-title">修改密码</h2><button type="button" class="dlg-x" data-close="dlg-password" aria-label="关闭">×</button></div>
+    <label for="password-old">旧密码</label><input id="password-old" type="password" autocomplete="current-password">
+    <label for="password-new">新密码</label><input id="password-new" type="password" autocomplete="new-password" placeholder="至少 10 位，含字母和数字">
+    <label for="password-confirm">确认新密码</label><input id="password-confirm" type="password" autocomplete="new-password">
+    <div class="dlg-actions"><button type="button" class="btn-ghost" data-close="dlg-password">取消</button><button type="submit" class="btn-primary">保存密码</button></div>
+  </form>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script defer src="/voice/auth.js"></script>
-<script defer src="/voice/transport.js"></script>
-<script defer src="/voice/voice.js"></script>
+<!-- 2026-11-15a：升级缓存版本号，强制浏览器拉取全新脚本，避免新旧静态资源混用 -->
+<script defer src="/voice/auth.js?v=20261115g"></script>
+<script defer src="/voice/transport.js?v=20261115g"></script>
+<script defer src="/voice/voice.js?v=20261115g"></script>
 </body>
 </html>

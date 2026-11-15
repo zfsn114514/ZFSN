@@ -19,16 +19,67 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
+  /* esc() 只负责 HTML 实体，挡不住 CSS 注入：style="...url(XXX)..." 里的
+     XXX 被浏览器当作 CSS 解析，`x);background:url(//外部域名)` 这类值即使
+     引号已转义，仍能闭合 url() 后追加任意 CSS（外链请求、覆盖整页等）。
+     所以凡是拼进 style 的值都必须走白名单，而不是 esc()。 */
+  function safeColor(c) {
+    var s = String(c == null ? "" : c).trim();
+    return /^#[0-9a-fA-F]{3,8}$/.test(s) ? s : "#7a1830";
+  }
+  function safeCssUrl(u) {
+    var s = String(u == null ? "" : u).trim();
+    if (!s) return "";
+    // 本站头像：/api/voice/avatars/<32位hex>（用户 id 为 randomHex(16)）
+    if (/^\/api\/voice\/avatars\/[A-Za-z0-9._%~-]{1,80}$/.test(s)) return s;
+    // 内联图片：只允许位图 + base64（data:image/svg 可执行脚本，一律拒绝）。
+    // 长度上限放到 4MB base64，兼容「2MB 图片上限」的本地预览。
+    if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]{1,4000000}$/.test(s)) return s;
+    return "";
+  }
+
   /* ── 请求封装 ──────────────────────────────────────────────── */
+  /** 后端没给出 error 字段时，按状态码翻译成可读中文（并带上接口路径便于排查）。 */
+  function httpMessage(status, path) {
+    if (status === 401) return "登录状态已失效，请刷新页面重新登录";
+    if (status === 403) return "没有权限执行该操作（" + path + "）";
+    if (status === 404) return "接口不存在（" + path + "），可能是服务端版本过旧";
+    if (status === 409) return "操作冲突，请刷新后重试";
+    if (status === 413) return "上传内容过大";
+    if (status === 429) return "操作过于频繁，请稍后再试";
+    if (status >= 500) return "服务器暂时不可用（" + status + "），请稍后重试";
+    return "请求失败（HTTP " + status + "，" + path + "）";
+  }
   function api(path, method, body) {
     var opt = { method: method || "GET", credentials: "same-origin",
       headers: { "Content-Type": "application/json" } };
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, 12000) : null;
+    if (controller) opt.signal = controller.signal;
     if (body !== undefined) opt.body = JSON.stringify(body);
     return fetch(path, opt).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok || d.ok === false) throw new Error(d.error || ("HTTP " + r.status));
-        return d;
+      // 用 text() 再手动解析：错误响应可能是 HTML（网关 502 页），
+      // 直接 r.json() 失败会退化成空对象，最终只剩一句没用的 "HTTP 502"。
+      return r.text().then(function (raw) {
+        var d = {};
+        if (raw) { try { d = JSON.parse(raw); } catch (_) { d = {}; } }
+        if (r.ok && (!d || d.ok !== false)) return d;
+        throw new Error((d && d.error) || httpMessage(r.status, path));
       });
+    }).catch(function (e) {
+      if (e && e.name === "AbortError") throw new Error("连接服务器超时（" + path + "），请检查网络后重试");
+      // fetch 自身失败（断网 / DNS / 被拦截 / CORS）抛的是 TypeError，
+      // 原文 "Failed to fetch" 对用户没有意义，这里统一翻译。
+      if (e && e.name === "TypeError") {
+        throw new Error("无法连接服务器（" + path + "）：网络中断或被浏览器拦截，请检查网络后重试");
+      }
+      throw e;
+    }).then(function (d) {
+      if (timer) clearTimeout(timer);
+      return d;
+    }, function (e) {
+      if (timer) clearTimeout(timer);
+      throw e;
     });
   }
 
@@ -56,8 +107,12 @@
     preview: false, group: "all", current: null, expanded: {},
     members: [], mic: true, deaf: false, ptt: false, pttKey: "", pttDown: false,
     membersCollapsed: false, drawer: "", watching: true, sounds: true,
+    chatMessages: [], chatUnread: 0, chatOpen: window.matchMedia("(max-width:760px)").matches ? false : true, chatPinned: true,
     room: null, transport: null, join: null, channelSettings: null,
-    stats: { rttMs: null, lossPct: 0 }, statsTimer: null,
+    // 加入流程代号：每次切换 / 离开都自增，让还在网络请求中的旧加入流程立即作废，
+    // 避免「来回切频道」时旧频道的 WebSocket 变成没人关闭的幽灵成员。
+    joinSeq: 0,
+    stats: { rttMs: null, lossPct: 0 }, statsTimer: null, statsSeq: 0,
     speakingTimer: null, demoTimer: null, lastSpeakSent: 0,
     sharing: false, shareParams: null, sharerId: null
   };
@@ -84,15 +139,22 @@
     else d.removeAttribute("open");
   }
 
-  /** 加入 / 离开提示音：WebAudio 生成短促双音，不依赖外部音频文件。 */
-  var audioCtxForChime = null;
+  /** 加入 / 离开提示音：WebAudio 生成短促双音，不依赖外部音频文件。
+      每次用完立刻 close()：浏览器对同时存活的 AudioContext 有上限（约 6 个），
+      长期复用同一个又从不关闭，会在反复进出频道后让后续音频功能静默失效。 */
   function chime(join) {
     if (!state.sounds) return;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    var ctx;
+    try { ctx = new AC(); } catch (_) { return; }
+    var released = false;
+    function release() {
+      if (released) return;
+      released = true;
+      try { var p = ctx.close(); if (p && p.catch) p.catch(function () {}); } catch (_) {}
+    }
     try {
-      var AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return;
-      if (!audioCtxForChime) audioCtxForChime = new AC();
-      var ctx = audioCtxForChime;
       if (ctx.state === "suspended") ctx.resume().catch(function () {});
       var t = ctx.currentTime;
       [0, 0.12].forEach(function (off, i) {
@@ -105,7 +167,12 @@
         o.connect(g); g.connect(ctx.destination);
         o.start(t + off); o.stop(t + off + 0.18);
       });
-    } catch (_) {}
+      // 声音最长 0.30s，留足余量后释放；页面被隐藏时也要释放。
+      setTimeout(release, 600);
+      window.addEventListener("pagehide", release, { once: true });
+    } catch (_) {
+      release();
+    }
   }
 
   function me() {
@@ -143,12 +210,14 @@
     return list;
   }
   function avatarHTML(m, cls) {
-    var head = '<span class="avatar ' + esc(cls || "") + '" style="background:' + esc(m.color || "#7a1830");
-    if (m.avatarUrl) {
-      return head + ";background-image:url(" + esc(m.avatarUrl) +
-        ");background-size:cover;background-position:center\" aria-hidden=\"true\"></span>";
+    var color = safeColor(m && m.color);
+    var url = safeCssUrl(m && m.avatarUrl);
+    var head = '<span class="avatar ' + esc(cls || "") + '" style="background:' + color;
+    if (url) {
+      return head + ";background-image:url(&quot;" + esc(url) +
+        "&quot;);background-size:cover;background-position:center\" aria-hidden=\"true\"></span>";
     }
-    return head + '" aria-hidden="true">' + esc(String(m.name || "Z").slice(0, 1)) + "</span>";
+    return head + '" aria-hidden="true">' + esc(String((m && m.name) || "Z").slice(0, 1)) + "</span>";
   }
   function statusIcons(m) {
     var out = "";
@@ -179,6 +248,7 @@
         '<span class="ch-name">' + esc(ch.name) + "</span>" + badge +
         '<span class="ch-n">' + (ch.offline ? "—" : n + "/" + (ch.maxUsers || 20)) + "</span>" +
         "</button>";
+      if (ch.ownerId === me().id || isAdmin()) html += '<button type="button" class="channel-more" data-channel-menu="' + esc(ch.id) + '" aria-label="编辑或删除频道">⋯</button>';
       var ms = expanded && !ch.offline ? (active ? roomMembers() : (ch.members || [])) : [];
       if (ms.length) {
         html += '<ul class="ch-members">';
@@ -227,8 +297,8 @@
     $("#room-online").textContent = list.length + " / " + (ch.maxUsers || 20) + " 人在线";
     var q = state.stats;
     $("#room-quality").textContent = "连接质量：" +
-      (q.rttMs == null ? (state.join ? "连接中…" : "—") :
-        Math.round(q.rttMs) + " ms · 丢包 " + (Number(q.lossPct) || 0).toFixed(1) + "%");
+     (q.rttMs == null ? (state.join ? "连接中…" : "—") :
+       Math.round(q.rttMs) + " ms · 丢包 " + (q.lossPct == null ? "—" : Number(q.lossPct).toFixed(1) + "%"));
 
     $("#member-grid").innerHTML = list.map(function (m) {
       return '<div class="member-card' + (m.speaking ? " speaking" : "") + (m.sharing ? " sharing" : "") + '">' +
@@ -239,7 +309,7 @@
 
     var sharer = list.filter(function (m) { return m.sharing; })[0];
     state.sharerId = sharer ? sharer.id : null;
-    var showScreen = !!(sharer && state.watching);
+    var showScreen = !!sharer;
     var stage = $("#screen-stage");
     stage.hidden = !showScreen;
     $("#member-grid").hidden = showScreen;
@@ -251,22 +321,53 @@
     }
     var video = $("#screen-video");
     var ph = $("#screen-placeholder");
+    var sub = $("#screen-sub");
     if (video) {
       var hasStream = !!(video.srcObject && video.srcObject.getVideoTracks().length);
-      ph.hidden = hasStream && state.watching;
+      var readyFrame = !!(video.videoWidth && video.videoHeight && video.readyState >= 2);
+      ph.hidden = hasStream && state.watching && readyFrame;
       video.style.opacity = (hasStream && state.watching) ? "1" : "0";
+      if (sub) {
+        if (!state.watching) sub.textContent = "已停止观看，点击「重新观看」恢复";
+        else if (state.sharing && state.sharerId === me().id) sub.textContent = "你正在共享屏幕";
+        else if (!hasStream) sub.textContent = sharer ? "正在连接对方画面…" : "等待画面…";
+        else if (!readyFrame) sub.textContent = "等待首帧…";
+        else sub.textContent = video.videoWidth + "×" + video.videoHeight;
+      }
     }
     $("#btn-stop-share").hidden = !state.sharing;
     $("#btn-stop-watch").textContent = state.watching ? "不观看" : "重新观看";
   }
 
+  function renderChat() {
+    var list = $("#chat-messages"), html = "";
+    state.chatMessages.forEach(function (m) {
+      var own = m.memberId === me().id;
+      var time = new Date(Number(m.ts) || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      html += '<article class="chat-message' + (own ? " own" : "") + '">' +
+        avatarHTML({ name: m.name, color: m.color, avatarUrl: m.avatarUrl }, "chat-avatar") +
+        '<div class="chat-content"><div class="chat-meta"><strong>' + esc(m.name) + "</strong><time>" + esc(time) +
+        '</time></div><p></p></div></article>';
+    });
+    list.innerHTML = html;
+    var texts = list.querySelectorAll(".chat-content p");
+    state.chatMessages.forEach(function (m, i) { if (texts[i]) texts[i].textContent = m.text; });
+    $("#chat-unread").hidden = state.chatUnread < 1 || state.chatOpen;
+    $("#chat-unread").textContent = state.chatUnread ? String(state.chatUnread) : "";
+    $("#chat-mobile-unread").hidden = state.chatUnread < 1;
+    $("#chat-mobile-unread").textContent = state.chatUnread ? String(state.chatUnread) : "";
+    $("#chat-panel").classList.toggle("collapsed", !state.chatOpen);
+    $("#btn-chat-toggle").textContent = state.chatOpen ? "收起" : "展开";
+    $("#btn-chat-toggle").setAttribute("aria-expanded", String(state.chatOpen));
+  }
   function renderUserbar() {
     var m = me();
+    var avatarUrl = safeCssUrl(m.avatarUrl);
     $("#me-name").textContent = m.name;
     var av = $("#me-avatar");
-    av.textContent = m.avatarUrl ? "" : m.name.slice(0, 1);
-    av.style.background = m.color;
-    av.style.backgroundImage = m.avatarUrl ? "url(" + m.avatarUrl + ")" : "";
+    av.textContent = avatarUrl ? "" : m.name.slice(0, 1);
+    av.style.background = safeColor(m.color);
+    av.style.backgroundImage = avatarUrl ? 'url("' + avatarUrl + '")' : "";
     av.style.backgroundSize = "cover";
     av.style.backgroundPosition = "center";
     var mic = $("#btn-mic"), deaf = $("#btn-deaf");
@@ -281,11 +382,11 @@
     $("#conn-text").textContent = state.current ? (state.transport ? "已连接" : "连接中") : "未连接";
     var q = state.stats;
     $("#rtt-text").textContent = q.rttMs == null ? "延迟 — ms"
-      : "延迟 " + Math.round(q.rttMs) + " ms · 丢包 " + (Number(q.lossPct) || 0).toFixed(1) + "%";
+      : "延迟 " + Math.round(q.rttMs) + " ms · 丢包 " + (q.lossPct == null ? "—" : Number(q.lossPct).toFixed(1) + "%");
   }
 
   function renderAll() {
-    renderChannels(); renderMemberList(); renderRoom(); renderUserbar();
+    renderChannels(); renderMemberList(); renderRoom(); renderChat(); renderUserbar();
     $("#v-layout").classList.toggle("no-members", state.membersCollapsed);
     $("#v-layout").classList.toggle("drawer-channels", state.drawer === "channels");
     $("#v-layout").classList.toggle("drawer-members", state.drawer === "members");
@@ -306,6 +407,8 @@
     $("#welcome").hidden = false;
     $("#room").hidden = true;
     $("#screen-stage").hidden = true;
+    // 频道数据已就绪，撤掉「正在恢复登录态」遮罩，把视图交回 hidden 属性控制
+    VoiceAuth.session.ready();
     renderAll();
   }
   function showAuth() {
@@ -314,10 +417,11 @@
     state.channels = [];
     state.current = null;
     clearInterval(state.demoTimer);
+    // 清掉预登录标记与用户资料缓存，并按需初始化验证码 / Turnstile
+    VoiceAuth.session.guest();
     $("#app-view").hidden = true;
     $("#auth-view").hidden = false;
-    VoiceAuth.switchTab("login");
-    VoiceAuth.renderAvatarPreview();
+    VoiceAuth.session.prepareGuest();
   }
 
   /* ── 真实房间 ──────────────────────────────────────────────── */
@@ -330,17 +434,30 @@
 
   function startStats() {
     clearInterval(state.statsTimer);
+    // 统计轮询的回调是 async：clearInterval 只能阻止「下一次」触发，
+    // 已经在途的 getStats() 仍会在离开频道后才 resolve，把旧频道的码率写进新房间。
+    // 用自增代号作废在途结果，避免串数据。
+    var statSeq = ++state.statsSeq;
     state.statsTimer = setInterval(async function () {
-      if (!state.transport) return;
+      var transport = state.transport;
+      if (!transport) return;
       try {
-        var s = await state.transport.getStats();
+        var s = await transport.getStats();
+        if (statSeq !== state.statsSeq || state.transport !== transport) return;
         state.stats = s;
         renderUserbar(); renderRoom();
-        if (state.shareParams) {
-          $("#screen-stat").textContent = state.shareParams.width + "×" + state.shareParams.height +
-            " · " + state.shareParams.fps + "fps · " + state.shareParams.bitrateKbps + " kbps · " +
+        if (state.current && state.sharerId) {
+          var video = $("#screen-video");
+          var dims = state.sharing && state.sharerId === me().id && state.shareParams
+            ? state.shareParams.width + "×" + state.shareParams.height
+            : (video && video.videoWidth ? video.videoWidth + "×" + video.videoHeight : "—");
+          var actualFps = state.sharing && state.sharerId === me().id ? s.sendFps : s.recvFps;
+          var fps = actualFps == null ? "—fps" : Math.round(actualFps) + "fps";
+          var actualKbps = state.sharing && state.sharerId === me().id ? s.videoSendKbps : s.videoRecvKbps;
+          var bitrate = actualKbps == null ? "— kbps" : Math.round(actualKbps) + " kbps";
+          $("#screen-stat").textContent = dims + " · " + fps + " · " + bitrate + " · " +
             (s.rttMs == null ? "—" : Math.round(s.rttMs) + " ms");
-        }
+        } else $("#screen-stat").textContent = "—";
       } catch (_) {}
     }, 2000);
   }
@@ -351,13 +468,33 @@
     if (state.current === id) return;
     if (ch.offline) { toast("该自建频道当前离线，不影响其他频道"); return; }
     if (state.preview) { previewJoin(id); return; }
-    await leaveChannel(true);
+
+    // 同步占用本次加入的代号。连续点击时每次调用立刻拿到不同值；
+    // 不能等 await leaveChannel() 之后再读 —— 那时所有点击的 leaveChannel
+    // 都已执行完，会读到同一个值，旧流程就会被误判成「仍然有效」而各建一条
+    // WebSocket，正是「频道里堆出一堆管理员」的根因。
+    var seq = ++state.joinSeq;
+    var room = null, transport = null;
+    function cancelled() { return seq !== state.joinSeq; }
+    function dispose() {
+      if (room) room.close();
+      if (transport) { try { transport.disconnect().catch(function () {}); } catch (_) {} }
+      if (state.room === room) state.room = null;
+      if (state.transport === transport) state.transport = null;
+    }
+
+    // 传入 seq：由 joinChannel 自己作废上一次流程，leaveChannel 不再重复自增
+    await leaveChannel(true, seq);
+    if (cancelled()) return;   // 已被更晚的切换取代，连 UI 都不要碰
 
     var password = "";
     if (ch.hasPassword) {
       password = window.prompt("这是私有频道，请输入加入口令：", "") || "";
       if (!password) return;
     }
+    // 口令输入框是阻塞的，期间可能已有别的流程（被踢 / 管理员删频道 / 另一次点击）
+    // 作废了本次加入；进频道前必须再确认一次，否则会把 UI 切到一个已作废的房间。
+    if (cancelled()) return;
     state.current = id;
     state.expanded[id] = true;
     state.drawer = "";
@@ -371,17 +508,43 @@
 
     try {
       var join = await api("/api/voice/channels/" + encodeURIComponent(id) + "/join", "POST", { password: password });
+      // 网络往返期间用户可能已经切到别的频道；此时绝不能再建立 WebSocket。
+      if (cancelled()) return;
       state.join = join;
       if (join.notice) toast(join.notice);
-      var room = new VoiceTransport.VoiceRoomClient(join);
+      room = new VoiceTransport.VoiceRoomClient(join);
       state.room = room;
       room.on("hello", function (m) {
+        if (cancelled()) return;
         state.members = m.members || [];
+        state.chatMessages = Array.isArray(m.chat) ? m.chat.slice(-50) : [];
+        state.chatUnread = 0;
+        renderChat();
+        $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
         if (m.settings) { state.channelSettings = m.settings; if (state.transport) state.transport.applySettings(m.settings); }
         renderAll();
       });
-      room.on("members", function (m) { state.members = m.members || []; renderAll(); });
+      room.on("members", function (m) { if (cancelled()) return; state.members = m.members || []; renderAll(); });
+      room.on("chat", function (m) {
+        if (cancelled() || !m || !m.id || state.chatMessages.some(function (x) { return x.id === m.id; })) return;
+        state.chatMessages.push(m);
+        if (state.chatMessages.length > 100) state.chatMessages.shift();
+        if (!state.chatOpen) state.chatUnread++;
+        var box = $("#chat-messages");
+        var nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+        renderChat();
+        if (state.chatPinned || nearBottom) box.scrollTop = box.scrollHeight;
+        else $("#chat-new").hidden = false;
+      });
+      room.on("channel", function (m) {
+        if (cancelled()) return;
+        var currentChannel = channelById(id);
+        if (currentChannel && m.name) currentChannel.name = m.name;
+        if (m.name) $("#room-name").textContent = m.name;
+        renderChannels(); renderRoom();
+      });
       room.on("settings", function (m) {
+        if (cancelled()) return;
         state.channelSettings = m.settings || state.channelSettings;
         if (state.transport) state.transport.applySettings(m.settings);
         var c = channelById(id);
@@ -389,19 +552,24 @@
         toast("管理员更新了频道音质 / 共享上限，已实时生效");
         renderAll();
       });
-      room.on("notice", function (m) { if (m.text) toast(m.text); });
-      room.on("kicked", function (m) { toast(m.reason || "你已被移出频道"); leaveChannel(true); });
+      room.on("notice", function (m) { if (!cancelled() && m.text) toast(m.text); });
+      room.on("kicked", function (m) {
+        if (cancelled()) return;
+        toast(m.reason || "你已被移出频道"); leaveChannel(true);
+      });
       room.on("forcedMute", function (m) {
+        if (cancelled()) return;
         state.mic = false;
         applyMic();
         toast((m.by || "管理员") + " 将你禁言了");
       });
-      room.on("error", function (e) { toast(e.message || "房间连接异常"); });
-      room.on("close", function () { $("#conn-text").textContent = "重连中…"; });
-      room.on("open", function () { $("#conn-text").textContent = "已连接"; });
-      await room.connect();
-
-      var transport = VoiceTransport.create(room, {
+      room.on("error", function (e) { if (!cancelled()) toast(e.message || "房间连接异常"); });
+      // 主动离开时 room.closed 为 true，不要再显示「重连中…」
+      room.on("close", function () {
+        if (!cancelled() && !room.closed) $("#conn-text").textContent = "重连中…";
+      });
+      room.on("open", function () { if (!cancelled()) $("#conn-text").textContent = "已连接"; });
+      transport = VoiceTransport.create(room, {
         join: join, me: state.user,
         deviceId: localStorage.getItem("zf_voice_mic") || "",
         noise: localStorage.getItem("zf_voice_noise") !== "0",
@@ -410,6 +578,7 @@
       });
       state.transport = transport;
       transport.on("speaking", function (on) {
+        if (cancelled()) return;
         var now = Date.now();
         if (on || now - state.lastSpeakSent > 700) {
           state.lastSpeakSent = now;
@@ -419,33 +588,71 @@
         if (m) m.speaking = !!on;
         renderMemberList(); renderRoom();
       });
-      transport.on("stats", function (s) { state.stats = s; });
-      transport.on("screenEnded", function () { onShareEnded(); });
-      transport.on("error", function (e) { toast(e.message || "媒体连接异常"); });
-      transport.on("notice", function (m) { if (m.text) toast(m.text); });
-      await transport.connect();
-      await transport.publishAudio();
+      transport.on("stats", function (s) { if (!cancelled()) state.stats = s; });
+      transport.on("screenEnded", function () { if (!cancelled()) onShareEnded(); });
+      transport.on("micFallback", function () {
+        if (!cancelled()) {
+          localStorage.setItem("zf_voice_mic", "");
+          if ($("#set-in")) $("#set-in").value = "";
+          toast("原麦克风已断开，已切回系统默认");
+        }
+      });
+      transport.on("error", function (e) { if (!cancelled()) toast(e.message || "媒体连接异常"); });
+      transport.on("notice", function (m) { if (!cancelled() && m.text) toast(m.text); });
+      transport.on("reconnecting", function () { if (!cancelled()) { $("#conn-text").textContent = "媒体重连中…"; toast("媒体连接中断，正在自动恢复"); } });
+      transport.on("reconnected", function () { if (!cancelled()) { $("#conn-text").textContent = "已连接"; toast("媒体连接已恢复"); } });
+      transport.on("disconnected", function () { if (!cancelled()) { $("#conn-text").textContent = "媒体已断开"; toast("媒体连接已断开，请重新加入频道"); } });
+      var roomReady = room.connect();
+      var mediaReady = transport.connect();
+      var ready = await Promise.all([roomReady, mediaReady]);
+      void ready;
+      if (cancelled()) { dispose(); return; }
       transport.setInputVolume(Number(localStorage.getItem("zf_voice_vol") || 100));
       transport.setDeaf(state.deaf);
       applyMic();
       startStats();
       chime(true);
       renderAll();
-      toast("已加入「" + ch.name + "」");
+      toast("已加入「" + ch.name + "」，正在连接麦克风…");
+      transport.publishAudio().then(function () {
+        if (cancelled()) return;
+        transport.setInputVolume(Number(localStorage.getItem("zf_voice_vol") || 100));
+        applyMic();
+        toast("麦克风已连接");
+      }).catch(function (micError) {
+        if (cancelled()) return;
+        state.mic = false;
+        transport.setMic(false);
+        applyMic();
+        toast("已进入频道，但麦克风暂不可用：" + (micError.message || "请检查权限后在设置中重试"));
+      });
     } catch (e) {
+      // 已被更新的切换作废：只清理自己建立的连接，不弹旧频道的错误、不重置新频道 UI
+      if (cancelled()) { dispose(); return; }
       toast("加入失败：" + (e && e.message || "未知错误"));
       await leaveChannel(true);
     }
   }
 
-  async function leaveChannel(silent) {
+  async function leaveChannel(silent, seq) {
+    // 独立的离开（挂断 / 被踢 / 频道删除）才让所有在途加入流程立即失效；
+    // 由 joinChannel 调用的离开已经自带代号，不要重复自增把它自己也作废。
+    if (seq === undefined) state.joinSeq++;
+    var leaveSeq = state.joinSeq;
+    // 作废在途的统计回调，并清掉所有与房间相关的定时器（含预览用的说话演示）。
+    state.statsSeq++;
     clearInterval(state.statsTimer); state.statsTimer = null;
+    clearInterval(state.demoTimer); state.demoTimer = null;
+    clearInterval(state.speakingTimer); state.speakingTimer = null;
     var room = state.room, transport = state.transport;
     state.room = null; state.transport = null; state.join = null;
     state.members = []; state.sharing = false; state.shareParams = null; state.sharerId = null;
     state.current = null; state.watching = true; state.stats = { rttMs: null, lossPct: 0 };
-    if (transport) { try { await transport.disconnect(); } catch (_) {} }
+    // 先同步关掉 WebSocket：这是「从旧频道退出」最关键的一步，不能等
+    // 媒体清理（可能要等音频设备 / SFU 请求）完成后才执行。
     if (room) room.close();
+    if (transport) { try { await transport.disconnect(); } catch (_) {} }
+    if (leaveSeq !== state.joinSeq) return;
     var video = $("#screen-video");
     if (video) { video.srcObject = null; video.style.opacity = "0"; }
     $("#screen-placeholder").hidden = false;
@@ -497,6 +704,23 @@
       bootstrap(user);
     });
   }
+  async function saveProfile(patch) {
+    try {
+      var result = await api("/api/voice/me", "PATCH", patch);
+      state.user = result.user;
+      var avatar = result.user.avatarUrl;
+      if (avatar) result.user.avatarUrl = avatar + "?v=" + Date.now();
+      VoiceAuth.session.cache(result.user);
+      if (state.room) state.room.send({ t: "profile", name: result.user.displayName, avatarUrl: result.user.avatarUrl || "" });
+      renderUserbar(); renderMemberList(); renderRoom();
+      $("#profile-name").value = result.user.displayName;
+      toast("个人资料已更新");
+      return result.user;
+    } catch (e) {
+      toast("保存资料失败：" + (e.message || "请求失败"));
+      throw e;
+    }
+  }
   function bindLogout() {
     var btn = $("#btn-logout");
     if (!btn) return;
@@ -508,10 +732,13 @@
     });
   }
 
-  async function bootstrap(presetUser) {
+  async function bootstrap(presetUser, prefetched) {
     try {
-      var d = await api("/api/voice/bootstrap");
-      var user = presetUser || d.user;
+      // 「恢复登录态」路径下，/bootstrap 已经和 /me 并行发出了，这里直接复用，
+      // 少一次串行往返——这是「刷新后要等很久才进大厅」的主要等待来源。
+      var d = prefetched ? await prefetched : await api("/api/voice/bootstrap");
+      if (d && d.__error) throw d.__error;
+      var user = presetUser || (d && d.user);
       if (!user) { showAuth(); return; }
       state.capabilities = d.capabilities || {};
       state.settings = d.settings || {};
@@ -534,6 +761,10 @@
       var selIn = $("#set-in"), selOut = $("#set-out");
       var keepIn = localStorage.getItem("zf_voice_mic") || "";
       var keepOut = localStorage.getItem("zf_voice_spk") || "";
+      if (keepIn && !ins.some(function (d) { return d.deviceId === keepIn; })) {
+        keepIn = "";
+        localStorage.setItem("zf_voice_mic", "");
+      }
       selIn.innerHTML = '<option value="">系统默认麦克风</option>' + ins.map(function (d, i) {
         return '<option value="' + esc(d.deviceId) + '">' + esc(d.label || ("麦克风 " + (i + 1))) + "</option>";
       }).join("");
@@ -546,15 +777,21 @@
 
   async function reacquireMic() {
     if (!state.transport || typeof state.transport.refreshAudio !== "function") return;
+    var requestedMic = localStorage.getItem("zf_voice_mic") || "";
     try {
       await state.transport.refreshAudio({
-        deviceId: localStorage.getItem("zf_voice_mic") || "",
+        deviceId: requestedMic,
         noise: localStorage.getItem("zf_voice_noise") !== "0",
         echo: localStorage.getItem("zf_voice_echo") !== "0",
         agc: localStorage.getItem("zf_voice_agc") !== "0"
       });
       applyMic();
-      toast("麦克风设置已更新");
+      if (!state.transport.opts.deviceId && requestedMic) {
+        localStorage.setItem("zf_voice_mic", "");
+        if ($("#set-in")) $("#set-in").value = "";
+        if (state.transport.kind !== "livekit") toast("麦克风已切回系统默认");
+        else toast("麦克风设置已更新");
+      } else toast("麦克风设置已更新");
     } catch (e) { toast("更新麦克风失败：" + (e.message || "权限被拒绝")); }
   }
 
@@ -566,6 +803,42 @@
   }
 
   /* ── 私有频道对话框 ────────────────────────────────────────── */
+  var editingChannel = null;
+  var actionChannel = null;
+  function openChannelActions(ch) {
+    actionChannel = ch;
+    $("#channel-action-name").textContent = ch.name;
+    openDlg("dlg-channel-actions");
+  }
+  function openEditChannel(ch) {
+    editingChannel = ch;
+    $("#dlg-add-title").textContent = "编辑频道";
+    $("#add-name").value = ch.name || "";
+    $("#add-descr").value = ch.descr || "";
+    $("#add-visibility").value = ch.visibility || "private";
+    $("#add-password").value = "";
+    $("#add-password").placeholder = "留空表示不修改";
+    $("#add-backend-group").hidden = true;
+    $("#add-self-fields").hidden = true;
+    $("#btn-test-conn").hidden = true;
+    $("#add-alert").hidden = true;
+    openDlg("dlg-add");
+  }
+  function resetAddDialog() {
+    editingChannel = null;
+    $("#dlg-add-title").textContent = "添加私有频道";
+    $("#add-password").placeholder = "留空则不需要口令";
+    $("#add-backend-group").hidden = false;
+    $("#add-self-fields").hidden = false;
+  }
+  async function deleteChannel(ch) {
+    try {
+      await api("/api/voice/channels/" + encodeURIComponent(ch.id), "DELETE");
+      if (state.current === ch.id) await leaveChannel(true);
+      state.channels = state.channels.filter(function (x) { return x.id !== ch.id; });
+      renderAll(); toast("频道已删除");
+    } catch (e) { toast("删除失败：" + (e.message || "网络错误")); }
+  }
   function hostFromInput() { return $("#add-host").value.trim(); }
   function tlsChecked() { return $("#add-tls").checked; }
   function validateAdd(showAlert) {
@@ -592,6 +865,8 @@
 
   /* ── 应用内交互 ────────────────────────────────────────────── */
   function bindApp() {
+    $("#screen-video").addEventListener("loadedmetadata", function () { renderRoom(); });
+    $("#screen-video").addEventListener("playing", function () { renderRoom(); });
     $("#btn-theme").addEventListener("click", function () {
       var next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
       document.documentElement.setAttribute("data-theme", next);
@@ -611,12 +886,63 @@
       });
     });
 
+    $("#btn-channel-edit").addEventListener("click", function () {
+      if (!actionChannel) return;
+      closeDlg("dlg-channel-actions");
+      openEditChannel(actionChannel);
+    });
+    $("#btn-channel-delete").addEventListener("click", function () {
+      if (!actionChannel) return;
+      if (!window.confirm("确定删除频道「" + actionChannel.name + "」？此操作不可撤销。")) return;
+      var ch = actionChannel;
+      closeDlg("dlg-channel-actions");
+      deleteChannel(ch);
+    });
     $("#channel-list").addEventListener("click", function (e) {
+      var menu = e.target.closest("[data-channel-menu]");
+      if (menu) {
+        var channel = channelById(menu.getAttribute("data-channel-menu"));
+        if (!channel) return;
+        openChannelActions(channel);
+        return;
+      }
       var row = e.target.closest(".channel-row");
       if (!row) return;
       joinChannel(row.getAttribute("data-channel"));
     });
 
+    $("#chat-messages").addEventListener("scroll", function (e) {
+      var box = e.target;
+      state.chatPinned = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      if (state.chatPinned) $("#chat-new").hidden = true;
+    });
+    $("#chat-new").addEventListener("click", function () {
+      var box = $("#chat-messages"); box.scrollTop = box.scrollHeight;
+      state.chatPinned = true; $("#chat-new").hidden = true;
+    });
+    $("#chat-input").addEventListener("input", function (e) {
+      $("#chat-remaining").textContent = String(500 - e.target.value.length);
+    });
+    $("#chat-input").addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chat-form").requestSubmit(); }
+    });
+    $("#chat-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var text = $("#chat-input").value.trim();
+      if (!text) { toast("请输入消息"); return; }
+      if (text.length > 500) { toast("消息不能超过 500 个字符"); return; }
+      if (!state.room) { toast("请先加入频道"); return; }
+      state.room.send({ t: "chat", text: text });
+      $("#chat-input").value = ""; $("#chat-remaining").textContent = "500";
+    });
+    function toggleChat() {
+      state.chatOpen = !state.chatOpen;
+      if (window.matchMedia("(max-width:760px)").matches) $("#chat-panel").classList.toggle("chat-drawer-open", state.chatOpen);
+      if (state.chatOpen) state.chatUnread = 0;
+      renderChat();
+    }
+    $("#btn-chat-toggle").addEventListener("click", toggleChat);
+    $("#btn-chat-mobile").addEventListener("click", toggleChat);
     $("#btn-hangup").addEventListener("click", function () { leaveChannel(false); });
     $("#btn-mic").addEventListener("click", function () {
       state.mic = !state.mic;
@@ -630,6 +956,17 @@
       renderUserbar(); renderMemberList();
     });
 
+    $("#btn-chat-toggle").addEventListener("click", function () {
+      if (window.matchMedia("(max-width:760px)").matches) {
+        state.chatOpen = !state.chatOpen;
+        $("#chat-panel").classList.toggle("chat-drawer-open", state.chatOpen);
+      } else {
+        state.chatOpen = !state.chatOpen;
+        renderChat();
+      }
+      if (state.chatOpen) state.chatUnread = 0;
+      renderChat();
+    });
     $("#btn-members").addEventListener("click", function () {
       if (window.matchMedia("(max-width:760px)").matches) state.drawer = state.drawer === "members" ? "" : "members";
       else {
@@ -729,11 +1066,22 @@
       $("#screen-placeholder").hidden = state.watching && !!(video && video.srcObject);
       renderRoom();
     });
-    $("#screen-quality").addEventListener("change", function (e) {
+    $("#screen-quality").addEventListener("change", async function (e) {
       var v = e.target.value;
-      if (state.room && state.sharerId) state.room.sendSignal(state.sharerId, { kind: "quality", value: v });
-      if (state.transport && typeof state.transport.setScreenQuality === "function") state.transport.setScreenQuality(v);
-      toast("观看画质：" + e.target.options[e.target.selectedIndex].text);
+      if (!state.transport || !state.sharerId) { toast("当前没有可调整的共享画面"); return; }
+      if (state.sharerId === me().id) {
+        state.transport.setScreenQuality(v);
+        toast("共享画质已调整：" + e.target.options[e.target.selectedIndex].text);
+        return;
+      }
+      if (state.transport.kind === "livekit") {
+        state.transport.sharerIdentity = state.sharerId;
+        var ok = await state.transport.requestScreenQuality(v);
+        toast(ok ? "观看画质已调整：" + e.target.options[e.target.selectedIndex].text : "画质切换失败：对方客户端不支持");
+        return;
+      }
+      if (state.room) state.room.sendSignal(state.sharerId, { kind: "quality", value: v });
+      toast("观看画质请求已发送：" + e.target.options[e.target.selectedIndex].text);
     });
     $("#screen-volume").addEventListener("input", function (e) {
       var v = Number(e.target.value);
@@ -741,14 +1089,112 @@
       if (video) video.volume = v / 100;
       if (state.transport && state.sharerId) state.transport.setMemberVolume(state.sharerId, v);
     });
-    $("#btn-fullscreen").addEventListener("click", function () {
-      var el = $("#screen-stage").hidden ? $("#voice-main") : $("#screen-stage");
-      if (el.requestFullscreen) el.requestFullscreen().catch(function () { toast("浏览器拒绝了全屏请求"); });
-      else toast("当前浏览器不支持全屏");
-    });
+    /* 全屏查看：共享画面本身、双击画面、顶部全屏按钮共用同一个入口 */
+    function toggleScreenFullscreen() {
+      var doc = document;
+      var fsEl = doc.fullscreenElement || doc.webkitFullscreenElement;
+      if (fsEl) {
+        var exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+        if (exit) { try { var ep = exit.call(doc); if (ep && ep.catch) ep.catch(function () {}); } catch (_) {} }
+        return;
+      }
+      var stage = $("#screen-stage");
+      var sharing = stage && !stage.hidden;
+      // 有共享时放大的应该是「画面」而不是整个语音区（整个区还有成员条、
+      // 聊天栏，全屏后画面并不会变大，这正是之前「放大没反应」的原因）。
+      var target = sharing ? ($("#screen-main") || stage) : $("#voice-main");
+      if (!target) return;
+      var req = target.requestFullscreen || target.webkitRequestFullscreen;
+      if (!req) { toast("当前浏览器不支持全屏，可按 F11 全屏浏览器"); return; }
+      try {
+        var p = req.call(target);
+        if (p && p.catch) p.catch(function () { toast("全屏被浏览器拒绝：请先点击一下页面再试"); });
+      } catch (_) { toast("无法进入全屏，可按 F11 全屏浏览器"); }
+    }
+    $("#btn-fs-screen").addEventListener("click", toggleScreenFullscreen);
+    $("#screen-video").addEventListener("dblclick", toggleScreenFullscreen);
+    $("#btn-fullscreen").addEventListener("click", toggleScreenFullscreen);
 
     /* 设置抽屉 */
-    $("#btn-settings").addEventListener("click", function () { refreshDevices(); openDlg("dlg-settings"); });
+    $("#btn-settings").addEventListener("click", function () {
+      refreshDevices();
+      $("#profile-name").value = state.user ? state.user.displayName : "";
+      var preview = $("#profile-avatar-preview");
+      var previewUrl = safeCssUrl(state.user && state.user.avatarUrl);
+      preview.textContent = previewUrl ? "" : (state.user ? state.user.displayName.slice(0, 1) : "Z");
+      preview.style.backgroundImage = previewUrl ? 'url("' + previewUrl + "?v=" + Date.now() + '")' : "";
+      openDlg("dlg-settings");
+    });
+    /**
+     * 头像压缩：浏览器端先裁成正方形、缩到 256px 再转 JPEG。
+     * 以前是把原图直接 base64 上传，手机照片动辄 3~8 MB，会被前端的
+     * 2 MB 限制或服务端 AVATAR_LIMIT 直接拒掉——用户看到的就是
+     * 「头像改不了」。压缩后通常只有 20~40 KB，任何图片都能传上去。
+     */
+    function compressAvatar(file) {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+            var side = Math.min(w, h);
+            if (!side) { URL.revokeObjectURL(url); reject(new Error("图片尺寸无效")); return; }
+            var size = Math.min(256, side);
+            var cv = document.createElement("canvas");
+            cv.width = size; cv.height = size;
+            var cx = cv.getContext("2d");
+            if (!cx) { URL.revokeObjectURL(url); reject(new Error("浏览器不支持图片处理")); return; }
+            cx.imageSmoothingEnabled = true;
+            cx.imageSmoothingQuality = "high";
+            cx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, size, size);
+            var out = cv.toDataURL("image/jpeg", 0.86);
+            URL.revokeObjectURL(url);
+            resolve(out);
+          } catch (err) { URL.revokeObjectURL(url); reject(err); }
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("无法解析这张图片，请换一张试试")); };
+        img.src = url;
+      });
+    }
+
+    $("#profile-name").addEventListener("change", function () { saveProfile({ displayName: $("#profile-name").value.trim() }); });
+    $("#btn-profile-save").addEventListener("click", function () {
+      var name = $("#profile-name").value.trim();
+      if (!name) { toast("请先填写显示名称"); $("#profile-name").focus(); return; }
+      saveProfile({ displayName: name }).catch(function () {});
+    });
+    $("#profile-avatar").addEventListener("change", function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      if (!/^image\/(jpeg|png|webp)$/.test(file.type)) { toast("头像仅支持 jpg / png / webp 图片"); e.target.value = ""; return; }
+      if (file.size > 20 * 1024 * 1024) { toast("图片太大了（超过 20 MB），请换一张"); e.target.value = ""; return; }
+      var hint = $("#profile-hint");
+      if (hint) hint.textContent = "正在处理头像…";
+      compressAvatar(file).then(function (dataUrl) {
+        return saveProfile({ avatar: dataUrl }).then(function () {
+          var shown = safeCssUrl(dataUrl);
+          $("#profile-avatar-preview").style.backgroundImage = shown ? 'url("' + shown + '")' : "";
+          $("#profile-avatar-preview").textContent = shown ? "" : $("#profile-name").value.slice(0, 1);
+          if (hint) hint.textContent = "头像已更新（约 " + Math.round(dataUrl.length / 1024) + " KB）。";
+        });
+      }).catch(function (err) {
+        // saveProfile 已经弹过错误提示，这里只补充上下文，避免连弹两个 toast
+        if (hint) hint.textContent = "头像更新失败：" + (err && err.message || "未知错误");
+      }).then(function () { e.target.value = ""; });
+    });
+    $("#btn-password").addEventListener("click", function () { openDlg("dlg-password"); });
+    $("#form-password").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var oldPassword = $("#password-old").value;
+      var newPassword = $("#password-new").value;
+      if (newPassword.length < 10 || !/[a-z]/i.test(newPassword) || !/[0-9]/.test(newPassword)) { toast("新密码至少 10 位，且需同时包含字母和数字"); return; }
+      if (newPassword !== $("#password-confirm").value) { toast("两次输入的新密码不一致"); return; }
+      try {
+        await api("/api/voice/password", "POST", { oldPassword: oldPassword, newPassword: newPassword });
+        $("#form-password").reset(); closeDlg("dlg-password"); toast("密码已修改，其他登录会话已退出");
+      } catch (err) { toast("修改密码失败：" + (err.message || "请求失败")); }
+    });
     $("#set-vol").addEventListener("input", function (e) {
       $("#vol-label").textContent = e.target.value + "%";
       localStorage.setItem("zf_voice_vol", e.target.value);
@@ -840,6 +1286,18 @@
       e.preventDefault();
       var name = $("#add-name").value.trim();
       if (!name) { toast("请填写频道名称"); return; }
+      if (editingChannel) {
+        try {
+          var patch = { name: name, descr: $("#add-descr").value.trim(), visibility: $("#add-visibility").value };
+          if ($("#add-password").value) patch.password = $("#add-password").value;
+          var updated = await api("/api/voice/channels/" + encodeURIComponent(editingChannel.id), "PATCH", patch);
+          var at = state.channels.findIndex(function (x) { return x.id === editingChannel.id; });
+          if (at >= 0) state.channels[at] = updated.channel;
+          closeDlg("dlg-add"); $("#form-add").reset(); resetAddDialog(); renderAll();
+          toast("频道设置已保存");
+        } catch (err) { toast("保存失败：" + (err.message || "网络错误")); }
+        return;
+      }
       var bad = validateAdd(true);
       if (bad) { toast("请先修正连接地址"); return; }
       if (state.preview) {
@@ -877,7 +1335,7 @@
       b.addEventListener("click", function () {
         var id = b.getAttribute("data-close");
         var f = b.closest("form");
-        if (f && id === "dlg-add") f.reset();
+        if (f && id === "dlg-add") { f.reset(); resetAddDialog(); syncAddBackend(); }
         closeDlg(id);
       });
     });
@@ -913,12 +1371,33 @@
       startSpeakingDemo();
       return;
     }
-    $("#auth-view").hidden = false;
-    $("#app-view").hidden = true;
-    VoiceAuth.bootstrap().then(function (user) {
-      if (user) bootstrap(user);
-      else VoiceAuth.renderAvatarPreview();
-    });
+    if (VoiceAuth.session.hinted()) {
+      // <head> 里的同步脚本已经把视图切成「预登录」，登录页一次都不会闪。
+      // 先用本地缓存把用户栏填上，恢复动画盖住还没加载完的频道列表。
+      var cached = VoiceAuth.session.cached();
+      if (cached) { state.user = cached; renderUserbar(); }
+      $("#auth-view").hidden = true;
+      $("#app-view").hidden = false;
+      // 关键提速：先把 /api/voice/bootstrap 发出去，和 VoiceAuth 内部的 /me
+      // 并行跑。以前是 /me 回来 → showApp 之前再等 /bootstrap，两个 RTT 串着，
+      // 刷新页面就明显卡一下。
+      var prefetch = api("/api/voice/bootstrap").catch(function (e) { return { __error: e }; });
+      VoiceAuth.bootstrap().then(function (user) {
+        if (user) bootstrap(user, prefetch);
+        else {
+          // Cookie 标记还在但服务端会话已失效（过期 / 被管理员踢下线）
+          showAuth();
+          toast("登录状态已过期，请重新登录");
+        }
+      });
+    } else {
+      $("#auth-view").hidden = false;
+      $("#app-view").hidden = true;
+      VoiceAuth.bootstrap().then(function (user) {
+        if (user) bootstrap(user);
+        else VoiceAuth.renderAvatarPreview();
+      });
+    }
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

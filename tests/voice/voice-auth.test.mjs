@@ -380,6 +380,31 @@ await test("登录成功返回会话，/me 可读取，logout 后失效", async 
   assert.equal(after.user, null);
 });
 
+await test("修改资料 / 头像与修改密码：保持当前会话并撤销其他会话", async function () {
+  resetRate();
+  const inv = await makeInvite();
+  const capReg = await newCaptcha();
+  const registered = await call("POST", "/api/voice/register", Object.assign(regBody(inv.code, "profileuser"), captchaPairs(capReg)));
+  const cookie1 = (registered.headers.get("set-cookie") || "").split(";")[0];
+  const cap2 = await newCaptcha();
+  const login2 = await call("POST", "/api/voice/login", loginBody("profileuser", null, cap2));
+  const cookie2 = (login2.headers.get("set-cookie") || "").split(";")[0];
+  const profile = await json(await call("PATCH", "/api/voice/me", { displayName: "爱丽丝新名" }, { cookie: cookie1 }));
+  assert.equal(profile.user.displayName, "爱丽丝新名");
+  const avatar = "data:image/png;base64," + Buffer.from("89504E470D0A1A0A0000000D49484452", "hex").toString("base64");
+  const changed = await json(await call("PATCH", "/api/voice/me", { avatar: avatar }, { cookie: cookie1 }));
+  assert.ok(changed.user.avatarUrl);
+  assert.equal((await call("GET", changed.user.avatarUrl)).status, 200);
+  const weak = await json(await call("POST", "/api/voice/password", { oldPassword: "ZfVoice2026", newPassword: "weak" }, { cookie: cookie1 }));
+  assert.equal(weak.ok, false);
+  const wrong = await json(await call("POST", "/api/voice/password", { oldPassword: "WrongPass2026", newPassword: "OtherPass2026" }, { cookie: cookie1 }));
+  assert.equal(wrong.error, "旧密码不正确");
+  const pass = await json(await call("POST", "/api/voice/password", { oldPassword: "ZfVoice2026", newPassword: "OtherPass2026" }, { cookie: cookie1 }));
+  assert.equal(pass.ok, true, pass.error);
+  assert.equal((await json(await call("GET", "/api/voice/me", undefined, { cookie: cookie1 }))).user.username, "profileuser");
+  assert.equal((await json(await call("GET", "/api/voice/me", undefined, { cookie: cookie2 }))).user, null);
+});
+
 await test("密码错误失败并进入递增冷却", async function () {
   resetRate();
   for (let i = 0; i < 5; i++) {

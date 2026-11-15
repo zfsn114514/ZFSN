@@ -16,7 +16,17 @@ import * as L from "./lib.js";
 
 /* ── 常量 ────────────────────────────────────────────────────── */
 export const COOKIE_NAME = "zf_voice_sid";
-export const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;      // 7 天
+/**
+ * 只标记「这个浏览器可能还登录着」的可读 Cookie，值恒为 1，不含任何身份信息。
+ * 前端靠它在 <head> 里同步判断要不要跳过登录页，避免每次都先闪一下登录表单。
+ * 真正决定身份的仍然是 HttpOnly 的 COOKIE_NAME，两个 Cookie 同时下发/清除。
+ */
+export const HINT_COOKIE_NAME = "zf_voice_si";
+export const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;      // 旧版会话（升级前签发的纯 hex 令牌）
+export const REMEMBER_TTL = 30 * 24 * 60 * 60 * 1000;    // 勾选「保持登录」：30 天
+export const SHORT_TTL = 12 * 60 * 60 * 1000;            // 不勾选：会话级 Cookie，服务端兜底 12 小时
+export const MAX_SESSION_LIFE = 90 * 24 * 60 * 60 * 1000;// 滑动续期的绝对上限，避免无限延期
+export const RENEW_BELOW = 7 * 24 * 60 * 60 * 1000;      // 剩余寿命不足 7 天时才回写 Cookie
 export const CAPTCHA_TTL = 2 * 60 * 1000;                 // 2 分钟
 export const ROOM_TICKET_TTL = 5 * 60 * 1000;             // 房间票据 5 分钟
 export const AVATAR_LIMIT = 2 * 1024 * 1024;              // 2 MB
@@ -412,18 +422,57 @@ function secureFlag(request) {
   catch (_) { return "; Secure"; }
 }
 
+/** 令牌首字符标记会话类型，避免为了记一个布尔值去改线上 D1 表结构。
+ *  r = 保持登录（30 天，可滑动续期）；s = 临时（关闭浏览器失效）；
+ *  其余 = 升级前签发的纯 hex 令牌，按旧规则 7 天处理，保证老用户不掉线。
+ * 首字符只是类型标签，随机部分仍有 32 字节熵，不影响令牌不可预测性。 */
+export function sessionKind(token) {
+  const c = String(token || "").charAt(0);
+  if (c === "r") return "remember";
+  if (c === "s") return "short";
+  return "legacy";
+}
+
+export function sessionTTL(kind) {
+  return kind === "remember" ? REMEMBER_TTL : kind === "short" ? SHORT_TTL : SESSION_TTL;
+}
+
+export function newSessionToken(remember) {
+  return (remember === false ? "s" : "r") + L.randomHex(32);
+}
+
+/** ttlMs === 0 表示会话级 Cookie：不带 Max-Age，浏览器关闭即失效。 */
+function cookieTail(request, ttlMs) {
+  const age = ttlMs === 0 ? null : Math.floor((ttlMs || SESSION_TTL) / 1000);
+  return "; Path=/; SameSite=Lax" + (age === null ? "" : "; Max-Age=" + age) + secureFlag(request);
+}
+
 /**
  * HttpOnly + SameSite=Lax + Secure（HTTPS 下）。
  * 本地 http://127.0.0.1 调试时不加 Secure，否则浏览器根本不会保存 Cookie。
  */
 export function sessionCookie(request, token, ttlMs) {
-  const age = Math.floor((ttlMs || SESSION_TTL) / 1000);
-  return COOKIE_NAME + "=" + encodeURIComponent(token) +
-    "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" + age + secureFlag(request);
+  return COOKIE_NAME + "=" + encodeURIComponent(token) + "; HttpOnly" + cookieTail(request, ttlMs);
 }
 
+/** 前端可读的同生命周期标记；不是凭据，被伪造也不会让 /me 通过。 */
+export function hintCookie(request, ttlMs) {
+  return HINT_COOKIE_NAME + "=1" + cookieTail(request, ttlMs);
+}
+
+/** 一次登录/续期要下发的两个 Cookie，顺序固定：主 Cookie 在前，便于旧测试解析。 */
+export function sessionCookies(request, token, ttlMs) {
+  return [sessionCookie(request, token, ttlMs), hintCookie(request, ttlMs)];
+}
+
+export function clearSessionCookies(request) {
+  const tail = "; Path=/; SameSite=Lax; Max-Age=0" + secureFlag(request);
+  return [COOKIE_NAME + "=; HttpOnly" + tail, HINT_COOKIE_NAME + "=" + tail];
+}
+
+/** 兼容旧调用点：只要主 Cookie 的清除语句。 */
 export function clearSessionCookie(request) {
-  return COOKIE_NAME + "=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" + secureFlag(request);
+  return clearSessionCookies(request)[0];
 }
 
 /* ── 默认头像 ────────────────────────────────────────────────── */

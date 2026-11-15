@@ -244,6 +244,33 @@ try {
     assert.equal(no.status, 401);
   });
 
+  /* ══ 2.5 个人资料：改名 / 换头像 ═════════════════════════ */
+  await step("修改显示名与头像：PATCH /me 立即生效，SVG 头像被拒", async function () {
+    const before = await api("GET", "/api/voice/me", undefined, { cookie: S.cookieA });
+    const originalName = before.data.user.displayName;
+    // 1×1 透明 PNG：服务端会按魔数识别真实类型，不信任 data URL 里的 MIME
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const r = await api("PATCH", "/api/voice/me",
+      { displayName: "爱丽丝改名", avatar: png }, { cookie: S.cookieA });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.user.displayName, "爱丽丝改名");
+    assert.match(String(r.data.user.avatarUrl || ""), /^\/api\/voice\/avatars\//,
+      "头像应落到 MEDIA 存储并返回站内地址");
+
+    // 重新读一次，确认真的写进了库（而不是只改了本次响应）
+    const again = await api("GET", "/api/voice/me", undefined, { cookie: S.cookieA });
+    assert.equal(again.data.user.displayName, "爱丽丝改名", "刷新后应当还是新名字");
+    assert.equal(again.data.user.avatarUrl, r.data.user.avatarUrl);
+
+    // SVG 可以内嵌脚本，必须一律拒绝
+    const bad = await api("PATCH", "/api/voice/me",
+      { avatar: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" }, { cookie: S.cookieA });
+    assert.equal(bad.status, 400, "SVG 头像必须被拒绝");
+
+    // 还原显示名，后面几个步骤是按初始昵称断言的
+    await api("PATCH", "/api/voice/me", { displayName: originalName }, { cookie: S.cookieA });
+  });
+
   /* ══ 3. 频道 / 房间票据 ══════════════════════════════════ */
   await step("bootstrap 返回 3 个 Cloudflare 预置频道与频道设置", async function () {
     const b = await api("GET", "/api/voice/bootstrap", undefined, { cookie: S.cookieA });
@@ -332,6 +359,30 @@ try {
     assert.ok(String(ipTls.data.message).indexOf("wss") >= 0);
   });
 
+  await step("频道创建者能修改频道，其他用户不能，在线频道不能删除", async function () {
+    const before = await api("POST", "/api/voice/channels/cf-lobby/join", {}, { cookie: S.cookieA });
+    const own = await api("PATCH", "/api/voice/channels/" + S.privateId,
+      { name: "私有频道改名", descr: "新简介", password: "" }, { cookie: S.cookieA });
+    assert.equal(own.status, 200, JSON.stringify(own.data));
+    assert.equal(own.data.channel.name, "私有频道改名");
+    const forbidden = await api("PATCH", "/api/voice/channels/" + S.privateId,
+      { name: "越权" }, { cookie: S.cookieB });
+    assert.equal(forbidden.status, 403);
+    const ownerJoin = await api("POST", "/api/voice/channels/" + S.privateId + "/join", { password: "room-pwd-2026" }, { cookie: S.cookieA });
+    const ownerRoom = await connectRoom(ownerJoin.data.wsUrl);
+    await ownerRoom.waitFor(function (m) { return m.t === "hello"; });
+    const activeDelete = await api("DELETE", "/api/voice/channels/" + S.privateId, undefined, { cookie: S.cookieA });
+    assert.equal(activeDelete.status, 409);
+    assert.match(activeDelete.data.error, /频道内还有/);
+    ownerRoom.close();
+    const fresh = await api("POST", "/api/voice/channels", { name: "待删自有频道", visibility: "private" }, { cookie: S.cookieA });
+    assert.equal(fresh.status, 201, JSON.stringify(fresh.data));
+    const del = await api("DELETE", "/api/voice/channels/" + fresh.data.channel.id, undefined, { cookie: S.cookieA });
+    assert.equal(del.status, 200, JSON.stringify(del.data));
+    assert.equal(Number(db().prepare("SELECT COUNT(*) AS c FROM channel_settings WHERE channel_id = ?").get(fresh.data.channel.id).c), 0);
+    void before;
+  });
+
   await step("普通用户默认不能添加自建后端频道（架构约束）", async function () {
     const r = await api("POST", "/api/voice/channels", {
       name: "自建测试", backend: "self_hosted", host: "voice.example.com", port: 7880, tls: true
@@ -357,6 +408,28 @@ try {
     assert.deepEqual(mem.members.map(function (x) { return x.name; }).sort(), ["乙", "甲"].sort());
   });
 
+  await step("频道聊天：实时广播、拒绝空/超长消息并在重连 hello 返回历史", async function () {
+    const text = "<script>alert(1)</script>";
+    S.roomA.send({ t: "chat", text: text });
+    const received = await S.roomB.waitFor(function (m) { return m.t === "chat" && m.text === text; });
+    assert.equal(received.memberId, S.userA.id);
+    assert.ok(received.id && received.ts);
+    S.roomA.send({ t: "chat", text: "   " });
+    assert.ok(await S.roomA.waitFor(function (m) { return m.t === "error" && /1~500/.test(m.text); }));
+    S.roomA.send({ t: "chat", text: "x".repeat(501) });
+    assert.ok(await S.roomA.waitFor(function (m) { return m.t === "error" && /1~500/.test(m.text); }));
+    for (let i = 0; i < 6; i++) S.roomA.send({ t: "chat", text: "rate-" + i });
+    assert.ok(await S.roomA.waitFor(function (m) { return m.t === "error" && /发送太快/.test(m.text); }));
+    S.roomA.close();
+    const reconnectJoin = await api("POST", "/api/voice/channels/cf-lobby/join", {}, { cookie: S.cookieA });
+    const reconnect = await connectRoom(reconnectJoin.data.wsUrl);
+    const hello = await reconnect.waitFor(function (m) { return m.t === "hello"; });
+    assert.ok(hello.chat.some(function (m) { return m.text === text; }));
+    reconnect.close();
+    S.roomA = await connectRoom(S.joinA.wsUrl);
+    await S.roomA.waitFor(function (m) { return m.t === "hello"; });
+  });
+
   await step("信令只转发给指定成员，不广播给第三人以外的人", async function () {
     S.roomA.send({ t: "signal", to: S.userB.id, data: { sdp: "fake-offer" } });
     const sig = await S.roomB.waitFor(function (m) {
@@ -378,6 +451,11 @@ try {
     const sharer = p.members.find(function (u) { return u.id === S.userA.id; });
     assert.ok(sharer && (sharer.publications || []).some(function (t) { return t.kind === "video"; }),
       "共享者出版物未带 video 轨道：" + JSON.stringify(p.members));
+    S.roomA.send({ t: "profile", name: "甲改名", avatarUrl: "/api/voice/avatars/test?v=1" });
+    const profile = await S.roomB.waitFor(function (x) {
+      return x.t === "members" && x.members.some(function (u) { return u.id === S.userA.id && u.name === "甲改名"; });
+    });
+    assert.ok(profile.members.some(function (u) { return u.id === S.userA.id && /v=1/.test(u.avatarUrl); }));
   });
 
   /* ══ 6. 后台频道 / 音质 / 屏幕上限与实时下发 ═════════════ */
@@ -517,6 +595,42 @@ try {
     const boot = await api("GET", "/api/voice/bootstrap", undefined, { cookie: S.cookieB });
     assert.equal(boot.status, 200);
     assert.equal(boot.data.user.username, "bob");
+  });
+
+  await step("来回切频道残留的同一账号连接：DO 自动踢旧连接，成员表不出现重复管理员", async function () {
+    // 复现 2026-11-14 线上 bug：快速切换时没关掉的旧 WebSocket 会让同一账号
+    // 在成员列表里堆成一排。这里用甲的同一张票据连两次，模拟「幽灵连接」。
+    const stale = await connectRoom(S.joinA.wsUrl);
+    const h1 = await stale.waitFor(function (m) { return m.t === "hello"; });
+    assert.equal(h1.self.id, S.userA.id, "旧连接身份不对");
+
+    // 先挂上关闭监听：新连接一附着，旧连接就会立刻被 DO 踢掉，
+    // 等 connectRoom 返回后再注册会错过 close 事件。
+    const closedPromise = new Promise(function (resolve, reject) {
+      const timer = setTimeout(function () { reject(new Error("旧连接未被 DO 踢出")); }, 3000);
+      stale.ws.on("close", function (c) { clearTimeout(timer); resolve(c); });
+    });
+
+    const fresh = await connectRoom(S.joinA.wsUrl);
+    const h2 = await fresh.waitFor(function (m) { return m.t === "hello"; });
+    assert.equal(h2.self.id, S.userA.id, "新连接身份不对");
+    assert.equal(h2.members.filter(function (x) { return x.id === S.userA.id; }).length, 1,
+      "hello 成员快照里出现重复账号：" + JSON.stringify(h2.members.map(function (x) { return x.name; })));
+
+    // 旧连接必须被 DO 主动关闭，而不是永远留在房间
+    const code = await closedPromise;
+    assert.equal(code, 4402, "旧连接关闭码应为 4402，实际 " + code);
+
+    await delay(300);
+    const recent = S.roomB.messages.filter(function (m) { return m.t === "members"; });
+    const last = recent[recent.length - 1];
+    assert.ok(last, "另一个用户没有收到成员广播");
+    assert.equal(last.members.filter(function (x) { return x.id === S.userA.id; }).length, 1,
+      "成员广播里出现重复管理员：" + JSON.stringify(last.members.map(function (x) { return x.name; })));
+    assert.equal(new Set(last.members.map(function (x) { return x.id; })).size, last.members.length,
+      "成员列表存在重复 id");
+    stale.close();
+    fresh.close();
   });
 
   await step("屏幕共享上限夹取纯逻辑：请求值不得超过频道上限", async function () {

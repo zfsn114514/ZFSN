@@ -197,28 +197,95 @@
     }
   }
 
+  /* ── 保持登录：本地会话标记 ───────────────────────────────────
+     服务端下发两个同生命周期的 Cookie：HttpOnly 的 zf_voice_sid（凭据）
+     和可读的 zf_voice_si=1（只是「可能还登录着」的标记，无身份信息）。
+     这里只做两件体验上的事：同步判断是否跳过登录页、缓存公开资料先把
+     用户栏填上。身份与权限一律以 /api/voice/me 为准，缓存不参与鉴权。 */
+  var ME_CACHE = "zf_voice_me_cache";
+  /** 「最近在这台设备登录过」的时间戳，只用于决定打开页面时先显示哪个视图。 */
+  var SEEN_KEY = "zf_voice_seen";
+  var SEEN_MAX_AGE = 100 * 24 * 3600 * 1000;
+
+  function hinted() {
+    try {
+      if (/(?:^|;\s*)zf_voice_si=1(?:;|$)/.test(document.cookie)) return true;
+      var seen = Number(localStorage.getItem(SEEN_KEY) || 0);
+      return seen > 0 && Date.now() - seen < SEEN_MAX_AGE;
+    } catch (_) { return false; }
+  }
+
+  function cachedUser() {
+    try {
+      var o = JSON.parse(localStorage.getItem(ME_CACHE) || "null");
+      if (!o || !o.id || typeof o.displayName !== "string") return null;
+      return o;
+    } catch (_) { return null; }
+  }
+
+  function cacheUser(user) {
+    try {
+      if (!user) { localStorage.removeItem(ME_CACHE); return; }
+      // 只存展示字段，绝不缓存密码哈希、令牌或权限判断结果
+      localStorage.setItem(ME_CACHE, JSON.stringify({
+        id: user.id, username: user.username, displayName: user.displayName,
+        role: user.role, avatarColor: user.avatarColor, avatarUrl: user.avatarUrl
+      }));
+      // 登录/刷新成功即刷新时间戳，作为 Cookie 标记丢失时的兜底线索
+      localStorage.setItem(SEEN_KEY, String(Date.now()));
+    } catch (_) { /* 隐私模式：缓存不可用不影响登录 */ }
+  }
+
+  /** showApp 完成后调用：撤掉恢复动画，把视图交给正常的 hidden 属性控制。 */
+  function ready() {
+    document.documentElement.setAttribute("data-voice-authed", "ready");
+  }
+
+  function guest() {
+    cacheUser(null);
+    try { localStorage.removeItem(SEEN_KEY); } catch (_) {}
+    document.documentElement.removeAttribute("data-voice-authed");
+  }
+
+  /** 从「已登录」退回登录页时才需要初始化验证码 / Turnstile，别在自动登录时白跑。 */
+  function prepareGuest() {
+    applyConfig();
+    switchTab("login");
+    renderAvatarPreview();
+  }
+
   /* ── 当前登录态 ───────────────────────────────────────────── */
   async function bootstrap() {
-    try {
-      var cfg = await request("/config");
+    // /config 与 /me 互不依赖，并行发出比串行少一整次往返；
+    // 已登录时连验证码都不申请，打开页面只花 2 个请求而不是 5 个。
+    var cfgP = request("/config").catch(function () { return null; });
+    var meP = request("/me").catch(function () { return null; });
+    var cfg = await cfgP;
+    if (cfg) {
       state.config = {
         registrationOpen: !!cfg.registrationOpen,
         captchaMode: cfg.captchaMode === "turnstile" ? "turnstile" : "image",
         turnstileSiteKey: cfg.turnstileSiteKey || "",
         captchaLength: cfg.captchaLength || 5
       };
-    } catch (e) {
-      showError("无法读取站点配置：" + e.message + "（请确认后端已启动并执行了 0003 迁移）");
-      await setupTurnstileFallback();
-      await refreshCaptcha("login");
-      return null;
     }
-    applyConfig();
-    try {
-      var d = await request("/me");
-      state.user = d.user || null;
-    } catch (_) { state.user = null; }
-    return state.user;
+    var me = await meP;
+    var user = (me && me.user) || null;
+    state.user = user;
+    if (user) {
+      cacheUser(user);
+      // 有预登录标记时保持 data-voice-authed="1"，恢复动画继续盖住空白应用壳，
+      // 等 voice.js 拿到频道列表、showApp() 后再调 ready() 撤掉。
+    } else {
+      guest();
+      if (cfg) prepareGuest();
+      else {
+        showError("无法读取站点配置（请确认后端已启动并执行了 0003 迁移）");
+        await setupTurnstileFallback();
+        await refreshCaptcha("login");
+      }
+    }
+    return user;
   }
 
   async function setupTurnstileFallback() {
@@ -239,9 +306,11 @@
     setupTurnstile();
     // 初始化时把登录 / 注册两份验证码都备好：否则隐藏的注册页会一直显示
     // 「加载中…」，用户点开瞬间才去请求，弱网下容易误以为坏了。
+    // 只在没有可用挑战时申请：从已登录退回登录页可能重复调用 prepareGuest，
+    // 无条件刷新会白白消耗两次验证码接口配额。
     if (state.config.captchaMode === "image") {
-      refreshCaptcha("login");
-      if (state.config.registrationOpen) refreshCaptcha("register");
+      if (!state.captchaId.login) refreshCaptcha("login");
+      if (state.config.registrationOpen && !state.captchaId.register) refreshCaptcha("register");
     }
   }
 
@@ -264,12 +333,28 @@
     if (state.config.captchaMode === "turnstile") {
       return { turnstileToken: state.turnstileToken };
     }
-    return { captchaId: state.captchaId[which], captcha: $("#" + which + "-captcha").value.trim() };
+    // 注意：登录验证码输入框 id 是 login-captcha，注册的是 reg-captcha
+    // （不是 register-captcha），这里按实际 id 取，并做 null 保护，
+    // 避免元素缺失时抛 "Cannot read properties of null (reading 'value')"。
+    var capId = which === "register" ? "reg-captcha" : "login-captcha";
+    var capEl = document.getElementById(capId);
+    return {
+      captchaId: state.captchaId[which],
+      captcha: capEl ? capEl.value.trim() : ""
+    };
   }
 
   function afterHumanFail(which) {
     if (state.config.captchaMode === "image") refreshCaptcha(which);
     else resetTurnstile();
+  }
+
+  /** 复选框不存在（例如还缓存着旧 HTML）时按「保持登录」处理，符合默认预期。
+   *  注意：登录复选框 id 是 login-remember，注册的是 reg-remember（不是 register-remember）。 */
+  function rememberValue(which) {
+    var id = which === "register" ? "reg-remember" : "login-remember";
+    var el = document.getElementById(id);
+    return el ? !!el.checked : true;
   }
 
   function bindForms() {
@@ -296,9 +381,12 @@
       try {
         var d = await request("/login", {
           method: "POST",
-          body: Object.assign({ username: username, password: password }, humanPayload("login"))
+          body: Object.assign({
+            username: username, password: password, remember: rememberValue("login")
+          }, humanPayload("login"))
         });
         state.user = d.user;
+        cacheUser(d.user);
         $("#login-pwd").value = "";
         emit("authed", d.user);
       } catch (ex) {
@@ -326,10 +414,12 @@
             displayName: $("#reg-name").value.trim(),
             password: p1,
             password2: p2,
-            avatar: state.avatar
+            avatar: state.avatar,
+            remember: rememberValue("register")
           }, humanPayload("register"))
         });
         state.user = d.user;
+        cacheUser(d.user);
         form.reset();
         state.avatar = null; state.avatarPreviewUrl = "";
         renderAvatarPreview();
@@ -375,8 +465,20 @@
     logout: async function () {
       try { await request("/logout", { method: "POST" }); } catch (_) {}
       state.user = null;
+      // 服务端会把两个 Cookie 一起 Max-Age=0；这里同步清掉本地缓存与预登录标记，
+      // 保证刷新页面不会又闪一次「正在恢复登录态」。
+      guest();
       emit("logout", null);
       return null;
+    },
+    /** 供 voice.js 在渲染前后管理「保持登录」视图状态。 */
+    session: {
+      hinted: hinted,
+      cached: cachedUser,
+      cache: cacheUser,
+      ready: ready,
+      guest: guest,
+      prepareGuest: prepareGuest
     },
     /** 生成头像 HTML。user 来自 /api/voice/me，字段都已由服务端过滤。 */
     avatarHTML: function (user, cls) {

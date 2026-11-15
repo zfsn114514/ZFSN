@@ -65,6 +65,7 @@
     this.closed = false;
     this.rtt = null;
     this.pingTimer = null;
+    this.reconnectTimer = null;
     this.self = null;
   }
   VoiceRoomClient.prototype.on = function (name, cb) {
@@ -79,19 +80,47 @@
   VoiceRoomClient.prototype.connect = function () {
     var self = this;
     this.closed = false;
+    // 上一轮 onclose 排下的重连任务必须作废，否则「先断开再重连」会让
+    // 老定时器在稍后再建一条连接，把 self.ws 覆盖掉，留下无人管理的幽灵连接。
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    // 同一次会话里重复 connect()：先彻底摘掉旧 socket 的事件回调再关，
+    // 这样旧连接的 onclose 不会触发 emit("close") / 再次排重连。
+    if (this.ws) {
+      var stale = this.ws;
+      this.ws = null;
+      stale.onopen = stale.onmessage = stale.onclose = stale.onerror = null;
+      try { stale.close(1000, "superseded"); } catch (_) {}
+    }
     return new Promise(function (resolve, reject) {
       var ws;
       try { ws = new WebSocket(self.join.wsUrl); }
       catch (e) { reject(new Error("无法建立房间连接：" + e.message)); return; }
       self.ws = ws;
       var settled = false;
+      var connectTimer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        try { ws.close(); } catch (_) {}
+        reject(new Error("房间连接超时，请切换网络后重试"));
+      }, 10000);
       ws.onopen = function () {
+        // 已被新连接取代：立刻关掉自己，且不要 resolve/reject 调用方。
+        if (self.ws !== ws) { try { ws.close(1000, "superseded"); } catch (_) {} return; }
+        // close() 可能在 CONNECTING 阶段就被调用（快速切换频道时很常见），
+        // 此时连接仍会打开；必须立刻关掉，否则会变成没人管理的幽灵连接。
+        if (self.closed) {
+          try { ws.close(1000, "leave"); } catch (_) {}
+          if (!settled) { settled = true; clearTimeout(connectTimer); reject(new Error("加入流程已取消")); }
+          return;
+        }
         self.retries = 0;
         self.startPing();
-        if (!settled) { settled = true; resolve(); }
+        if (!settled) { settled = true; clearTimeout(connectTimer); resolve(); }
         self.emit("open");
       };
       ws.onmessage = function (ev) {
+        if (self.ws !== ws) return;
         var m;
         try { m = JSON.parse(ev.data); } catch (_) { return; }
         if (m.t === "hello") { self.self = m.self; self.emit("hello", m); }
@@ -101,6 +130,8 @@
         } else if (m.t === "settings") self.emit("settings", m);
         else if (m.t === "members") self.emit("members", m);
         else if (m.t === "signal") self.emit("signal", m);
+        else if (m.t === "chat") self.emit("chat", m);
+        else if (m.t === "channel") self.emit("channel", m);
         else if (m.t === "kicked") self.emit("kicked", m);
         else if (m.t === "forcedMute") self.emit("forcedMute", m);
         else if (m.t === "notice") self.emit("notice", m);
@@ -108,20 +139,41 @@
         else self.emit(m.t, m);
       };
       ws.onclose = function (ev) {
+        // 已被新连接取代的旧 socket：直接忽略，不广播 close、不排重连。
+        if (self.ws !== ws) return;
         self.stopPing();
+        clearTimeout(connectTimer);
         self.emit("close", ev);
         if (self.closed) return;
-        if (!settled) { settled = true; reject(new Error("房间连接被拒绝（" + ev.code + "）")); return; }
+        // 服务端主动终结的连接一律不重连：票据无效(4401)、同一账号已在别处
+        // 连接(4402)、被踢(4403)、频道删除(4404)。否则客户端会不断重连、
+        // 与 DO 的「单账号单连接」互相踢，形成连接风暴和一堆重复成员。
+        if ([4401, 4402, 4403, 4404].indexOf(ev.code) >= 0) {
+          if (!settled) { settled = true; clearTimeout(connectTimer); reject(new Error("房间连接被拒绝（" + ev.code + "）")); }
+          self.emit("notice", { text: ev.code === 4402
+            ? "该账号已在其他频道或窗口连接，本地连接已结束"
+            : (ev.reason || "房间连接已结束") });
+          return;
+        }
+        if (!settled) { settled = true; clearTimeout(connectTimer); reject(new Error("房间连接被拒绝（" + ev.code + "）")); return; }
         // 断线自动重连：票据 5 分钟有效，过期后请上层重新调用 join 接口
         if (self.retries < 6) {
           var delay = Math.min(6000, 600 * Math.pow(1.6, self.retries++));
           self.emit("notice", { text: "连接断开，" + Math.round(delay / 1000) + " 秒后自动重连…" });
-          setTimeout(function () { if (!self.closed) self.connect().catch(function () {}); }, delay);
+          // 句柄留档：close() / 新的 connect() 能取消它，避免重复建连。
+          clearTimeout(self.reconnectTimer);
+          self.reconnectTimer = setTimeout(function () {
+            self.reconnectTimer = null;
+            if (!self.closed) self.connect().catch(function () {});
+          }, delay);
         } else {
           self.emit("error", new Error("重连失败，请退出频道后重新进入"));
         }
       };
-      ws.onerror = function () { self.emit("error", new Error("房间连接异常")); };
+      ws.onerror = function () {
+        if (self.ws !== ws) return;
+        self.emit("error", new Error("房间连接异常"));
+      };
     });
   };
   VoiceRoomClient.prototype.startPing = function () {
@@ -147,8 +199,15 @@
   VoiceRoomClient.prototype.close = function () {
     this.closed = true;
     this.stopPing();
-    try { if (this.ws) this.ws.close(1000, "leave"); } catch (_) {}
+    // 取消尚未触发的重连，避免「关掉房间后 6 秒又自己连回来」。
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    var ws = this.ws;
     this.ws = null;
+    if (ws) {
+      ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+      try { ws.close(1000, "leave"); } catch (_) {}
+    }
   };
 
   /* ══ 传输基类：本地音频图 / 播放元素 / VAD / 统计 ═══════════ */
@@ -169,7 +228,9 @@
     this.memberVolumes = {};
     this.elements = {};       // memberId -> { audio, video }
     this.settings = (this.opts.join && this.opts.join.settings) || { audio: {}, screen: {} };
-    this.stats = { rttMs: null, lossPct: 0, bytesSent: 0, bytesRecv: 0 };
+    this.stats = { rttMs: null, lossPct: null, bytesSent: null, bytesRecv: null, jitterMs: null, sendKbps: null, recvKbps: null };
+    this.statsHistory = { rttMs: [], lossPct: [], jitterMs: [], sendKbps: [], recvKbps: [], videoSendKbps: [], videoRecvKbps: [], sendFps: [], recvFps: [] };
+    this.statsPrevious = null;
     this.shareParams = null;
     this.sink = document.getElementById("media-sink");
   }
@@ -198,7 +259,6 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error("当前浏览器不支持麦克风采集，请使用最新版 Chrome / Edge");
     }
-    if (this.micStream) return this.localAudioTrack();
     try {
       this.micStream = await navigator.mediaDevices.getUserMedia({ audio: this.audioConstraints(), video: false });
     } catch (e) {
@@ -272,11 +332,17 @@
     var width = Math.min(Number(req.width) || 1280, Number(s.maxWidth) || 1920);
     var height = Math.min(Number(req.height) || 720, Number(s.maxHeight) || 1080);
     var fps = Math.min(Number(req.fps) || 30, Number(s.maxFps) || 30);
-    var bitrate = Math.min(Number(req.bitrateKbps) || Number(s.maxBitrateKbps) || 4000,
-      Number(s.maxBitrateKbps) || 4000);
+    // 「自动」码率按分辨率给基准值。以前一律回退到 4000 kbps，720p 用不完、
+    // 1080p 又不够，band 窄时编码器只能丢帧，表现就是「画面几乎不动」。
+    var autoKbps = height >= 2000 ? 9000
+      : height >= 1400 ? 6000
+      : height >= 1000 ? 4000
+      : height >= 700 ? 2500 : 1200;
+    var bitrate = Math.min(Number(req.bitrateKbps) || autoKbps,
+      Number(s.maxBitrateKbps) || 8000);
     var opts = {
       video: { width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: fps, max: fps } },
-      audio: !!req.audio
+      audio: req.audio ? { suppressLocalAudioPlayback: true } : false
     };
     try {
       this.screenStream = await navigator.mediaDevices.getDisplayMedia(opts);
@@ -288,7 +354,8 @@
     var track = this.screenStream.getVideoTracks()[0];
     if (!track) throw new Error("没有获取到画面轨道");
     if ("contentHint" in track) track.contentHint = req.contentHint === "motion" ? "motion" : "detail";
-    this.shareParams = { width: width, height: height, fps: fps, bitrateKbps: bitrate, contentHint: req.contentHint };
+    this.shareParams = { width: width, height: height, fps: fps,
+      bitrateKbps: bitrate, contentHint: req.contentHint, audio: !!req.audio, selectedResolution: Number(req.res) || Math.round(height) };
     var self = this;
     track.addEventListener("ended", function () { self.stopScreen().catch(function () {}); self.emit("screenEnded"); });
     try { await this.onScreenTrack(track, this.shareParams); }
@@ -332,7 +399,13 @@
     this.memberVolumes[id] = Math.max(0, Math.min(2, Number(v) / 100));
     var e = this.elements[id];
     if (e && e.audio) e.audio.volume = this.memberVolumes[id];
-    if (e && e.video) e.video.volume = this.memberVolumes[id];
+    if (e && e.video) {
+      e.video.volume = this.memberVolumes[id];
+      var stage = document.getElementById("screen-video");
+      if (stage && stage.srcObject === e.video.srcObject) stage.volume = this.memberVolumes[id];
+    }
+    // LiveKit 路径下共享画面挂在舞台元素上（box.screenEl），不是临时 video
+    if (e && e.screenEl) e.screenEl.volume = this.memberVolumes[id];
   };
   VoiceTransportBase.prototype.attach = function (memberId, kind, track, label) {
     var key = memberId;
@@ -380,10 +453,16 @@
   };
   VoiceTransportBase.prototype.roomRtt = function () { return this.room.rtt; };
 
-  /** 汇总所有 PeerConnection 的 WebRTC 统计。 */
+  /** 汇总 PeerConnection 统计，并按采样差值计算实际码率。 */
   VoiceTransportBase.prototype.collectStats = async function (pcs) {
-    var agg = { rttMs: this.roomRtt(), lossPct: 0, bytesSent: 0, bytesRecv: 0, jitterMs: null };
-    var pairs = 0;
+    // rttMs 不从信令 WebSocket 的 rtt 起算：那是「浏览器 → Worker」的控制通道，
+    // 和媒体链路（浏览器 → 媒体服务器）完全是两回事，混用会把本地服务器的
+    // 延迟也算成上百毫秒。下面只统计真正承载音视频的 PeerConnection。
+    var agg = { rttMs: null, lossPct: null, bytesSent: 0, bytesRecv: 0,
+      videoBytesSent: 0, videoBytesRecv: 0, jitterMs: null, sendKbps: null, recvKbps: null,
+      videoSendKbps: null, videoRecvKbps: null, sendFps: null, recvFps: null };
+    var received = 0, lost = 0, remoteReceived = 0, remoteLost = 0, remoteRtt = null;
+    var videoFramesSent = 0, videoFramesRecv = 0, now = Date.now();
     for (var i = 0; i < (pcs || []).length; i++) {
       var pc = pcs[i];
       if (!pc || typeof pc.getStats !== "function") continue;
@@ -396,15 +475,65 @@
           }
           if (s.type === "inbound-rtp" && !s.isRemote) {
             agg.bytesRecv += Number(s.bytesReceived) || 0;
-            if (s.jitter != null) agg.jitterMs = s.jitter * 1000;
-            var lost = Number(s.packetsLost) || 0, recv = Number(s.packetsReceived) || 0;
-            if (lost + recv > 0) { agg.lossPct += lost / (lost + recv) * 100; pairs++; }
+            if (s.kind === "video" || s.mediaType === "video") {
+              agg.videoBytesRecv += Number(s.bytesReceived) || 0;
+              videoFramesRecv += Number(s.framesDecoded) || 0;
+            }
+            if (s.type !== "remote-inbound-rtp") {
+              received += Number(s.packetsReceived) || 0;
+              lost += Number(s.packetsLost) || 0;
+            }
+            if (s.jitter != null) agg.jitterMs = agg.jitterMs == null ? s.jitter * 1000 : (agg.jitterMs + s.jitter * 1000) / 2;
           }
-          if (s.type === "outbound-rtp" && !s.isRemote) agg.bytesSent += Number(s.bytesSent) || 0;
+          if (s.type === "remote-inbound-rtp" && !s.isRemote) {
+            remoteReceived += Number(s.packetsReceived) || 0;
+            remoteLost += Number(s.packetsLost) || 0;
+            if (s.roundTripTime != null) remoteRtt = s.roundTripTime * 1000;
+          }
+          if (s.type === "outbound-rtp" && !s.isRemote) {
+            agg.bytesSent += Number(s.bytesSent) || 0;
+            if (s.kind === "video" || s.mediaType === "video") {
+              agg.videoBytesSent += Number(s.bytesSent) || 0;
+              videoFramesSent += Number(s.framesEncoded) || 0;
+            }
+          }
         });
       } catch (_) {}
     }
-    if (pairs) agg.lossPct = agg.lossPct / pairs;
+    // RTT 取「浏览器 ↔ 媒体服务器」这条 candidate-pair 的真实往返，
+    // 这才是用户体感上的延迟。remote-inbound-rtp 的 roundTripTime 是
+    // 由对端统计、经 SFU 转发回来的，同一个值会偏大约一倍——以前优先用它，
+    // 于是本地服务器也显示 100ms。现在只在拿不到 candidate-pair 时才回退。
+    if (agg.rttMs == null && remoteRtt != null) agg.rttMs = remoteRtt;
+    if (remoteReceived + remoteLost > 0) agg.lossPct = remoteLost / (remoteReceived + remoteLost) * 100;
+    else if (received + lost > 0) agg.lossPct = lost / (received + lost) * 100;
+    if (this.statsPrevious) {
+      var seconds = (now - this.statsPrevious.at) / 1000;
+      if (seconds > 0) {
+        agg.sendKbps = Math.max(0, agg.bytesSent - this.statsPrevious.bytesSent) * 8 / seconds / 1000;
+        agg.recvKbps = Math.max(0, agg.bytesRecv - this.statsPrevious.bytesRecv) * 8 / seconds / 1000;
+        agg.videoSendKbps = Math.max(0, agg.videoBytesSent - this.statsPrevious.videoBytesSent) * 8 / seconds / 1000;
+        agg.videoRecvKbps = Math.max(0, agg.videoBytesRecv - this.statsPrevious.videoBytesRecv) * 8 / seconds / 1000;
+        if (this.statsPrevious.videoFramesSent != null && videoFramesSent >= this.statsPrevious.videoFramesSent) {
+          agg.sendFps = (videoFramesSent - this.statsPrevious.videoFramesSent) / seconds;
+        }
+        if (this.statsPrevious.videoFramesRecv != null && videoFramesRecv >= this.statsPrevious.videoFramesRecv) {
+          agg.recvFps = (videoFramesRecv - this.statsPrevious.videoFramesRecv) / seconds;
+        }
+      }
+    }
+    this.statsPrevious = { at: now, bytesSent: agg.bytesSent, bytesRecv: agg.bytesRecv,
+      videoBytesSent: agg.videoBytesSent, videoBytesRecv: agg.videoBytesRecv,
+      videoFramesSent: videoFramesSent, videoFramesRecv: videoFramesRecv };
+    var self = this;
+    Object.keys(this.statsHistory).forEach(function (key) {
+      if (agg[key] == null || !Number.isFinite(agg[key])) return;
+      var history = self.statsHistory[key];
+      history.push(agg[key]);
+      if (history.length > 3) history.shift();
+      var sorted = history.slice().sort(function (a, b) { return a - b; });
+      agg[key] = sorted[Math.floor(sorted.length / 2)];
+    });
     this.stats = agg;
     this.emit("stats", agg);
     return agg;
@@ -425,6 +554,22 @@
       if (params.degradationPreference) p.degradationPreference = params.degradationPreference;
       return sender.setParameters(p).catch(function () {});
     } catch (_) { return Promise.resolve(); }
+  }
+  function tuneSenderStrict(sender, params) {
+    if (!sender || typeof sender.getParameters !== "function") return Promise.reject(new Error("发送端不支持画质调整"));
+    var p = sender.getParameters();
+    p.encodings = p.encodings && p.encodings.length ? p.encodings : [{}];
+    p.encodings.forEach(function (enc) {
+      if (params.maxBitrate) enc.maxBitrate = params.maxBitrate;
+      if (params.maxFramerate) enc.maxFramerate = params.maxFramerate;
+      if (params.scale) enc.scaleResolutionDownBy = params.scale;
+    });
+    return sender.setParameters(p).then(function () {
+      var actual = sender.getParameters().encodings || [];
+      if (actual.length && params.scale && actual.some(function (enc) { return enc.scaleResolutionDownBy !== params.scale; })) {
+        throw new Error("浏览器未应用画质参数");
+      }
+    });
   }
 
   /** 优先 VP9 / AV1 / H.264，按浏览器实际能力回退。 */
@@ -639,6 +784,10 @@
     this.knownPubs = {};
     var self = this;
     room.on("members", function (m) { self.syncPublications(m.members || []); });
+    room.on("signal", function (m) {
+      var data = m.data || {};
+      if (data.kind === "quality") self.setScreenQuality(data.value);
+    });
   }
   CloudflareTransport.prototype = Object.create(VoiceTransportBase.prototype);
   CloudflareTransport.prototype.constructor = CloudflareTransport;
@@ -808,6 +957,11 @@
     this.join = opts.join;
     this.lk = null;
     this.lkRoom = null;
+    this.micPublication = null;
+    this.screenPublications = [];
+    this.localScreenTrack = null;
+    this.qualityPending = {};
+    this.deviceChangeHandler = null;
   }
   LiveKitTransport.prototype = Object.create(VoiceTransportBase.prototype);
   LiveKitTransport.prototype.constructor = LiveKitTransport;
@@ -817,7 +971,7 @@
     if (window.LivekitClient) return Promise.resolve(window.LivekitClient);
     return new Promise(function (resolve, reject) {
       var s = document.createElement("script");
-      s.src = "/voice/vendor/livekit-client.umd.js";
+      s.src = "/voice/vendor/livekit-client.umd.js?v=20261115a";
       s.onload = function () { window.LivekitClient ? resolve(window.LivekitClient) : reject(new Error("自建频道组件加载失败")); };
       s.onerror = function () { reject(new Error("自建频道组件加载失败，请检查 voice/vendor/livekit-client.umd.js")); };
       document.head.appendChild(s);
@@ -833,16 +987,106 @@
     this.lkRoom = room;
     if (SDK.RoomEvent) {
       room.on(SDK.RoomEvent.TrackSubscribed, function (track, pub, participant) {
+        var id = participant && participant.identity;
         var kind = track.kind === "video" ? "video" : "audio";
-        if (!track.attach) return;
-        var el = track.attach();
-        el.autoplay = true; el.playsInline = true; el.muted = self.deaf;
+        if (!id || !track.attach) return;
+        var box = self.elements[id] || {};
         if (kind === "video") {
+          // 屏幕共享：直接把画面挂到页面上可见的舞台元素上。
+          // 以前是先 track.attach() 造一个从未插入 DOM 的 <video>（0×0），
+          // 再把 srcObject 复制给舞台。LiveKit 的 adaptiveStream 只按
+          // 「真正渲染在页面上的元素尺寸」挑订阅档位，0×0 会被判定为不可见，
+          // 订阅质量长期停在最低档甚至暂停接收——这正是「画面几乎不动」的根因。
           var stage = document.getElementById("screen-video");
-          if (stage) { stage.srcObject = el.srcObject; stage.play().catch(function () {}); }
-        } else if (self.sink) self.sink.appendChild(el);
-        self.emit("track", { memberId: participant && participant.identity, kind: kind });
+          if (stage) {
+            try { track.attach(stage); }
+            catch (_) { stage.srcObject = new MediaStream([track.mediaStreamTrack]); }
+            stage.muted = self.deaf;
+            stage.volume = self.memberVolumes[id] == null ? 1 : self.memberVolumes[id];
+            stage.play().catch(function () {});
+            box.screenEl = stage;
+            box.screenTrack = track;
+            self.elements[id] = box;
+          }
+          self.emit("track", { memberId: id, kind: kind });
+          return;
+        }
+        var el = box.audio;
+        if (!el) {
+          el = track.attach();
+          el.autoplay = true; el.playsInline = true;
+          el.setAttribute("data-member", id);
+          el.muted = self.deaf;
+          el.volume = self.memberVolumes[id] == null ? 1 : self.memberVolumes[id];
+          if (self.sink) self.sink.appendChild(el);
+          box.audio = el;
+          self.elements[id] = box;
+        } else {
+          var stream = el.srcObject;
+          if (stream && track.mediaStreamTrack && stream.getTracks().indexOf(track.mediaStreamTrack) < 0) stream.addTrack(track.mediaStreamTrack);
+          else if (!stream) track.attach(el);
+        }
+        el.play().catch(function () {});
+        self.emit("track", { memberId: id, kind: kind });
       });
+      room.on(SDK.RoomEvent.TrackUnsubscribed, function (track, pub, participant) {
+        var id = participant && participant.identity;
+        var box = id && self.elements[id];
+        if (!box) return;
+        if (track.kind === "video") {
+          if (box.screenTrack !== track) return;
+          try { if (track.detach && box.screenEl) track.detach(box.screenEl); } catch (_) {}
+          if (box.screenEl) { try { box.screenEl.srcObject = null; } catch (_) {} }
+          delete box.screenTrack;
+          delete box.screenEl;
+          if (!box.audio) delete self.elements[id];
+          return;
+        }
+        var el = box.audio;
+        if (!el) return;
+        try { if (track.detach) track.detach(el); } catch (_) {}
+        try { el.srcObject = null; el.remove(); } catch (_) {}
+        delete box.audio;
+        if (!box.screenTrack) delete self.elements[id];
+      });
+      room.on(SDK.RoomEvent.ParticipantDisconnected, function (participant) {
+        var id = participant && participant.identity;
+        var box = id && self.elements[id];
+        var stage = document.getElementById("screen-video");
+        if (box && box.screenTrack) {
+          try { if (box.screenTrack.detach && stage) box.screenTrack.detach(stage); } catch (_) {}
+          if (stage) { try { stage.srcObject = null; } catch (_) {} }
+        }
+        self.detach(id);
+      });
+      room.on(SDK.RoomEvent.DataReceived, function (payload, participant) {
+        var message;
+        try { message = JSON.parse(new TextDecoder().decode(payload)); } catch (_) { return; }
+        if (!message || !message.requestId) return;
+        if (message.kind === "quality-result") {
+          var pending = self.qualityPending[message.requestId];
+          if (!pending) return;
+          clearTimeout(pending.timer);
+          delete self.qualityPending[message.requestId];
+          pending.resolve(!!message.ok);
+          return;
+        }
+        if (message.kind !== "quality") return;
+        var scale = { auto: 1, "1080": 1, "720": 2, "360": 4 }[String(message.value)];
+        var senders = self.getSendersBySource(SDK.Track && SDK.Track.Source && SDK.Track.Source.ScreenShare);
+        if (scale == null || !senders.length) {
+          self.sendQualityResult(participant, message.requestId, false);
+          return;
+        }
+        Promise.all(senders.map(function (sender) {
+          return tuneSenderStrict(sender, { scale: scale, maxBitrate: (self.shareParams && self.shareParams.bitrateKbps || 4000) * 1000,
+            maxFramerate: self.shareParams && self.shareParams.fps || 30 });
+        })).then(function () { self.sendQualityResult(participant, message.requestId, true); }, function () {
+          self.sendQualityResult(participant, message.requestId, false);
+        });
+      });
+      room.on(SDK.RoomEvent.Reconnecting, function () { self.emit("reconnecting"); });
+      room.on(SDK.RoomEvent.Reconnected, function () { self.emit("reconnected"); });
       room.on(SDK.RoomEvent.Disconnected, function () { self.emit("disconnected"); });
     }
     try {
@@ -850,53 +1094,291 @@
     } catch (e) {
       throw new Error("无法连接自建服务器：请确认 LiveKit 已启动、wss 域名证书有效、令牌由 Worker 正确签发。" + (e && e.message ? "（" + e.message + "）" : ""));
     }
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      this.deviceChangeHandler = function () {
+        if (!self.opts.deviceId || !navigator.mediaDevices.enumerateDevices) return;
+        navigator.mediaDevices.enumerateDevices().then(function (devices) {
+          var exists = devices.some(function (d) { return d.kind === "audioinput" && d.deviceId === self.opts.deviceId; });
+          if (!exists && self.lkRoom) self.refreshAudio({ deviceId: "" }).catch(function (e) {
+            self.emit("error", new Error("麦克风断开，切回系统默认失败：" + (e.message || "未知错误")));
+          });
+        }).catch(function () {});
+      };
+      navigator.mediaDevices.addEventListener("devicechange", this.deviceChangeHandler);
+    }
     this.emit("connected", { mode: "livekit" });
   };
   LiveKitTransport.prototype.publishAudio = async function () {
-    // LiveKit 自己管理麦克风；这里仍建立本地音频图用于 VAD 与输入音量
-    await VoiceTransportBase.prototype.publishAudio.call(this);
-    if (this.lkRoom && this.lkRoom.localParticipant && this.lkRoom.localParticipant.setMicrophoneEnabled) {
-      await this.lkRoom.localParticipant.setMicrophoneEnabled(this.micOn);
-    }
-    return this.localAudioTrack();
+    var track = await VoiceTransportBase.prototype.publishAudio.call(this);
+    if (!track || !this.lkRoom || !this.lkRoom.localParticipant) return track;
+    var source = this.lk && this.lk.Track && this.lk.Track.Source && this.lk.Track.Source.Microphone;
+    if (!source) throw new Error("LiveKit 组件不支持麦克风轨道发布");
+    var published = await this.lkRoom.localParticipant.publishTrack(track, {
+      source: source, name: "microphone", stopLocalTrackOnUnpublish: false,
+      audioPreset: { maxBitrate: (this.settings.audio.bitrateKbps || 48) * 1000 }
+    });
+    this.micPublication = { track: track, published: published };
+    if (!this.micOn && published.mute) await published.mute();
+    return track;
   };
   LiveKitTransport.prototype.setMic = function (on) {
     VoiceTransportBase.prototype.setMic.call(this, on);
-    if (this.lkRoom && this.lkRoom.localParticipant && this.lkRoom.localParticipant.setMicrophoneEnabled) {
-      this.lkRoom.localParticipant.setMicrophoneEnabled(!!on).catch(function () {});
+    var pub = this.micPublication && this.micPublication.published;
+    if (pub) {
+      var p = on ? (pub.unmute && pub.unmute()) : (pub.mute && pub.mute());
+      if (p && p.catch) p.catch(function () {});
     }
+  };
+  /**
+   * 覆写基类 detach：LiveKit 的屏幕共享画面直接挂在页面里真实的
+   * #screen-video 上，它不是本 transport 自己创建的临时元素，绝不能
+   * remove()——否则整个共享舞台会从 DOM 中消失，之后谁也放不了共享。
+   */
+  LiveKitTransport.prototype.detach = function (memberId) {
+    var box = this.elements[memberId];
+    if (!box) return;
+    if (box.screenTrack && box.screenEl) {
+      try { if (box.screenTrack.detach) box.screenTrack.detach(box.screenEl); } catch (_) {}
+      try { box.screenEl.srcObject = null; } catch (_) {}
+    }
+    if (box.audio) {
+      try { box.audio.srcObject = null; box.audio.remove(); } catch (_) {}
+    }
+    delete this.elements[memberId];
+  };
+  LiveKitTransport.prototype.getSendersBySource = function (source) {
+    var out = [], room = this.lkRoom;
+    if (!room || !room.engine || !room.engine.pcManager || !room.engine.pcManager.publisher || !source) return out;
+    var participant = room.localParticipant;
+    if (!participant || !participant.trackPublications) return out;
+    participant.trackPublications.forEach(function (pub) {
+      if (pub.source === source && pub.track && pub.track.sender) out.push(pub.track.sender);
+    });
+    return out;
+  };
+  LiveKitTransport.prototype.sendQualityResult = function (participant, requestId, ok) {
+    var sender = this.lkRoom && this.lkRoom.localParticipant;
+    if (!sender || !sender.publishData) return;
+    var data = new TextEncoder().encode(JSON.stringify({ kind: "quality-result", requestId: requestId, ok: !!ok }));
+    sender.publishData(data, { reliable: true, destinationIdentities: participant ? [participant.identity] : [] }).catch(function () {});
   };
   LiveKitTransport.prototype.onScreenTrack = async function (track) {
-    if (!this.lkRoom || !this.lkRoom.localParticipant || !this.lkRoom.localParticipant.setScreenShareEnabled) {
+    var participant = this.lkRoom && this.lkRoom.localParticipant;
+    var source = this.lk && this.lk.Track && this.lk.Track.Source;
+    if (!participant || !participant.publishTrack || !source || !source.ScreenShare) {
       throw new Error("当前 LiveKit 组件不支持屏幕共享");
     }
-    await this.lkRoom.localParticipant.setScreenShareEnabled(true, {
-      audio: !!(this.screenStream && this.screenStream.getAudioTracks().length),
-      resolution: { width: this.shareParams.width, height: this.shareParams.height },
-      frameRate: this.shareParams.fps,
-      contentHint: this.shareParams.contentHint
-    });
-    this.emit("screenStarted", this.shareParams);
-    void track;
-  };
-  LiveKitTransport.prototype.onScreenStopped = async function () {
-    if (this.lkRoom && this.lkRoom.localParticipant && this.lkRoom.localParticipant.setScreenShareEnabled) {
-      try { await this.lkRoom.localParticipant.setScreenShareEnabled(false); } catch (_) {}
+    // 注意：不要在这里再对 display track 调 applyConstraints()。
+    // getDisplayMedia() 拿到的轨道对「再次改分辨率」非常敏感，Chrome 会
+    // 重新协商采集参数，轻则掉到 1~2 fps，重则整条轨道冻住——这正是
+    // 「屏幕共享几乎不动」的主要诱因。尺寸/帧率已在采集时用 constraints
+    // 指定，这里只读取真实值回填，供 UI 显示。
+    var settingsNow = track.getSettings ? track.getSettings() : {};
+    var initialScale = { auto: 1, "1080": 1, "720": 2, "360": 4 }[String(this.currentScreenQuality || "auto")];
+    // degradationPreference 决定「带宽不够时先牺牲谁」：
+    //  · motion（游戏 / 视频）→ 保帧率，画面宁可糊也要动；
+    //  · detail（代码 / 文档）→ balanced，让浏览器自己权衡。
+    // 以前 detail 用 maintain-resolution，带宽一紧就疯狂丢帧，
+    // 屏幕上就是「一帧能停好几秒」，这是卡顿感的主要来源。
+    var degradation = this.shareParams.contentHint === "detail" ? "balanced" : "maintain-framerate";
+    var encoding = {
+      maxBitrate: (this.shareParams.bitrateKbps || 2500) * 1000,
+      maxFramerate: this.shareParams.fps || 30
+    };
+    var params = {
+      source: source.ScreenShare, name: "screen", stopLocalTrackOnUnpublish: false,
+      // 新版 SDK 认 videoEncoding，老版认 screenShareEncoding，两个都给，兼容任意版本。
+      videoEncoding: encoding, screenShareEncoding: encoding,
+      // 屏幕共享不开 simulcast：多档只会让上行更紧张，观众端也用不上。
+      simulcast: false,
+      degradationPreference: degradation
+    };
+    var published = await participant.publishTrack(track, params);
+    this.localScreenTrack = track;
+    this.screenPublications = [{ track: track, published: published }];
+    try {
+      var audioTracks = this.screenStream ? this.screenStream.getAudioTracks() : [];
+      if (this.shareParams.audio && audioTracks.length && source.ScreenShareAudio) {
+        var audioPub = await participant.publishTrack(audioTracks[0], {
+          source: source.ScreenShareAudio, name: "screen-audio", stopLocalTrackOnUnpublish: false
+        });
+        this.screenPublications.push({ track: audioTracks[0], published: audioPub });
+      }
+      var sender = published && published.track && published.track.sender;
+      await tuneSender(sender, { maxBitrate: encoding.maxBitrate,
+        maxFramerate: encoding.maxFramerate, scale: initialScale,
+        degradationPreference: degradation });
+      var actual = settingsNow || {};
+      this.shareParams.width = actual.width || this.shareParams.width;
+      this.shareParams.height = actual.height || this.shareParams.height;
+      this.shareParams.fps = actual.frameRate || this.shareParams.fps;
+      if (sender && sender.getParameters) {
+        var encoding = sender.getParameters().encodings && sender.getParameters().encodings[0];
+        if (encoding && encoding.maxBitrate) this.shareParams.bitrateKbps = Math.round(encoding.maxBitrate / 1000);
+        if (encoding && encoding.maxFramerate) this.shareParams.fps = encoding.maxFramerate;
+      }
+      this.emit("screenStarted", this.shareParams);
+    } catch (e) {
+      for (var i = this.screenPublications.length - 1; i >= 0; i--) {
+        try { await participant.unpublishTrack(this.screenPublications[i].track, false); } catch (_) {}
+      }
+      this.screenPublications = [];
+      this.localScreenTrack = null;
+      throw e;
     }
   };
+  LiveKitTransport.prototype.onScreenStopped = async function () {
+    var participant = this.lkRoom && this.lkRoom.localParticipant;
+    var publications = this.screenPublications.slice();
+    this.screenPublications = [];
+    this.localScreenTrack = null;
+    if (participant && participant.unpublishTrack) {
+      for (var i = 0; i < publications.length; i++) {
+        try { await participant.unpublishTrack(publications[i].track, false); } catch (_) {}
+      }
+    }
+  };
+  LiveKitTransport.prototype.setScreenQuality = function (value) {
+    var scale = VoiceTransportBase.prototype.setScreenQuality.call(this, value);
+    var self = this;
+    this.currentScreenQuality = String(value);
+    this.currentScreenScale = scale;
+    this.screenPublications.forEach(function (pub) {
+      if (pub.track && pub.track.kind === "video") tuneSender(pub.published && pub.published.track && pub.published.track.sender, {
+        scale: scale, maxFramerate: self.shareParams && self.shareParams.fps || 30,
+        maxBitrate: (self.shareParams && self.shareParams.bitrateKbps || 4000) * 1000
+      });
+    });
+    return scale;
+  };
+  LiveKitTransport.prototype.requestScreenQuality = function (value) {
+    var self = this, sender = this.lkRoom && this.lkRoom.localParticipant;
+    if (!sender || !sender.publishData || !this.sharerIdentity || this.sharerIdentity === (this.opts.me && this.opts.me.id)) {
+      return Promise.resolve(false);
+    }
+    var requestId = String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+    return new Promise(function (resolve) {
+      var timer = setTimeout(function () { delete self.qualityPending[requestId]; resolve(false); }, 3000);
+      self.qualityPending[requestId] = { resolve: resolve, timer: timer };
+      var data = new TextEncoder().encode(JSON.stringify({ kind: "quality", requestId: requestId, value: String(value) }));
+      sender.publishData(data, { reliable: true, destinationIdentities: [self.sharerIdentity] }).catch(function () {
+        clearTimeout(timer); delete self.qualityPending[requestId]; resolve(false);
+      });
+    });
+  };
+  LiveKitTransport.prototype.onAudioTrackReplaced = async function (oldTrack, newTrack) {
+    var participant = this.lkRoom && this.lkRoom.localParticipant;
+    var oldPub = this.micPublication && this.micPublication.published;
+    if (!participant || !participant.publishTrack || !newTrack) return;
+    var source = this.lk && this.lk.Track && this.lk.Track.Source && this.lk.Track.Source.Microphone;
+    var oldLocalTrack = oldPub && oldPub.track;
+    if (oldLocalTrack && participant.unpublishTrack) await participant.unpublishTrack(oldLocalTrack, false);
+    try {
+      var published = await participant.publishTrack(newTrack, {
+        source: source, name: "microphone", stopLocalTrackOnUnpublish: false,
+        audioPreset: { maxBitrate: (this.settings.audio.bitrateKbps || 48) * 1000 }
+      });
+      this.micPublication = { track: newTrack, published: published };
+      if (!this.micOn && published.mute) await published.mute();
+    } catch (e) {
+      if (oldLocalTrack) {
+        try {
+          var restored = await participant.publishTrack(oldLocalTrack, {
+            source: source, name: "microphone", stopLocalTrackOnUnpublish: false,
+            audioPreset: { maxBitrate: (this.settings.audio.bitrateKbps || 48) * 1000 }
+          });
+          this.micPublication = { track: oldTrack, published: restored };
+          if (!this.micOn && restored.mute) await restored.mute();
+        } catch (restoreError) { console.warn("[voice] 恢复旧麦克风轨道失败", restoreError); }
+      }
+      throw e;
+    }
+  };
+  LiveKitTransport.prototype.refreshAudio = async function (opts) {
+    var requestedDevice = opts && Object.prototype.hasOwnProperty.call(opts, "deviceId") ? opts.deviceId : this.opts.deviceId;
+    if (opts) for (var k in opts) this.opts[k] = opts[k];
+    var stream, micFallback = false;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: this.audioConstraints(), video: false });
+    } catch (e) {
+      if (!(e && (e.name === "OverconstrainedError" || e.name === "NotFoundError" || e.name === "DevicesNotFoundError") && this.opts.deviceId)) throw e;
+      this.opts.deviceId = "";
+      stream = await navigator.mediaDevices.getUserMedia({ audio: this.audioConstraints(), video: false });
+      micFallback = !!requestedDevice;
+    }
+    var old = {
+      micStream: this.micStream, processedStream: this.processedStream, audioCtx: this.audioCtx,
+      gain: this.gain, analyser: this.analyser, micPublication: this.micPublication
+    };
+    clearInterval(this.vadTimer);
+    this.micStream = stream; this.processedStream = null; this.audioCtx = null;
+    this.gain = null; this.analyser = null;
+    this.buildAudioGraph();
+    this.setInputVolume(this.inputVolume * 100);
+    var fresh = this.localAudioTrack();
+    try {
+      await this.onAudioTrackReplaced(old.micStream && old.micStream.getAudioTracks()[0], fresh);
+    } catch (e) {
+      stream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} });
+      if (this.audioCtx) { try { await this.audioCtx.close(); } catch (_) {} }
+      this.micStream = old.micStream; this.processedStream = old.processedStream;
+      this.audioCtx = old.audioCtx; this.gain = old.gain; this.analyser = old.analyser;
+      this.micPublication = old.micPublication;
+      this.opts.deviceId = requestedDevice || "";
+      this.startVAD();
+      throw e;
+    }
+    if (old.micStream) old.micStream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} });
+    if (old.processedStream && old.processedStream !== old.micStream) old.processedStream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} });
+    if (old.audioCtx) { try { await old.audioCtx.close(); } catch (_) {} }
+    this.startVAD();
+    if (micFallback) this.emit("micFallback");
+    return fresh;
+  };
   LiveKitTransport.prototype.onSettingsChanged = function (settings) {
+    var self = this;
     try {
       if (this.lkRoom && this.lkRoom.localParticipant && this.lkRoom.localParticipant.setAudioBitrate) {
         this.lkRoom.localParticipant.setAudioBitrate((settings.audio.bitrateKbps || 48) * 1000);
       }
     } catch (_) {}
+    if (this.micPublication && this.micPublication.published && this.micPublication.published.track) {
+      tuneSender(this.micPublication.published.track.sender, { maxBitrate: (settings.audio.bitrateKbps || 48) * 1000 });
+    }
+    this.screenPublications.forEach(function (pub) {
+      if (pub.track && pub.track.kind === "video") tuneSender(pub.published && pub.published.track && pub.published.track.sender, {
+        maxBitrate: Math.min((self.shareParams && self.shareParams.bitrateKbps || 4000) * 1000,
+          (settings.screen.maxBitrateKbps || 4000) * 1000),
+        maxFramerate: Math.min(self.shareParams && self.shareParams.fps || 30, settings.screen.maxFps || 30)
+      });
+    });
   };
   LiveKitTransport.prototype.getStats = function () {
-    var rtt = this.roomRtt();
-    return Promise.resolve({ rttMs: rtt, lossPct: 0, bytesSent: 0, bytesRecv: 0, jitterMs: null });
+    var room = this.lkRoom, pcManager = room && room.engine && room.engine.pcManager;
+    var pcs = [];
+    if (pcManager) {
+      [pcManager.publisher && pcManager.publisher.pc, pcManager.subscriber && pcManager.subscriber.pc,
+        pcManager.publisher, pcManager.subscriber].forEach(function (pc) {
+        if (pc && typeof pc.getStats === "function" && pcs.indexOf(pc) < 0) pcs.push(pc);
+      });
+    }
+    if (!pcs.length) return Promise.resolve({ rttMs: this.roomRtt(), lossPct: null, bytesSent: null, bytesRecv: null, jitterMs: null });
+    return this.collectStats(pcs);
   };
   LiveKitTransport.prototype.disconnect = async function () {
+    Object.keys(this.qualityPending).forEach(function (id) {
+      clearTimeout(this.qualityPending[id].timer);
+      this.qualityPending[id].resolve(false);
+    }, this);
+    this.qualityPending = {};
+    if (this.deviceChangeHandler && navigator.mediaDevices && navigator.mediaDevices.removeEventListener) {
+      navigator.mediaDevices.removeEventListener("devicechange", this.deviceChangeHandler);
+      this.deviceChangeHandler = null;
+    }
     if (this.lkRoom) { try { await this.lkRoom.disconnect(); } catch (_) {} }
+    this.micPublication = null;
+    this.screenPublications = [];
+    this.localScreenTrack = null;
     await VoiceTransportBase.prototype.disposeAudio.call(this);
   };
 
@@ -966,7 +1448,6 @@
     });
     return scale;
   };
-  LiveKitTransport.prototype.onAudioTrackReplaced = function () { return Promise.resolve(); };
 
   /* ── 基类通用清理 ───────────────────────────────────────────── */
   VoiceTransportBase.prototype.disposeAudio = async function () {

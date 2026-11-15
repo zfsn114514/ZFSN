@@ -667,16 +667,107 @@ npx wrangler deploy --dry-run
 线上部署步骤、密钥清单、私有频道说明、可选 LiveKit 部署包、故障排查与回滚
 见 `docs/voice-deploy.md`；人工验收见 `docs/voice-manual-test.md`。
 
-#### 已知限制（阶段 7 收尾时的真实状态）
+#### 交付状态与已知限制（2026-11-14 线上部署完成后）
 
-1. **未执行 `git commit` / `wrangler deploy` / 线上 D1 迁移 / 生产 secrets 注入**，
-   工作区原有未提交改动保持原样；所有验证均在本地运行时完成。
-2. 本地未配置 SFU / TURN 密钥，多人通话走 `MeshTransport` 本地直连降级；
-   **真实音频互通、真实屏幕共享、SFU 转发效果必须在配置生产密钥后按
-   `docs/voice-manual-test.md` 的 B / E 组人工验收**。
+0. **已上线**：`wrangler deploy` 成功、线上 D1 迁移已执行、生产 secrets 已注入、
+   Durable Object `VoiceRoomDO` 已绑定；线上管理员登录、bootstrap、join 票据、
+   WebSocket 101 升级全部验证通过。**仍未执行 `git commit`**——工作区原有的大量
+   无关未提交改动保持原样，避免被一起提交。详见 `docs/voice-deploy.md` 第 15 节。
+1. Cloudflare Realtime（SFU / TURN）要求账号持有人先在控制台激活并绑定支付方式，
+   涉及个人支付信息，未代操作。**未激活不影响使用**：多人通话走 `MeshTransport`
+   浏览器点对点直连降级，2~3 人语音与屏幕共享可用；十几人同频道才需要 SFU。
+2. **真实音频互通、真实屏幕共享、SFU 转发效果仍需按
+   `docs/voice-manual-test.md` 的 B / E 组人工验收**（自动化无法代替真人听声音）。
 3. 自制 SVG 验证码抗 OCR 能力有限，生产建议切 Cloudflare Turnstile。
 4. iOS Safari 无法发起屏幕共享，界面只做中文提示，无替代方案。
 5. 可选 LiveKit 高级模式只提供了 Windows 部署包与文档，未在本机实际起过
    `livekit-server.exe`（默认架构不需要它）。
 6. Durable Object 使用 `new_sqlite_classes` 首次迁移；若未来从已部署的
    `new_classes` 版本升级，需要按 Cloudflare 文档另写迁移，不能直接复用 `v1`。
+
+### 上线后缺陷修复（2026-11-14 晚）
+
+用户实测发现「来回切换频道后成员列表堆出一堆管理员」。根因是 `joinChannel()`
+异步竞态产生无人关闭的幽灵 WebSocket，叠加 DO 没有「同一账号单连接」约束。
+已修复并重新部署：前端加入流程改用**同步占用**的 `joinSeq` 代号 +
+每个 await 点取消检查；`VoiceRoomClient` 对 4401/4402/4403/4404 不再自动重连；
+DO `attach()` 主动踢旧连接、`members()` 按 id 去重。
+新增 2 条回归用例（真实 WebSocket 去重、无头浏览器连续切换 5 次），
+全套测试从 68 项增至 **70 项全通过**。详见 `docs/voice-deploy.md` 第 16 节。
+
+### 增量交付：保持登录 / Cookie 自动登录（2026-11-14 晚）
+
+用户反馈「每次都要从登录页面重新进去，有点慢」。排查结论：会话 Cookie 原本
+固定 7 天且不续期；页面 HTML 默认渲染登录页，要等 `/config` → `/me` →
+`/bootstrap` 串行返回才切界面；已登录时仍固定申请两张用不上的验证码图。
+这不涉及架构调整，按增量需求实现：
+
+1. **两个同生命周期 Cookie**：HttpOnly 的 `zf_voice_sid` 仍是唯一凭据，
+   新增可读的 `zf_voice_si=1` 只用于同步判断，不含身份信息、不参与鉴权。
+2. **登录表单加「保持登录 30 天」（默认勾选）**：勾选给 30 天长效 Cookie +
+   滑动续期（剩余不足 7 天才回写、沿用同一令牌、90 天绝对上限）；不勾选则
+   两个 Cookie 都不带 `Max-Age`，关浏览器即失效。类型编码在令牌首字符
+   （`r` / `s`），**不改线上 D1 表结构、不需要新迁移**，存量纯 hex 令牌按
+   旧 7 天规则兼容，不掉线也不被延长。
+3. **同步预登录**：`voice/index.html` 的 `<head>` 内联脚本读标记 → CSS 直接
+   隐藏登录页并显示「正在恢复登录态…」；`/config` 与 `/me` 并行；已登录跳过
+   验证码 / Turnstile。打开页面的请求数从 5 降到 2，登录页零闪屏。
+4. **多值响应头加固**：`src/index.js` 包装层显式重放多条 `Set-Cookie`；
+   本地 `voice-dev-server.mjs` 修掉 `Headers.forEach` + `res.setHeader`
+   覆盖导致主 Cookie 丢失的真实缺陷。
+
+新增 `tests/voice/voice-session.test.mjs`（21 项，含一条自起 Worker 运行时的
+真实 HTTP 断言）与 `tests/voice/voice-ui.cdp.mjs` 一条浏览器用例（在
+`DOMContentLoaded` 埋点断言登录页 `display:none`，并验证登出后不再自动登录）。
+`npm run voice:test:all` 从 70 项增至 **92 项全通过**（入口 4 + 鉴权 26 +
+Cookie 21 + 端到端 28 + 浏览器 13）。运维细节、强制全员下线的 SQL 与安全边界
+见 `docs/voice-deploy.md` 第 17 节，人工验收项见 `docs/voice-manual-test.md`
+A12~A17。
+
+---
+
+## 增量交付：本机语音媒体后端（自建 SFU，2026-11-14）
+
+用户要求「让我的电脑成为语音后端」，但与 11-14 早前的架构约束一致——
+**账号 / 登录 / 频道 / 信令仍在 Cloudflare Worker**，本机只跑语音与屏幕共享的
+媒体转发（LiveKit SFU），不碰任何用户数据。
+
+### 产出（`tools/livekit/`，零第三方 npm 依赖，Windows / Node 22+）
+- `voice-media-server.mjs`：主程序，含 `setup / run / doctor / print / stop`。
+  自动生成 API Key/Secret 与 `livekit.yaml`，自动下载官方 LiveKit 与 cloudflared
+  两个二进制（curl 断点续传，应对本网络对 GitHub 大文件的限速）。`run` 同时启动
+  LiveKit 与 Cloudflare Tunnel，自动抓 `*.trycloudflare.com` 可信 wss 域名。
+- `start.bat` / `start.ps1`：一键启动（ASCII 内容，避免 Windows 编码乱码）。
+- `README.md`：三步跑起来 + 端口/防火墙 + **WebRTC 媒体现实限制** + 固定域名
+  （Named Tunnel）进阶方案 + 排错表。
+- `livekit.example.yaml`：可改 UDP 范围与房间上限（默认 20 人）。
+
+### 线上对齐（已执行）
+- 向 Worker 注入 `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`（与本机 `livekit.yaml`
+  完全一致）；`voice:settings` 打开 `allowUserSelfHosted`。
+- 后台「自建 SFU 服务器」那条原 `unknown` 记录（`zfsnnb.dpdns.org:7880`，错误，
+  因为 LiveKit 不终止 TLS 且该域名不解析到本机）已改为隧道域名 + 端口 `443` +
+  勾选 TLS，状态置为 `reachable`。
+- 新建 `selfhost-test` 自建频道（不动现有 3 个 Cloudflare 频道）用于验收。
+
+### 修复的线上 bug
+`livekitToken()` 用 `btoa()` 对中文 `display_name` 签 JWT 会 500（btoa 仅支持
+Latin1）。改用 `TextEncoder` + base64url，已加 `tests/voice/voice-selfhost.test.mjs`
+（7 项）回归，并随 Worker 部署生效。
+
+### 验证（真实链路）
+- `npm run voice:test:selfhost`：**7 项全通过**。
+- 临时管理员会话实测：线上 `/api/voice/servers/test` 返回 `reachable:true`；
+  线上 `/api/voice/channels/selfhost-test/join` 返回 `transport:"livekit"`、
+  `url:"wss://<隧道域名>:443"`、令牌长度 486（密钥一致，可正常验签）。
+
+### 关键现实限制（已在 README 第 5 节写清）
+- **信令一定通**：走 Cloudflare Tunnel 443，HTTPS 页面不拦，`wss` 证书由
+  Cloudflare 托管。
+- **媒体不一定通**：语音/屏幕共享是 WebRTC over **UDP 50000–50100**（TCP 7881
+  回退），Cloudflare Tunnel 只转发 HTTP/WebSocket，**不转发 UDP**。
+- 本机 LiveKit 经 STUN 探测到外网 IPv4 `182.116.115.26`（LAN `192.168.0.100`），
+  说明大概率有可达公网 IP：**在路由器转发 UDP 50000–50100 + TCP 7881 后，外网朋友
+  的媒体也能通**；CGNAT/对称 NAT 则需 Tailscale/ZeroTier 或申请公网 IPv4。
+- 同一 WiFi / 局域网内完全不受影响。临时隧道域名**每次重启都会变**，重启 `start.bat`
+  后要回后台更新那条记录；想要固定域名按 README 第 6 节配 Named Tunnel。

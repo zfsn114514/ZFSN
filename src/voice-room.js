@@ -35,6 +35,7 @@ export class VoiceRoomDO {
   constructor(state, env) {
     this.state = state;
     this.env = env;
+    this.chatMessages = [];
   }
 
   /* ── Cloudflare 入口：WebSocket 升级 / 内部 HTTP ─────────────── */
@@ -59,6 +60,18 @@ export class VoiceRoomDO {
 
   /* ── 连接附着（线上 / 本地共用） ───────────────────────────── */
   attach(ws, ticket, channel) {
+    // 同一账号只允许一条活跃连接。
+    // 来回切频道、重复点选、断线重连残留、多标签页都会让旧 WebSocket 留在
+    // getWebSockets() 里，成员列表就会堆出一堆同名管理员（2026-11-14 线上 bug）。
+    // 这里在新连接附着前先踢掉同 id 的旧连接，前端的 joinSeq 则是第一道防线。
+    const self = this;
+    this.sockets().forEach(function (other) {
+      if (other === ws) return;
+      const old = self.attachment(other);
+      if (!old || old.id !== ticket.u) return;
+      try { other.serializeAttachment(null); } catch (_) {}
+      try { other.close(4402, "同一账号已在其他频道或窗口连接"); } catch (_) {}
+    });
     const member = {
       id: ticket.u,
       name: ticket.n || "成员",
@@ -74,7 +87,7 @@ export class VoiceRoomDO {
     this.send(ws, {
       t: "hello", self: member, members: this.members(),
       settings: this.settings, revision: this.revision || 1,
-      channel: channel, serverTime: Date.now()
+      chat: this.chatMessages.slice(-50), channel: channel, serverTime: Date.now()
     });
     this.broadcastMembers();
     this.broadcast({ t: "notice", text: member.name + " 加入了频道" }, ws);
@@ -105,6 +118,13 @@ export class VoiceRoomDO {
         this.broadcastMembers();
         return;
       }
+      case "profile": {
+        if (typeof msg.name === "string" && msg.name.trim() && msg.name.length <= 24) me.name = msg.name.trim();
+        if (typeof msg.avatarUrl === "string" && msg.avatarUrl.length <= 256) me.avatarUrl = msg.avatarUrl;
+        ws.serializeAttachment(me);
+        this.broadcastMembers();
+        return;
+      }
       case "pub": {
         const list = Array.isArray(msg.tracks) ? msg.tracks.slice(0, 8) : [];
         me.publications = list.map(function (x) {
@@ -123,6 +143,22 @@ export class VoiceRoomDO {
         // 本地 Mesh 传输的 SDP / ICE 中继：只转发给指定成员，不广播
         const target = this.find(String(msg.to || ""));
         if (target) this.send(target, { t: "signal", from: me.id, data: msg.data });
+        return;
+      }
+      case "chat": {
+        const text = typeof msg.text === "string" ? msg.text.trim() : "";
+        if (!text || text.length > 500) { this.send(ws, { t: "error", text: "消息需为 1~500 个字符" }); return; }
+        const now = Date.now();
+        const recent = (me.chatSentAt || []).filter(function (at) { return now - at < 3000; });
+        if (recent.length >= 5) { this.send(ws, { t: "error", text: "发送太快，请稍后再试" }); return; }
+        recent.push(now);
+        me.chatSentAt = recent;
+        ws.serializeAttachment(me);
+        const message = { t: "chat", id: C.randomHexString(12), memberId: me.id,
+          name: me.name, color: me.color, avatarUrl: me.avatarUrl || null, text: text, ts: now };
+        this.chatMessages.push(message);
+        if (this.chatMessages.length > 100) this.chatMessages.shift();
+        this.broadcast(message);
         return;
       }
       case "ping":
@@ -153,7 +189,10 @@ export class VoiceRoomDO {
     const me = this.attachment(ws);
     try { ws.serializeAttachment(null); } catch (_) {}
     if (!me) return;
-    this.broadcast({ t: "notice", text: me.name + " 离开了频道" });
+    // 切换频道时新旧连接可能短暂重叠；同一账号还有连接时不算真正离开，
+    // 避免刷屏「admin 离开了频道」+「admin 加入了频道」。
+    const stillHere = this.members().some(function (x) { return x.id === me.id; });
+    if (!stillHere) this.broadcast({ t: "notice", text: me.name + " 离开了频道" }, ws);
     this.broadcastMembers();
   }
 
@@ -165,30 +204,38 @@ export class VoiceRoomDO {
     try { return this.state.getWebSockets() || []; } catch (_) { return []; }
   }
   members() {
-    const out = [];
+    // 按用户 id 去重：即便旧连接短暂残留（Hibernation 的 close 回调是异步的），
+    // 同一个人在成员列表里也只会出现一次，保留 joinedAt 最新的那条状态。
+    const byId = new Map();
     const self = this;
     this.sockets().forEach(function (ws) {
       const m = self.attachment(ws);
-      if (m && m.id) {
-        out.push({
-          id: m.id, name: m.name, color: m.color, avatarUrl: m.avatarUrl,
-          role: m.role, mic: m.mic, deaf: m.deaf, speaking: m.speaking,
-          sharing: m.sharing, quality: m.quality,
-          publications: m.publications || [], joinedAt: m.joinedAt
-        });
-      }
+      if (!m || !m.id) return;
+      const prev = byId.get(m.id);
+      if (prev && (prev.joinedAt || 0) > (m.joinedAt || 0)) return;
+      byId.set(m.id, {
+        id: m.id, name: m.name, color: m.color, avatarUrl: m.avatarUrl,
+        role: m.role, mic: m.mic, deaf: m.deaf, speaking: m.speaking,
+        sharing: m.sharing, quality: m.quality,
+        publications: m.publications || [], joinedAt: m.joinedAt
+      });
     });
+    const out = Array.from(byId.values());
     // 稳定排序，避免每次广播顺序跳动导致前端重复渲染
     out.sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
     return out;
   }
   find(userId) {
+    // 有多条残留连接时优先操作最新的一条，避免踢人 / 禁言 / 信令发错对象
     const list = this.sockets();
+    let best = null, bestAt = -1;
     for (let i = 0; i < list.length; i++) {
       const m = this.attachment(list[i]);
-      if (m && m.id === userId) return list[i];
+      if (m && m.id === userId && (m.joinedAt || 0) >= bestAt) {
+        best = list[i]; bestAt = m.joinedAt || 0;
+      }
     }
-    return null;
+    return best;
   }
   send(ws, obj) {
     try { ws.send(JSON.stringify(obj)); } catch (_) {}
@@ -226,6 +273,12 @@ export class VoiceRoomDO {
         members: this.members(), count: this.members().length,
         settings: this.settings || null, revision: this.revision || 1
       });
+    }
+    if (p.endsWith("/channel") && method === "POST") {
+      let body = {};
+      try { body = await request.json(); } catch (_) {}
+      this.broadcast({ t: "channel", name: String(body.name || "频道").slice(0, 24) });
+      return json({ ok: true });
     }
     if (p.endsWith("/settings") && method === "POST") {
       let body = {};

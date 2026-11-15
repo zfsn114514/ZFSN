@@ -51,6 +51,9 @@ wrangler.toml
 package.json
 package-lock.json
 DEPLOY.md
+# 中文部署 / 实施方案含账号名、密钥清单与上线细节，仅本地维护，不公开发布。
+# 站点里对 docs/ 的引用只是代码注释中的文字，没有真实 URL 链接。
+docs/
 
 # 编辑器 / 系统杂项
 .vscode/

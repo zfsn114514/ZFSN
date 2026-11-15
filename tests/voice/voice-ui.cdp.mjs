@@ -178,6 +178,156 @@ try {
     await app.close();
   });
 
+  /* ── 2a. 保持登录：Cookie 自动恢复（2026-11-14c）───────────── */
+  await step("带保持登录 Cookie 打开 /voice/：登录页一次都不显示，直接进大厅", async function () {
+    const db3 = new DatabaseSync(path.join(ROOT, "tools/dev/.voice-dev.sqlite"));
+    db3.exec("PRAGMA busy_timeout = 5000;");
+    const u3 = db3.prepare("SELECT id FROM voice_users WHERE username = 'admin'").get();
+    assert.ok(u3, "本地库缺少 admin 账号");
+    const token3 = "r" + crypto.randomBytes(24).toString("hex");
+    db3.prepare("INSERT OR REPLACE INTO voice_sessions (token_hash,user_id,exp,ip,ua,created_at) VALUES (?,?,?,?,?,?)")
+      .run(await C.sha256Hex(token3), u3.id, Date.now() + 30 * 86400000, "127.0.0.1", "cdp-cookie-test", Date.now());
+    db3.close();
+
+    const keep = await page(browser, BASE + "/voice/", { waitMs: 300 });
+    // 在文档刚创建时埋点：DOMContentLoaded 时登录页到底是不是已经隐藏。
+    // 若还是老逻辑（等 /config + /me 回来才切视图），这里会记录到 display:grid。
+    await keep.call("Page.addScriptToEvaluateOnNewDocument", {
+      source: `(function(){
+        window.__authFlash = [];
+        document.addEventListener("DOMContentLoaded", function(){
+          var a = document.getElementById("auth-view");
+          window.__authFlash.push({
+            display: a ? getComputedStyle(a).display : "missing",
+            attr: document.documentElement.getAttribute("data-voice-authed")
+          });
+        });
+      })();`
+    });
+    await keep.call("Network.setCookie", {
+      name: "zf_voice_sid", value: token3, url: BASE + "/voice/",
+      httpOnly: true, sameSite: "Lax", secure: false
+    });
+    await keep.call("Network.setCookie", {
+      name: "zf_voice_si", value: "1", url: BASE + "/voice/",
+      httpOnly: false, sameSite: "Lax", secure: false
+    });
+    await keep.call("Page.navigate", { url: BASE + "/voice/" });
+    await wait(2300);
+
+    const r = await keep.evaluate(`({
+      flash: window.__authFlash || [],
+      attr: document.documentElement.getAttribute("data-voice-authed"),
+      authHidden: document.getElementById("auth-view").hidden,
+      appHidden: document.getElementById("app-view").hidden,
+      mask: getComputedStyle(document.getElementById("restore-mask")).display,
+      channels: document.querySelectorAll("#channel-list li").length,
+      meName: (document.getElementById("me-name")||{}).textContent || "",
+      hasRemember: !!document.getElementById("login-remember")
+    })`);
+    assert.equal(r.flash.length, 1, "没记录到 DOMContentLoaded 埋点：" + JSON.stringify(r));
+    assert.equal(r.flash[0].display, "none", "登录页在首屏闪了一下：" + JSON.stringify(r));
+    assert.equal(r.flash[0].attr, "1", "head 同步脚本没有打上预登录标记：" + JSON.stringify(r));
+    assert.equal(r.attr, "ready", "恢复遮罩没有被撤掉：" + JSON.stringify(r));
+    assert.equal(r.authHidden, true);
+    assert.equal(r.appHidden, false);
+    assert.equal(r.mask, "none", "恢复动画仍盖着应用：" + JSON.stringify(r));
+    assert.ok(r.channels >= 3, "频道列表未加载：" + JSON.stringify(r));
+    assert.equal(r.hasRemember, true, "登录表单缺少「保持登录」勾选");
+    assert.equal(r.meName.trim().length > 0, true, "用户栏没填上昵称");
+    assert.deepEqual(keep.errors.filter(function (e) { return e.indexOf("favicon") < 0; }), [],
+      "自动登录控制台报错：" + keep.errors.join(" | "));
+
+    // 退出登录后刷新：两个 Cookie 都被清掉，必须回到登录页
+    await keep.evaluate(`(async function(){ await window.VoiceAuth.logout(); return true; })()`);
+    const hintGone = await keep.evaluate(`document.cookie.indexOf("zf_voice_si=1") < 0`);
+    assert.equal(hintGone, true, "登出后可读标记 Cookie 仍在");
+    await keep.call("Page.navigate", { url: BASE + "/voice/" });
+    await wait(1600);
+    const back = await keep.evaluate(`({
+      attr: document.documentElement.getAttribute("data-voice-authed"),
+      authHidden: document.getElementById("auth-view").hidden,
+      appHidden: document.getElementById("app-view").hidden
+    })`);
+    assert.equal(back.attr, null, "登出后仍带着预登录标记：" + JSON.stringify(back));
+    assert.equal(back.authHidden, false, "登出后刷新没有回到登录页");
+    assert.equal(back.appHidden, true);
+    await keep.screenshot(path.join(SHOTS, "voice-remember-login.png"));
+    await keep.close();
+  });
+
+  /* ── 2b. 快速来回切换频道（2026-11-14 线上 bug 回归） ─────── */
+  await step("快速来回切换频道：不留幽灵 WebSocket，成员列表不出现重复管理员", async function () {
+    const db2 = new DatabaseSync(path.join(ROOT, "tools/dev/.voice-dev.sqlite"));
+    db2.exec("PRAGMA busy_timeout = 5000;");
+    const u2 = db2.prepare("SELECT id, username FROM voice_users WHERE username = 'admin'").get();
+    assert.ok(u2, "本地库缺少 admin 账号");
+    const token2 = crypto.randomBytes(24).toString("base64url");
+    db2.prepare("INSERT OR REPLACE INTO voice_sessions (token_hash,user_id,exp,ip,ua,created_at) VALUES (?,?,?,?,?,?)")
+      .run(await C.sha256Hex(token2), u2.id, Date.now() + 3600000, "127.0.0.1", "cdp-switch-test", Date.now());
+    db2.close();
+
+    const sw = await page(browser, BASE + "/voice/", { waitMs: 400 });
+    // 页面脚本执行前包裹原生 WebSocket，统计「创建过几条 / 还有几条活着」
+    await sw.call("Page.addScriptToEvaluateOnNewDocument", {
+      source: `(function(){
+        if (window.__wsWrapped) return;   // 防止脚本在同一上下文重复叠加包装
+        window.__wsWrapped = true;
+        var Native = window.WebSocket;
+        window.__wsAll = [];
+        function Wrapped(url, protocols){
+          var ws = protocols === undefined ? new Native(url) : new Native(url, protocols);
+          window.__wsAll.push({ ws: ws, url: String(url), at: Date.now() });
+          return ws;
+        }
+        Wrapped.prototype = Native.prototype;
+        Wrapped.CONNECTING = Native.CONNECTING; Wrapped.OPEN = Native.OPEN;
+        Wrapped.CLOSING = Native.CLOSING; Wrapped.CLOSED = Native.CLOSED;
+        window.WebSocket = Wrapped;
+      })();`
+    });
+    await sw.call("Network.setCookie", {
+      name: "zf_voice_sid", value: token2, url: BASE + "/voice/",
+      httpOnly: true, sameSite: "Lax", secure: false
+    });
+    await sw.call("Page.navigate", { url: BASE + "/voice/" });
+    await wait(2200);
+
+    // 连续点 5 次且不等待任何一次加入完成 —— 正是触发旧 bug 的操作
+    await sw.evaluate(`(function(){
+      ["cf-lobby","cf-2","cf-lobby","cf-2","cf-lobby"].forEach(function(id){
+        var row = document.querySelector('#channel-list [data-channel="' + id + '"]');
+        if (row) row.click();
+      });
+      return true;
+    })()`);
+    await wait(3800);
+
+    const r = await sw.evaluate(`(function(){
+      var selfCount = 0;
+      document.querySelectorAll("#member-list li").forEach(function(li){
+        if ((li.getAttribute("data-member") || "") === ${JSON.stringify(u2.id)}) selfCount++;
+      });
+      return {
+        total: (window.__wsAll || []).length,
+        open: (window.__wsAll || []).filter(function (x) {
+          return x.ws.readyState === 0 || x.ws.readyState === 1;
+        }).length,
+        urls: (window.__wsAll || []).map(function (x) { return x.url.slice(0, 60); }).slice(0, 6),
+        selfCount: selfCount,
+        memberCount: document.querySelectorAll("#member-list li").length,
+        conn: (document.getElementById("conn-text") || {}).textContent || ""
+      };
+    })()`);
+    assert.ok(r.total >= 1, "没有发生任何房间连接，用例前提不成立：" + JSON.stringify(r));
+    assert.ok(r.total <= 2, "快速切换创建了过多房间连接：" + JSON.stringify(r));
+    assert.ok(r.open <= 1, "切换后仍有幽灵 WebSocket 存活：" + JSON.stringify(r));
+    assert.ok(r.selfCount <= 1, "成员列表出现重复的自己：" + JSON.stringify(r));
+    const real = sw.errors.filter(function (e) { return e.indexOf("favicon") < 0; });
+    assert.deepEqual(real, [], "切换频道时控制台报错：" + real.join(" | "));
+    await sw.close();
+  });
+
   /* ── 3. 管理后台 ZF语音 标签页 ───────────────────────────── */
   const token = await adminToken();
   const admin = await page(browser, BASE + "/admin/", { waitMs: 1200 });
@@ -215,6 +365,13 @@ try {
     assert.ok(r["zfv-channel-list"].indexOf("开黑频道") >= 0,
       "频道面板没有读到预置频道：" + r["zfv-channel-list"]);
     assert.ok(r["zfv-user-list"].length > 3, "用户面板为空：" + r["zfv-user-list"]);
+  });
+
+  await step("停止观看时仍保留共享面板与重新观看按钮", async function () {
+    const appJs = fs.readFileSync(path.join(ROOT, "voice/voice.js"), "utf8");
+    assert.match(appJs, /var showScreen = !!sharer;/);
+    assert.match(appJs, /video\.style\.opacity = \(hasStream && state\.watching\) \? "1" : "0"/);
+    assert.match(appJs, /\$\("#btn-stop-watch"\)\.textContent = state\.watching \? "不观看" : "重新观看"/);
   });
 
   await step("面板内含音质 / 屏幕共享上限 / 私有频道开关控件", async function () {

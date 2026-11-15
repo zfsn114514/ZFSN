@@ -39,9 +39,13 @@ function originOK(request) {
 
 function err(msg, status) { return L.fail(msg, status || 400); }
 
+/** cookie 可以是单条字符串，也可以是数组（登录要同时下发主 Cookie 与可读标记）。
+ *  用 headers.append 而不是塞进构造参数，才能保留多条独立的 Set-Cookie。 */
 function ok(data, status, cookie) {
-  return L.json(Object.assign({ ok: true }, data || {}), status || 200,
-    cookie ? { "Set-Cookie": cookie } : {});
+  const res = L.json(Object.assign({ ok: true }, data || {}), status || 200);
+  const list = Array.isArray(cookie) ? cookie : (cookie ? [cookie] : []);
+  list.forEach(function (c) { res.headers.append("Set-Cookie", c); });
+  return res;
 }
 
 async function readBody(request) {
@@ -99,15 +103,70 @@ export async function currentUser(env, request) {
   return row || null;
 }
 
-async function issueSession(env, request, user) {
-  const token = L.randomHex(32);
+/**
+ * 签发会话。remember === false 时只给「浏览器会话级」Cookie（不带 Max-Age，
+ * 关掉浏览器就失效），数据库仍留 12 小时兜底，防止服务端残留孤儿会话。
+ * 默认（含老前端不传该字段）为「保持登录 30 天」。
+ */
+async function issueSession(env, request, user, remember) {
+  const kind = remember === false ? "short" : "remember";
+  const token = C.newSessionToken(kind === "remember");
   const th = await C.sha256Hex(token);
-  const exp = Date.now() + C.SESSION_TTL;
+  const ttl = C.sessionTTL(kind);
+  const exp = Date.now() + ttl;
   await env.DB.prepare(
     "INSERT INTO voice_sessions (token_hash, user_id, exp, ip, ua, created_at) VALUES (?,?,?,?,?,?)"
   ).bind(th, user.id, exp, L.clientIP(request) || "",
     L.clean(request.headers.get("user-agent") || "", 120), Date.now()).run();
-  return { token: token, cookie: C.sessionCookie(request, token, C.SESSION_TTL) };
+  return {
+    token: token,
+    cookies: C.sessionCookies(request, token, kind === "short" ? 0 : ttl),
+    session: { remember: kind === "remember", expiresAt: exp, renewed: false }
+  };
+}
+
+/**
+ * 会话滑动续期：只在 /me 与 /bootstrap 这两个「打开页面必调」的入口用，
+ * 不会让每个语音 API 都去写一次库。续期沿用同一个令牌（不轮换），
+ * 否则页面并发请求会互相把对方的令牌顶掉。
+ *  · 只有「保持登录」会话会续，且从签发日起最多累计 90 天；
+ *  · 临时会话与升级前的老令牌保持原过期时间，不改变用户的选择。
+ * 返回 { user, cookies, session }；cookies 为空表示这次无需回写。
+ */
+export async function touchSession(env, request) {
+  const token = C.parseCookies(request.headers.get("cookie"))[C.COOKIE_NAME];
+  if (!token) return { user: null, cookies: [], session: null };
+  const th = await C.sha256Hex(token);
+  const row = await env.DB.prepare(
+    "SELECT u.*, s.exp AS _exp, s.created_at AS _created FROM voice_sessions s " +
+    "JOIN voice_users u ON u.id = s.user_id WHERE s.token_hash = ?"
+  ).bind(th).first();
+  if (!row) return { user: null, cookies: [], session: null };
+  const now = Date.now();
+  const exp = Number(row._exp) || 0;
+  if (exp <= now) return { user: null, cookies: [], session: null };
+
+  const kind = C.sessionKind(token);
+  let cookies = [];
+  let renewed = false;
+  let finalExp = exp;
+  if (kind === "remember") {
+    // 绝对寿命上限：无论续多少次，令牌最多活 90 天，之后必须重新登录。
+    const limit = (Number(row._created) || now) + C.MAX_SESSION_LIFE;
+    const target = Math.min(now + C.REMEMBER_TTL, limit);
+    if (target > exp && target - exp >= C.RENEW_BELOW) {
+      finalExp = target;
+      await env.DB.prepare("UPDATE voice_sessions SET exp = ? WHERE token_hash = ?")
+        .bind(finalExp, th).run();
+      cookies = C.sessionCookies(request, token, C.REMEMBER_TTL);
+      renewed = true;
+    }
+  }
+  return {
+    user: row,
+    cookies: cookies,
+    session: { remember: kind === "remember", expiresAt: finalExp, renewed: renewed }
+  };
 }
 
 /**
@@ -297,8 +356,66 @@ export async function handleVoiceAPI(request, env, ctx, url) {
 
   /* ── 公开：当前登录态 ─────────────────────────────────────── */
   if (p === "/api/voice/me" && m === "GET") {
+    const t = await touchSession(env, request);
+    return ok({ user: C.publicUser(t.user), session: t.session }, 200, t.cookies);
+  }
+
+  /* ── 登录用户：修改资料 / 头像 ───────────────────────────── */
+  if (p === "/api/voice/me" && m === "PATCH") {
+    if (!originOK(request)) return err("请求来源不合法（跨站请求已被拒绝）", 403);
     const u = await currentUser(env, request);
-    return ok({ user: C.publicUser(u) });
+    if (!u || u.status !== "active") return err("请先登录 ZF语音", 401);
+    if (!(await guard(env, ["voice:profile:" + u.id], 20, 60000))) return err("操作太频繁，请稍后再试", 429);
+    const body = await readBody(request);
+    if (!body) return err("请求内容无效或过大");
+    const sets = [], args = [];
+    if (body.displayName !== undefined) {
+      const vd = C.validateDisplayName(body.displayName);
+      if (!vd.ok) return err(vd.error);
+      sets.push("display_name = ?"); args.push(vd.value);
+    }
+    if (body.avatar !== undefined) {
+      const avatar = parseAvatar(body.avatar);
+      if (!avatar.ok) return err(avatar.error);
+      if (avatar.empty) return err("请选择要上传的头像");
+      const ref = "voice/avatars/" + u.id + avatar.ext;
+      await env.MEDIA.put(ref, avatar.buf, { httpMetadata: { contentType: avatar.type } });
+      if (u.avatar_ref && u.avatar_ref !== ref) { try { await env.MEDIA.delete(u.avatar_ref); } catch (_) {} }
+      sets.push("avatar_ref = ?"); args.push(ref);
+    }
+    if (!sets.length) return err("没有需要修改的资料");
+    args.push(u.id);
+    await env.DB.prepare("UPDATE voice_users SET " + sets.join(", ") + " WHERE id = ?").bind(...args).run();
+    const fresh = await env.DB.prepare("SELECT * FROM voice_users WHERE id = ?").bind(u.id).first();
+    await audit(env, ctx, request, u.username, "profile.update", u.id, { fields: Object.keys(body) });
+    return ok({ user: C.publicUser(fresh) });
+  }
+
+  /* ── 登录用户：修改密码（当前会话保留） ──────────────────── */
+  if (p === "/api/voice/password" && m === "POST") {
+    if (!originOK(request)) return err("请求来源不合法（跨站请求已被拒绝）", 403);
+    const token = C.parseCookies(request.headers.get("cookie"))[C.COOKIE_NAME];
+    const u = await currentUser(env, request);
+    if (!u || u.status !== "active" || !token) return err("请先登录 ZF语音", 401);
+    if (!(await guard(env, ["voice:password:" + u.id, "voice:password:ip:" + ip], 8, 60 * 60 * 1000))) {
+      return err("修改密码请求过于频繁，请稍后再试", 429);
+    }
+    const body = await readBody(request);
+    if (!body) return err("请求内容无效或过大");
+    if (!body.oldPassword || !body.newPassword) return err("请填写旧密码和新密码");
+    let valid = false;
+    try { valid = await C.verifyPasswordRecord(String(body.oldPassword), JSON.parse(u.password_rec)); }
+    catch (_) {}
+    if (!valid) return err("旧密码不正确", 403);
+    const vp = C.validatePassword(body.newPassword);
+    if (!vp.ok) return err(vp.error);
+    const hash = await C.sha256Hex(token);
+    await env.DB.prepare("UPDATE voice_users SET password_rec = ? WHERE id = ?")
+      .bind(JSON.stringify(await C.hashPasswordRecord(vp.value)), u.id).run();
+    await env.DB.prepare("DELETE FROM voice_sessions WHERE user_id = ? AND token_hash <> ?")
+      .bind(u.id, hash).run();
+    await audit(env, ctx, request, u.username, "password.change", u.id, { otherSessionsRevoked: true });
+    return ok({});
   }
 
   /* ── 公开：头像读取（上传的图或自动生成的默认头像）───────── */
@@ -387,11 +504,11 @@ export async function handleVoiceAPI(request, env, ctx, url) {
     }
 
     const user = await env.DB.prepare("SELECT * FROM voice_users WHERE id = ?").bind(id).first();
-    const sess = await issueSession(env, request, user);
+    const sess = await issueSession(env, request, user, body.remember);
     await audit(env, ctx, request, vu.value, "register", id,
       { inviteCodeId: inv.id, captchaMode: settings.captchaMode });
     await audit(env, ctx, request, vu.value, "login", id, { reason: "register" });
-    return ok({ user: C.publicUser(user) }, 201, sess.cookie);
+    return ok({ user: C.publicUser(user), session: sess.session }, 201, sess.cookies);
   }
 
   /* ── 公开：登录 ───────────────────────────────────────────── */
@@ -435,22 +552,24 @@ export async function handleVoiceAPI(request, env, ctx, url) {
     await clearFailures(env, "ip:" + ip);
     await env.DB.prepare("UPDATE voice_users SET last_login_at = ? WHERE id = ?")
       .bind(Date.now(), row.id).run();
-    const sess = await issueSession(env, request, row);
-    await audit(env, ctx, request, uname, "login", row.id, {});
-    return ok({ user: C.publicUser(row) }, 200, sess.cookie);
+    const sess = await issueSession(env, request, row, body.remember);
+    await audit(env, ctx, request, uname, "login", row.id,
+      { remember: sess.session.remember ? "30d" : "session" });
+    return ok({ user: C.publicUser(row), session: sess.session }, 200, sess.cookies);
   }
 
   /* ── 登录用户：登出 ───────────────────────────────────────── */
   if (p === "/api/voice/logout" && m === "POST") {
     if (!originOK(request)) return err("请求来源不合法（跨站请求已被拒绝）", 403);
+    // 先取用户再删会话，否则审计里用户名永远是空的
+    const u = await currentUser(env, request);
     const token = C.parseCookies(request.headers.get("cookie"))[C.COOKIE_NAME];
     if (token) {
       await env.DB.prepare("DELETE FROM voice_sessions WHERE token_hash = ?")
         .bind(await C.sha256Hex(token)).run();
     }
-    const u = await currentUser(env, request);
     await audit(env, ctx, request, u ? u.username : "", "logout", u ? u.id : "", {});
-    return ok({}, 200, C.clearSessionCookie(request));
+    return ok({}, 200, C.clearSessionCookies(request));
   }
 
   /* ══ 以下全部是管理接口 ═════════════════════════════════════ */
