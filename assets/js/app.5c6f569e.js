@@ -2303,36 +2303,95 @@
   function apiCandidates(){
     var proto = location.protocol;
     if (proto !== "http:" && proto !== "https:") return [];
-    var list = [""];
-    // A local Worker wins; static previews fall back to the deployed Worker.
-    if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname || "") ||
-        location.origin === "http://192.168.0.100:88") {
-      list.push("https://www.zfsnnb.dpdns.org");
+    var host = location.hostname || "";
+    var isLocalHost = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(host);
+    var isLanPreview = location.origin === "http://192.168.0.100:88";
+    /* 本地镜像（apex 域名带自定义端口，或局域网 IP）：同源优先，线上 Worker 兜底。
+     *
+     * 为什么不直接优先直连：本站的语音房间、后台会话都依赖 Cookie，跨源请求
+     * 不会带上 Cookie（也不接受 Set-Cookie），优先走绝对地址会把这些功能弄坏。
+     * 但同源那条路是 IIS 用 ARR 反代的，首屏并发一高代理侧就掐连接
+     * （IIS 日志 502 substatus 3，win32 12030 / 64），所以留一个线上地址兜底：
+     * 同源探不通时自动切过去，至少不会整块功能不可用。
+     * 线上（www 域名）依旧只有 ""，行为不变。 */
+    if (isLocalHost || isLanPreview || (host === "zfsnnb.dpdns.org" && location.port !== "")) {
+      return ["", "https://www.zfsnnb.dpdns.org"];
     }
-    return list;
+    return [""];
+  }
+
+  /* 请求并发闸门。
+   *
+   * 本地 IIS 用 ARR 反代到 Cloudflare 时，每个 API 请求都要在 http.sys 里开一条
+   * 到本机代理的隧道。实测并发 8 个 → 4 个立刻 502（IIS 日志 substatus 3，
+   * win32 12030 ERROR_WINHTTP_CONNECTION_ERROR / 64 ERROR_NETNAME_DELETED，
+   * 即代理侧把连接掐了）；并发 3 个则全部正常。
+   * 线上同源（CF 边缘）没有这个问题，所以只是把并发压到 2，不影响线上体验。
+   */
+  var API_MAX_CONCURRENT = 2;
+  var apiActive = 0;
+  var apiQueue = [];
+
+  function slot(fn){
+    return new Promise(function(resolve, reject){
+      function run(){
+        apiActive++;
+        var p;
+        try { p = fn(); } catch (e) { done(); reject(e); return; }
+        p.then(function(v){ done(); resolve(v); },
+               function(e){ done(); reject(e); });
+      }
+      function done(){
+        apiActive--;
+        var next = apiQueue.shift();
+        if (next) next();
+      }
+      if (apiActive < API_MAX_CONCURRENT) run();
+      else apiQueue.push(run);
+    });
   }
 
   function probe(base){
-    return new Promise(function(resolve){
-      var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-      // ★ 超时给到 3500ms：走 Cloudflare 隧道时请求要绕到境外边缘再回到家里，
-      //   实测 TTFB 约 1.0s（境外节点首连偶尔到 1.5s）。2200ms 余量太薄，
-      //   网络稍差就会误判成"后端挂了"，然后白探一圈其他候选。
-      //   代价只是：后端真挂了时用户多等 1.3s 才看到提示。
-      var timer = setTimeout(function(){
-        if (ctl) ctl.abort();
-        resolve(null);
-      }, 3500);
-      // 同源请求会被浏览器/CDN 缓存，加时间戳绕过
-      var url = (base || "") + "/api/health" + (base ? "" : "?_=" + Date.now());
-      fetch(url, { signal: ctl ? ctl.signal : undefined, cache: "no-store" })
-        .then(function(r){ return r.ok ? r.json() : null; })
-        .then(function(d){
-          clearTimeout(timer);
-          resolve(d && d.ok ? (base || "") : null);
+    /* ★ 超时给到 8000ms：本地 IIS 用 ARR 反代到 Cloudflare 时，请求要经过
+       http.sys → ARR → 本机代理 → 境外边缘，冷连接实测 2.4~7.0s（复用了
+       连接才会掉到 0.3s）。原来 3500ms 的预算会让首次加载大概率被误判成
+       "后端挂了"，表现为留言板直接显示"留言服务暂时连不上"。
+       另外网络层瞬断（ERR_CONNECTION_RESET / 502）会立刻失败，这种快速失败
+       自动重试一次，比干等 8 秒划算。 */
+    function attempt(left){
+      return new Promise(function(resolve){
+        var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+        var timedOut = false;
+        var timer = setTimeout(function(){
+          timedOut = true;
+          if (ctl) ctl.abort();
+          resolve(null);
+        }, 10000);
+        // 同源请求会被浏览器/CDN 缓存，加时间戳绕过
+        var url = (base || "") + "/api/health" + (base ? "" : "?_=" + Date.now());
+        slot(function(){
+          return fetch(url, { signal: ctl ? ctl.signal : undefined, cache: "no-store" });
         })
-        .catch(function(){ clearTimeout(timer); resolve(null); });
-    });
+          .then(function(r){
+            // ⚠ 非 2xx（尤其是 ARR 反代偶发的 502）也算可重试的失败。
+            //   原来这里直接返回 null，导致重试逻辑根本走不到，一次抖动就判死。
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(function(d){
+            clearTimeout(timer);
+            resolve(d && d.ok ? (base || "") : null);
+          })
+          .catch(function(){
+            clearTimeout(timer);
+            if (timedOut) { resolve(null); return; }
+            // 瞬断：再试一次（失败得很快，代价可控）
+            if (left > 0) { resolve(attempt(left - 1)); return; }
+            resolve(null);
+          });
+      });
+    }
+    return attempt(2);
   }
 
   function detectAPI(){
@@ -2404,6 +2463,51 @@
     return API_READY;
   }
 
+  /* 带重试的 fetch。
+   *
+   * 本机 IIS 走 ARR 反代到 Cloudflare 时，链路偶发返回 502/503/504 或直接
+   * 断连（一次抓包实测：同一页面首轮 3 个接口全 502，强制重载后全部 200）。
+   * 不做重试就会出现"留言板时好时坏"，且失败态要整页刷新才能恢复。
+   *
+   * 只对幂等请求重试 —— POST 提交留言万一上游已写入，重试会造成重复留言。
+   */
+  function fetchRetry(url, opts, tries){
+    tries = (tries == null) ? 3 : tries;
+    var method = ((opts && opts.method) || "GET").toUpperCase();
+    var idempotent = (method === "GET" || method === "HEAD");
+    var retryable = function(status){
+      return status === 502 || status === 503 || status === 504;
+    };
+    function again(){
+      return new Promise(function(res){
+        setTimeout(res, 450);
+      }).then(function(){ return fetchRetry(url, opts, tries - 1); });
+    }
+    /* 单次尝试超时：ARR 反代在代理侧卡住时，请求会既不返回也不报错，
+       fetch 会一直挂着 —— 那样重试分支永远走不到，页面只能等到外层放弃。
+       12s 覆盖了实测最慢的冷连接（约 7s），超时就当成可重试的失败。 */
+    var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = null;
+    var timedOut = false;
+    var ropts = opts;
+    if (ctl){
+      ropts = Object.assign({}, opts, { signal: ctl.signal });
+      timer = setTimeout(function(){ timedOut = true; ctl.abort(); }, 12000);
+    }
+    function clear(){ if (timer) { clearTimeout(timer); timer = null; } }
+    return fetch(url, ropts).then(function(r){
+      clear();
+      if (idempotent && tries > 1 && retryable(r.status)) return again();
+      return r;
+    }, function(err){
+      clear();
+      // 调用方主动取消 → 原样抛出；超时导致的 abort → 视为可重试
+      if (err && err.name === "AbortError" && !timedOut) throw err;
+      if (idempotent && tries > 1) return again();
+      throw err;
+    });
+  }
+
   /* 统一请求：先确保后端地址已探测出来 */
   function api(path, opts){
     opts = opts || {};
@@ -2417,7 +2521,7 @@
            具体的排查指引交给 backendHelp() 按当前协议给出。 */
         throw new Error("本站接口暂时无法访问（页面与接口同源，探测未通过）");
       }
-      return fetch(base + path, opts);
+      return slot(function(){ return fetchRetry(base + path, opts); });
     }).then(function(r){
       return r.json().catch(function(){ throw new Error("服务返回异常 (HTTP " + r.status + ")"); })
         .then(function(d){
