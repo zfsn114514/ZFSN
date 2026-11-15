@@ -198,7 +198,9 @@ const worker = {
       // 已登录时刷新 /voice 永远不会再闪一下登录页再跳回来。
       if (p === "/voice/login" || p === "/voice/login/") {
         const to = new URL(request.url);
-        to.pathname = "/voice/index.html";
+        // ⚠ 取 `/voice/` 而不是 `/voice/index.html`：静态资源层对 index.html
+        // 会 307 到目录地址，用后者会把用户又弹回 /voice，登录页路径就丢了。
+        to.pathname = "/voice/";
         return await serveAsset(new Request(to.toString(), request), env, p);
       }
       return await serveAsset(request, env, p);
