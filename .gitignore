@@ -69,3 +69,7 @@ tools/livekit/seg.*.bin
 tools/livekit/*.part
 # quick-tunnel.yml 由 voice-media-server.mjs 运行时自动生成（只含 7880 兜底 ingress）
 tools/livekit/quick-tunnel.yml
+
+# 本地调试产生的临时日志 / 诊断脚本
+tools/dev/_*.log
+tools/dev/_diag_*.mjs
