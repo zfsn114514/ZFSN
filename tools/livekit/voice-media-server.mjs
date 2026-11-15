@@ -364,13 +364,43 @@ function printBackendValues(st) {
   C.warn("这两个值必须和本机 livekit.yaml 完全一致，否则 Worker 签发的令牌会被 LiveKit 拒绝。");
 }
 
+/* 从 livekit.yaml 读出实际使用的 UDP 端口范围。
+   路由器只能做单端口映射时，livekit.yaml 会写成 50000-50001 这种
+   「上界不含」的形式，实际只用 50000——提示文案必须跟着配置走，
+   否则用户会照着 50000-50100 去开一堆用不到的端口。 */
+function udpPorts() {
+  try {
+    const y = fs.readFileSync(YAML_FILE, "utf8");
+    const a = y.match(/port_range_start:\s*(\d+)/);
+    const b = y.match(/port_range_end:\s*(\d+)/);
+    if (!a) return { start: 50000, end: 50100 };   // end 为开区间上界
+    const start = Number(a[1]);
+    const end = b ? Number(b[1]) : start + 100;
+    return { start: start, end: end };
+  } catch (_) {
+    return { start: 50000, end: 50100 };
+  }
+}
+
+/** 给人看的端口文本：单端口配置显示 "50000"，多端口显示 "50000-50100"。 */
+function udpRangeText() {
+  const p = udpPorts();
+  return p.end - p.start <= 1 ? String(p.start) : p.start + "-" + (p.end - 1);
+}
+
+/** netsh 的 localport 参数：单端口不能写成 "50000-50000"。 */
+function udpPortSpec() {
+  const p = udpPorts();
+  return p.end - p.start <= 1 ? String(p.start) : p.start + "-" + (p.end - 1);
+}
+
 /* Windows 防火墙默认会丢掉入站包：媒体走 UDP 50000-50100（TCP 7881 是回退），
  * 没放行时典型表现是「能进频道，但听不到声音 / 共享黑屏」，很容易被误判成
  * 后端没起来。这里做一次幂等放行；不是管理员时只提示，不阻塞启动。 */
 function ensureFirewall() {
   if (process.platform !== "win32") return;
   const rules = [
-    ["ZFVoice LiveKit UDP", "udp", "50000-50100"],
+    ["ZFVoice LiveKit UDP", "udp", udpPortSpec()],
     ["ZFVoice LiveKit TCP", "tcp", "7880-7881"]
   ];
   rules.forEach(function (r) {
@@ -418,6 +448,7 @@ async function run() {
      「外网 IP 校验被取消」），实例其实已经正常跑起来了。全标成红叉会让人
      以为启动失败，所以只有 FATAL / panic 才算真错，其余降级为黄色提示。 */
   let hinted = false;
+  let extIPWarned = false;
   ["stdout", "stderr"].forEach(function (ch) {
     lk[ch].setEncoding("utf8");
     lk[ch].on("data", function (d) {
@@ -425,6 +456,18 @@ async function run() {
         const t = line.trim();
         if (/FATAL|panic|failed to start|no such host|permission denied|address already in use/i.test(t)) {
           C.err("[媒体] " + t);
+        } else if (/could not validate external IP/i.test(t)) {
+          /* 这条不能当普通告警吞掉：它意味着「公网打回来的包到不了本机」，
+             本机自己用没问题，但外地用户一定会 ICE 失败（could not
+             establish pc connection）。绝大多数是路由器没做端口映射，
+             或者映射的端口和 livekit.yaml 的 port_range 不一致。 */
+          C.warn("[媒体] " + t);
+          if (!extIPWarned) {
+            extIPWarned = true;
+            C.warn("外网 IP 校验没通过：本机自测正常，但外地/手机流量加入大概率失败。");
+            C.info("检查两件事：① 路由器把 UDP " + udpRangeText() +
+              " 转发到本机 " + localIP() + "；② 映射的端口要和 tools/livekit/livekit.yaml 的 port_range 一致。");
+          }
         } else if (/error|warn/i.test(t)) {
           C.warn("[媒体] " + t);
           if (!hinted) {
@@ -447,7 +490,7 @@ async function run() {
     try { lk.kill(); } catch (_) {}
     return;
   }
-  C.ok("媒体服务已监听 ws://127.0.0.1:" + PORT + "（UDP 50000-50100 / TCP 7881）");
+  C.ok("媒体服务已监听 ws://127.0.0.1:" + PORT + "（UDP " + udpRangeText() + " / TCP 7881）");
 
   let cf = null;
   if (fs.existsSync(CF_EXE)) {
@@ -467,9 +510,10 @@ async function run() {
         C.ok("wss 域名：" + st.tunnelUrl + "（已写入 server.json）");
         printBackendValues(st);
         C.title("现在可以用了（关掉窗口或 Ctrl+C 会同时停掉两个服务）");
-        C.ok("窗口里出现过的红色 ✘ 如果是「CPU monitoring unsupported」「could not validate external IP」，都只是告警，不影响使用。");
+        C.ok("「CPU monitoring unsupported」这类是环境探测告警，可以忽略；" +
+          "「could not validate external IP」不是可以忽略的告警，出现就按下面的提示检查端口映射。");
         C.info("接下来：刷新网页 → 点「家里电脑」频道 → 允许麦克风即可语音 / 共享屏幕。");
-        C.info("别人听不到你：先确认本机防火墙放行了 UDP 50000-50100（本脚本会自动尝试）。");
+        C.info("别人听不到你：先确认路由器把 UDP " + udpRangeText() + " 转发到本机，且防火墙已放行（本脚本会自动尝试）。");
         C.info("局域网调试地址：ws://" + localIP() + ":" + PORT);
         if (process.env.ZF_SYNC_D1) {
           syncD1WhenReady(st.publicHost, st.tunnelUrl);
@@ -560,7 +604,7 @@ async function doctor() {
 
   C.title("媒体通道的现实限制（重要）");
   C.info("· 信令（WebSocket）走 Cloudflare Tunnel 的 443 端口，一定可达。");
-  C.info("· 语音 / 屏幕共享的媒体是 WebRTC over UDP 50000-50100（TCP 7881 回退）。");
+  C.info("· 语音 / 屏幕共享的媒体是 WebRTC over UDP " + udpRangeText() + "（TCP 7881 回退）。");
   C.info("· 如果家里宽带是运营商大内网（CGNAT，出口 IP 与路由器 WAN 不一致），");
   C.info("  外网朋友的媒体包到不了这台电脑，需要在路由器转发 UDP 端口，或用");
   C.info("  Tailscale / ZeroTier 与朋友组虚拟局域网；同一 WiFi 下完全不受影响。");

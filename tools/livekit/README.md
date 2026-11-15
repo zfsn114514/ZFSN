@@ -98,13 +98,22 @@ npx wrangler secret put LIVEKIT_API_SECRET
 | 用途 | 协议 / 端口 | 说明 |
 |---|---|---|
 | 信令 / 健康检查 | TCP 7880 → Tunnel 443 | `wss` 由 Cloudflare 终结，本机不用证书 |
-| TCP 媒体回退 | TCP 7881 | 外网建议路由器转发 |
-| UDP 媒体 | UDP 50000–50100 | **媒体主要走这里**，见下节 |
+| TCP 媒体回退 | TCP 7881 | 外网建议路由器转发（手机蜂窝网络常封 UDP，全靠它兜底） |
+| UDP 媒体 | UDP 50000（或 50000–50100） | **媒体主要走这里**，见下节 |
 | 房间上限 / 超时 | 20 人 / 空房 300 秒 | `livekit.example.yaml` 里可调 |
+
+**路由器只能做单端口映射时**（很多家用路由器不支持端口范围）：把
+`livekit.yaml` 里的范围收成 `port_range_start: 50000` + `port_range_end: 50001`，
+然后只在路由器上转发 UDP **50000** 一个端口就行。
+
+- `port_range_end` 是**开区间上界**，`50000-50001` 实际只会用到 50000；
+- 千万**不能**把 start 和 end 写成同一个值，LiveKit 内部是
+  `start + rand.Intn(end-start)`，`Intn(0)` 会直接 `panic: invalid argument to Intn`；
+- 单端口下所有会话复用这一个 UDP 端口，20 人以内完全够用。
 
 Windows 防火墙**不会**因为后台启动而弹窗询问（`livekit-server.exe` 是被脚本拉起的，
 没有交互桌面），所以 `start-selfhost.bat` 会自动幂等地添加两条入站放行规则
-（`ZFVoice LiveKit UDP` 50000-50100 / `ZFVoice LiveKit TCP` 7880-7881）。
+（`ZFVoice LiveKit UDP` 跟随 `livekit.yaml` 的实际端口 / `ZFVoice LiveKit TCP` 7880-7881）。
 添加规则需要管理员权限：如果窗口里出现「未能自动放行防火墙」，右键该 bat →
 **以管理员身份运行一次**即可，规则是持久的，之后普通双击就行。
 手动确认：
@@ -123,8 +132,13 @@ Get-NetFirewallRule -DisplayName 'ZFVoice*' | Select DisplayName,Enabled,Action
   Cloudflare 托管，所以「测试连接」会成功。
 - 语音和屏幕共享的媒体包是 **WebRTC over UDP 50000–50100**（TCP 7881 回退）。
   Cloudflare Tunnel 只转发 HTTP/WebSocket，**不转发 UDP**。
-- 如果家宽有公网 IPv4：在路由器转发 UDP 50000–50100 + TCP 7881 即可，
-  LiveKit 的 `use_external_ip: true` 会通过 STUN 把公网地址通告给客户端。
+- 如果家宽有公网 IPv4：在路由器转发 UDP 50000 + TCP 7881 即可（单端口映射的做法
+  见上一节），LiveKit 的 `use_external_ip: true` 会通过 STUN 把公网地址通告给客户端。
+- **判断端口映射有没有生效**：看启动日志里有没有
+  `WARN rtcconfig/ip.go could not validate external IP`。
+  - 没有这条 → 入站 UDP 打回来了，映射生效，外地用户能连；
+  - 有这条 → 本机自测正常、外地一定失败（`could not establish pc connection`），
+    多半是路由器没映射，或映射的端口和 `livekit.yaml` 的 `port_range` 不一致。
 - 如果家宽是运营商大内网（CGNAT，出口 IP 与路由器 WAN 地址不一致）：
   外网朋友的媒体包到不了这台电脑，典型症状是**能进频道、成员列表正常、
   互相听不到声音**。可选解法：
