@@ -18,7 +18,7 @@ rtc:
   tcp_port: 7881
   # UDP media ports. Narrow the range if you must forward fewer ports.
   port_range_start: 50000
-  port_range_end: 50100
+  port_range_end: 50001  # end 是开区间上界，50000-50001 实际只用 50000
   # Set false when using Cloudflare Tunnel + Cloudflare TURN for media.
   use_external_ip: true
 
