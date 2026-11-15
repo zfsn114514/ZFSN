@@ -275,7 +275,10 @@ async function refundInvite(env, id) {
 
 /* ── 人机验证统一入口 ────────────────────────────────────────── */
 
-async function verifyHuman(env, body, request, mode) {
+async function verifyHuman(env, body, request, settings) {
+  // 总开关：管理员关掉人机验证后，登录/注册/游客一律直接放行。
+  if (settings && settings.captchaEnabled === false) return { ok: true, skipped: true };
+  const mode = settings && settings.captchaMode === "turnstile" ? "turnstile" : "image";
   if (mode === "turnstile") {
     if (!env.TURNSTILE_SECRET_KEY) {
       return { ok: false, error: "管理员尚未配置 Turnstile 密钥，请改用图片验证码或联系管理员" };
@@ -324,10 +327,13 @@ export async function handleVoiceAPI(request, env, ctx, url) {
 
   /* ── 公开：前端配置 ───────────────────────────────────────── */
   if (p === "/api/voice/config" && m === "GET") {
+    const captchaEnabled = settings.captchaEnabled !== false;
     return ok({
       registrationOpen: !!settings.registrationOpen,
-      captchaMode: settings.captchaMode === "turnstile" ? "turnstile" : "image",
-      turnstileSiteKey: settings.captchaMode === "turnstile"
+      captchaEnabled: captchaEnabled,
+      guestLoginOpen: settings.guestLoginOpen !== false,
+      captchaMode: captchaEnabled && settings.captchaMode === "turnstile" ? "turnstile" : "image",
+      turnstileSiteKey: captchaEnabled && settings.captchaMode === "turnstile"
         ? (env.VOICE_TURNSTILE_SITE_KEY || env.TURNSTILE_SITE_KEY || "") : "",
       captchaLength: 5
     });
@@ -446,7 +452,7 @@ export async function handleVoiceAPI(request, env, ctx, url) {
     if (!body) return err("请求内容无效或过大");
 
     // 1) 人机验证先做：无论后续成败，这次挑战都已作废，防止重放
-    const human = await verifyHuman(env, body, request, settings.captchaMode);
+    const human = await verifyHuman(env, body, request, settings);
     if (!human.ok) return err(human.error);
 
     // 2) 字段校验
@@ -522,7 +528,7 @@ export async function handleVoiceAPI(request, env, ctx, url) {
     );
     if (wait > 0) return err("连续失败次数过多，请等待 " + wait + " 秒后再试", 429);
 
-    const human = await verifyHuman(env, body, request, settings.captchaMode);
+    const human = await verifyHuman(env, body, request, settings);
     if (!human.ok) return err(human.error);
     if (!cu.ok) return err(cu.error);
     if (!body.password) return err("请填写密码");
@@ -551,6 +557,60 @@ export async function handleVoiceAPI(request, env, ctx, url) {
     await audit(env, ctx, request, uname, "login", row.id,
       { remember: sess.session.remember ? "30d" : "session" });
     return ok({ user: C.publicUser(row), session: sess.session }, 200, sess.cookies);
+  }
+
+  /* ── 公开：游客登录（免注册，自动分配昵称）──────────────────
+     后台「系统设置」可以随时关掉。游客是 role='guest' 的真实用户行，
+     但没有可用密码（写的是随机口令的哈希），所以登不进去也改不了资料。 */
+  if (p === "/api/voice/guest" && m === "POST") {
+    if (!originOK(request)) return err("请求来源不合法（跨站请求已被拒绝）", 403);
+    if (settings.guestLoginOpen === false) return err("当前未开放游客登录，请使用账号登录", 403);
+    if (!(await guard(env, ["voice:guest:" + ip], 12, 60 * 60 * 1000))) {
+      return err("游客登录过于频繁，请稍后再试", 429);
+    }
+    const body = (await readBody(request)) || {};
+    const human = await verifyHuman(env, body, request, settings);
+    if (!human.ok) return err(human.error);
+
+    // 顺手清掉过期游客及其会话，表不会无限增长（失败不影响本次登录）
+    try {
+      const old = Date.now() - C.GUEST_TTL;
+      await env.DB.prepare(
+        "DELETE FROM voice_sessions WHERE user_id IN " +
+        "(SELECT id FROM voice_users WHERE role = 'guest' AND created_at < ?)"
+      ).bind(old).run();
+      await env.DB.prepare("DELETE FROM voice_users WHERE role = 'guest' AND created_at < ?")
+        .bind(old).run();
+    } catch (_) { /* 老库没有 role 索引也不影响主流程 */ }
+
+    const id = L.randomHex(16);
+    const name = C.guestDisplayName();
+    const rec = await C.hashPasswordRecord(L.randomHex(24));
+    const color = C.avatarColorFor(id);
+    let uname = "";
+    let created = false;
+    for (let i = 0; i < 4 && !created; i++) {
+      uname = "guest_" + L.randomHex(6);
+      try {
+        await env.DB.prepare(
+          "INSERT INTO voice_users " +
+          "(id, username, display_name, avatar_ref, avatar_color, password_rec, role, status, created_at, last_login_at) " +
+          "VALUES (?,?,?,NULL,?,?,?,?,?,?)"
+        ).bind(id, uname, name, color, JSON.stringify(rec), "guest", "active",
+          Date.now(), Date.now()).run();
+        created = true;
+      } catch (e) {
+        if (i === 3) {
+          console.error("[voice] 游客创建失败: %s", e && e.message);
+          return err("游客登录失败，请稍后再试", 500);
+        }
+      }
+    }
+
+    const user = await env.DB.prepare("SELECT * FROM voice_users WHERE id = ?").bind(id).first();
+    const sess = await issueSession(env, request, user, body.remember !== false);
+    await audit(env, ctx, request, uname, "login.guest", id, { displayName: name });
+    return ok({ user: C.publicUser(user), session: sess.session, guest: true }, 200, sess.cookies);
   }
 
   /* ── 登录用户：登出 ───────────────────────────────────────── */
@@ -583,6 +643,8 @@ export async function handleVoiceAPI(request, env, ctx, url) {
       if (!body) return err("请求内容无效");
       const patch = {};
       if (typeof body.registrationOpen === "boolean") patch.registrationOpen = body.registrationOpen;
+      if (typeof body.captchaEnabled === "boolean") patch.captchaEnabled = body.captchaEnabled;
+      if (typeof body.guestLoginOpen === "boolean") patch.guestLoginOpen = body.guestLoginOpen;
       if (typeof body.allowUserSelfHosted === "boolean") patch.allowUserSelfHosted = body.allowUserSelfHosted;
       if (typeof body.allowUserPrivateChannels === "boolean") patch.allowUserPrivateChannels = body.allowUserPrivateChannels;
       if (Number.isFinite(Number(body.maxPrivateChannelsPerUser))) {
@@ -727,7 +789,7 @@ export async function handleVoiceAPI(request, env, ctx, url) {
         return err("不能修改自己的角色或状态", 400);
       }
       const sets = [], args = [];
-      if (body.role === "user" || body.role === "admin") { sets.push("role = ?"); args.push(body.role); }
+      if (["user", "admin", "guest"].indexOf(body.role) >= 0) { sets.push("role = ?"); args.push(body.role); }
       if (["active", "disabled", "banned"].indexOf(body.status) >= 0) {
         sets.push("status = ?"); args.push(body.status);
       }

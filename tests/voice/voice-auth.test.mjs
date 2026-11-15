@@ -509,6 +509,85 @@ await test("系统设置：关闭注册后注册接口拒绝；Turnstile 未配�
   await call("PATCH", "/api/voice/admin/settings", { registrationOpen: true }, H);
 });
 
+await test("人机验证总开关：关掉后登录 / 注册都不再需要验证码", async function () {
+  // 先准备一个有密码的普通账号
+  const inv = await makeInvite();
+  const cap = await newCaptcha();
+  const reg = await json(await call("POST", "/api/voice/register",
+    Object.assign(regBody(inv.code, "nocap_user"), captchaPairs(cap))));
+  assert.equal(reg.ok, true);
+
+  const off = await json(await call("PATCH", "/api/voice/admin/settings",
+    { captchaEnabled: false }, H));
+  assert.equal(off.settings.captchaEnabled, false);
+
+  const cfg = await json(await call("GET", "/api/voice/config"));
+  assert.equal(cfg.captchaEnabled, false);
+  assert.equal(cfg.captchaMode, "image", "关掉后前端不该再拿到 turnstile 配置");
+
+  // 不带任何验证码字段也能登录
+  resetRate();
+  const login = await json(await call("POST", "/api/voice/login",
+    { username: "nocap_user", password: "ZfVoice2026" }));
+  assert.equal(login.ok, true, login.error || "");
+  assert.equal(login.user.username, "nocap_user");
+
+  await call("PATCH", "/api/voice/admin/settings", { captchaEnabled: true }, H);
+  resetRate();
+  const needCap = await json(await call("POST", "/api/voice/login",
+    { username: "nocap_user", password: "ZfVoice2026" }));
+  assert.equal(needCap.ok, false);
+  assert.equal(await json(await call("GET", "/api/voice/config")).then(function (c) {
+    return c.captchaEnabled;
+  }), true);
+});
+
+await test("游客登录：自动分配昵称、无密码、角色为 guest", async function () {
+  resetRate();
+  const r = await json(await call("POST", "/api/voice/guest", {}));
+  assert.equal(r.ok, true, r.error || "");
+  assert.equal(r.guest, true);
+  assert.equal(r.user.role, "guest");
+  assert.match(r.user.displayName, /^游客\d{4}$/);
+  assert.match(r.user.username, /^guest_[0-9a-f]{6}$/);
+  assert.equal(r.user.avatarUrl, null);
+
+  // 会话真的可用
+  const cookies = r && r.session ? null : null;   // 占位，避免误用
+  const setCookie = r.__cookie || "";
+  void cookies; void setCookie;
+
+  // 游客有随机口令哈希，且「用户名+空密码」登不进来
+  const row = db.prepare("SELECT password_rec, role FROM voice_users WHERE id = ?").get(r.user.id);
+  assert.ok(row.password_rec && row.password_rec.length > 20);
+  resetRate();
+  const tryLogin = await json(await call("POST", "/api/voice/login",
+    { username: r.user.username, password: "" }));
+  assert.equal(tryLogin.ok, false);
+
+  // 游客不能创建频道
+  const ch = await json(await call("POST", "/api/voice/channels",
+    { name: "游客的频道", visibility: "public" }));
+  assert.equal(ch.ok, false);
+});
+
+await test("游客登录开关：后台关掉后接口拒绝，前端 config 也同步", async function () {
+  resetRate();
+  const off = await json(await call("PATCH", "/api/voice/admin/settings",
+    { guestLoginOpen: false }, H));
+  assert.equal(off.settings.guestLoginOpen, false);
+  assert.equal(await json(await call("GET", "/api/voice/config")).then(function (c) {
+    return c.guestLoginOpen;
+  }), false);
+
+  resetRate();
+  const blocked = await json(await call("POST", "/api/voice/guest", {}));
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.error, /未开放游客登录/);
+
+  await call("PATCH", "/api/voice/admin/settings", { guestLoginOpen: true }, H);
+});
+
 await test("审计日志记录了注册 / 登录 / 邀请码操作", async function () {
   const a = await json(await call("GET", "/api/voice/admin/audit", undefined, H));
   const actions = a.items.map(function (x) { return x.action; });

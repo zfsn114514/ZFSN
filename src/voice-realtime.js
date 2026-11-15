@@ -334,6 +334,8 @@ export async function handleVoiceRealtime(request, env, ctx, url) {
     const wr = await requireUser(env, request);
     if (wr.error) return wr.error;
     if (!originOK(request)) return err("请求来源不合法（跨站请求已被拒绝）", 403);
+    // 游客是临时身份，不允许创建会长期存在的频道
+    if (wr.user.role === "guest") return err("游客身份不能创建频道，请用邀请码注册后再试", 403);
     if (!await L.rateAllow(env, "voice:addch:" + wr.user.id, 10, 60000)) {
       return err("操作太频繁，请稍后再试", 429);
     }

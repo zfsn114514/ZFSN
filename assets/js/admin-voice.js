@@ -163,14 +163,16 @@
     '    <h3>系统设置</h3>',
     '    <form class="zfv-form" id="zfv-settings-form">',
     '      <label><span><input type="checkbox" id="zfv-reg-open" style="width:auto;margin-right:6px">开放注册</span></label>',
+    '      <label><span><input type="checkbox" id="zfv-captcha-on" style="width:auto;margin-right:6px">启用人机验证（登录 / 注册 / 游客登录）</span></label>',
     '      <label>人机验证方式<select id="zfv-captcha-mode"><option value="image">自制图片验证码</option><option value="turnstile">Cloudflare Turnstile</option></select></label>',
+    '      <label><span><input type="checkbox" id="zfv-guest-open" style="width:auto;margin-right:6px">允许游客登录（免注册，自动分配「游客xxxx」昵称）</span></label>',
     '      <label><span><input type="checkbox" id="zfv-allow-private" style="width:auto;margin-right:6px">允许普通用户创建私有频道</span></label>',
     '      <label>每人私有频道上限<input type="number" id="zfv-max-private" min="1" max="100" value="10"></label>',
     '      <label><span><input type="checkbox" id="zfv-allow-self" style="width:auto;margin-right:6px">允许普通用户添加自建 SFU 频道（可选高级模式）</span></label>',
     '      <div><button class="btn primary" type="submit">保存设置</button></div>',
     '      <div class="zfv-msg" id="zfv-settings-msg"></div>',
     '    </form>',
-    '    <p class="zfv-msg">切到 Turnstile 前需先配置 TURNSTILE_SECRET_KEY 与 Site Key，否则服务端会拒绝切换。</p>',
+    '    <p class="zfv-msg">关掉「启用人机验证」后，登录 / 注册 / 游客登录都不再校验，验证方式选择也不生效。切到 Turnstile 前需先配置 TURNSTILE_SECRET_KEY 与 Site Key，否则服务端会拒绝切换。</p>',
     '  </section>',
 
     '  <section class="zfv-card">',
@@ -361,6 +363,7 @@
             esc(u.avatarColor) + ';margin-right:6px"></span>' +
             esc(u.displayName) + '<br><span class="mono" style="color:var(--muted);font-size:10px">' + esc(u.username) + "</span></td>" +
             '<td><select data-role><option value="user"' + (u.role === "user" ? " selected" : "") + '>普通用户</option>' +
+            '<option value="guest"' + (u.role === "guest" ? " selected" : "") + '>游客</option>' +
             '<option value="admin"' + (u.role === "admin" ? " selected" : "") + ">管理员</option></select></td>" +
             "<td>" + st + "</td><td>" + esc(fmt(u.createdAt)) + "</td>" +
             '<td><div class="zfv-ops">' +
@@ -403,7 +406,10 @@
     return call("/api/voice/admin/settings").then(function (d) {
       var s = d.settings || {};
       $("#zfv-reg-open").checked = !!s.registrationOpen;
+      $("#zfv-captcha-on").checked = s.captchaEnabled !== false;
       $("#zfv-captcha-mode").value = s.captchaMode === "turnstile" ? "turnstile" : "image";
+      $("#zfv-captcha-mode").disabled = s.captchaEnabled === false;
+      $("#zfv-guest-open").checked = s.guestLoginOpen !== false;
       $("#zfv-allow-self").checked = !!s.allowUserSelfHosted;
       $("#zfv-allow-private").checked = s.allowUserPrivateChannels !== false;
       $("#zfv-max-private").value = s.maxPrivateChannelsPerUser || 10;
@@ -415,7 +421,9 @@
       method: "PATCH",
       body: JSON.stringify({
         registrationOpen: $("#zfv-reg-open").checked,
+        captchaEnabled: $("#zfv-captcha-on").checked,
         captchaMode: $("#zfv-captcha-mode").value,
+        guestLoginOpen: $("#zfv-guest-open").checked,
         allowUserSelfHosted: $("#zfv-allow-self").checked,
         allowUserPrivateChannels: $("#zfv-allow-private").checked,
         maxPrivateChannelsPerUser: Number($("#zfv-max-private").value) || 10
@@ -654,6 +662,9 @@
       if (e.key === "Enter") { e.preventDefault(); loadUsers(this.value.trim()); }
     });
     $("#zfv-settings-form").addEventListener("submit", onSaveSettings);
+    $("#zfv-captcha-on").addEventListener("change", function () {
+      $("#zfv-captcha-mode").disabled = !this.checked;
+    });
     $("#zfv-channel-form").addEventListener("submit", onChannelForm);
     $("#zfv-channel-list").addEventListener("click", onChannelTable);
     $("#zfv-ch-new").addEventListener("click", function () { fillChannelForm(null); });

@@ -113,7 +113,7 @@
         <input id="login-user" name="username" type="text" autocomplete="username" maxlength="20" placeholder="用于登录的用户名">
         <label for="login-pwd">密码</label>
         <input id="login-pwd" name="password" type="password" autocomplete="current-password" placeholder="请输入密码">
-        <label for="login-captcha">人机验证</label>
+        <label for="login-captcha" class="captcha-label">人机验证</label>
         <div class="captcha-row">
           <input id="login-captcha" name="captcha" type="text" inputmode="numeric" maxlength="5" placeholder="图中数字" autocomplete="off">
           <button type="button" class="captcha-img" id="captcha-login" aria-label="点击刷新验证码"><span class="captcha-loading">加载中…</span></button>
@@ -124,6 +124,11 @@
           <small>不勾选则关闭浏览器后需要重新登录</small>
         </label>
         <button type="submit" class="btn-primary">登录</button>
+        <div class="guest-login" id="guest-login">
+          <span class="guest-or">或</span>
+          <button type="button" class="btn-guest" id="btn-guest">游客登录 · 免注册</button>
+          <small class="guest-hint">自动分配「游客xxxx」昵称 · 可加入频道聊天，不能创建频道</small>
+        </div>
       </form>
 
       <!-- 注册 -->
@@ -155,7 +160,7 @@
             <input id="reg-pwd2" name="password2" type="password" autocomplete="new-password" placeholder="再输入一次">
           </div>
         </div>
-        <label for="reg-captcha">人机验证</label>
+        <label for="reg-captcha" class="captcha-label">人机验证</label>
         <div class="captcha-row">
           <input id="reg-captcha" name="captcha" type="text" inputmode="numeric" maxlength="5" placeholder="图中数字" autocomplete="off">
           <button type="button" class="captcha-img" id="captcha-register" aria-label="点击刷新验证码"><span class="captcha-loading">加载中…</span></button>

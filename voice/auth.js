@@ -14,7 +14,10 @@
   var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
 
   var state = {
-    config: { registrationOpen: true, captchaMode: "image", turnstileSiteKey: "", captchaLength: 5 },
+    config: {
+      registrationOpen: true, captchaEnabled: true, guestLoginOpen: true,
+      captchaMode: "image", turnstileSiteKey: "", captchaLength: 5
+    },
     user: null,
     captchaId: { login: "", register: "" },
     avatar: null,           // 压缩后的 data URL
@@ -77,6 +80,7 @@
   /* ── 验证码（自制图片）───────────────────────────────────── */
   async function refreshCaptcha(which) {
     which = which || state.tab;
+    if (state.config.captchaEnabled === false) return;
     var btn = $("#captcha-" + which);
     if (!btn) return;
     btn.innerHTML = '<span class="captcha-loading">加载中…</span>';
@@ -115,6 +119,14 @@
   async function setupTurnstile() {
     var slot = $("#turnstile-slot");
     if (!slot) return;
+    // 总开关关掉时：图片验证码行和 Turnstile 都藏起来
+    if (state.config.captchaEnabled === false) {
+      slot.hidden = true;
+      $$(".captcha-row").forEach(function (r) { r.hidden = true; });
+      $$(".captcha-label").forEach(function (r) { r.hidden = true; });
+      return;
+    }
+    $$(".captcha-label").forEach(function (r) { r.hidden = false; });
     if (state.config.captchaMode !== "turnstile") {
       slot.hidden = true;
       $$(".captcha-row").forEach(function (r) { r.hidden = false; });
@@ -264,6 +276,8 @@
     if (cfg) {
       state.config = {
         registrationOpen: !!cfg.registrationOpen,
+        captchaEnabled: cfg.captchaEnabled !== false,
+        guestLoginOpen: cfg.guestLoginOpen !== false,
         captchaMode: cfg.captchaMode === "turnstile" ? "turnstile" : "image",
         turnstileSiteKey: cfg.turnstileSiteKey || "",
         captchaLength: cfg.captchaLength || 5
@@ -308,10 +322,13 @@
     // 「加载中…」，用户点开瞬间才去请求，弱网下容易误以为坏了。
     // 只在没有可用挑战时申请：从已登录退回登录页可能重复调用 prepareGuest，
     // 无条件刷新会白白消耗两次验证码接口配额。
-    if (state.config.captchaMode === "image") {
+    if (state.config.captchaMode === "image" && state.config.captchaEnabled !== false) {
       if (!state.captchaId.login) refreshCaptcha("login");
       if (state.config.registrationOpen && !state.captchaId.register) refreshCaptcha("register");
     }
+    // 游客登录入口：后台一键开关
+    var gbtn = $("#btn-guest");
+    if (gbtn) gbtn.hidden = state.config.guestLoginOpen === false;
   }
 
   /* ── Tab / 表单 ───────────────────────────────────────────── */
@@ -324,9 +341,11 @@
     $("#form-register").hidden = login;
     showError("");
     // 已有可用挑战就不重复申请，避免每次切换标签都消耗一次验证码挑战
-    if (state.config.captchaMode === "image") {
-      if (!state.captchaId[state.tab]) refreshCaptcha(state.tab);
-    } else resetTurnstile();
+    if (state.config.captchaEnabled !== false) {
+      if (state.config.captchaMode === "image") {
+        if (!state.captchaId[state.tab]) refreshCaptcha(state.tab);
+      } else resetTurnstile();
+    }
   }
 
   function humanPayload(which) {
@@ -374,7 +393,7 @@
       var username = $("#login-user").value.trim();
       var password = $("#login-pwd").value;
       if (!username || !password) { showError("请填写用户名和密码"); return; }
-      if (state.config.captchaMode === "image" && !$("#login-captcha").value.trim()) {
+      if (state.config.captchaEnabled !== false && state.config.captchaMode === "image" && !$("#login-captcha").value.trim()) {
         showError("请填写图中的数字"); return;
       }
       busy(form, true, "登录中…");
@@ -401,7 +420,7 @@
       showError("");
       var p1 = $("#reg-pwd").value, p2 = $("#reg-pwd2").value;
       if (p1 !== p2) { showError("两次输入的密码不一致"); return; }
-      if (state.config.captchaMode === "image" && !$("#reg-captcha").value.trim()) {
+      if (state.config.captchaEnabled !== false && state.config.captchaMode === "image" && !$("#reg-captcha").value.trim()) {
         showError("请填写图中的数字"); return;
       }
       busy(form, true, "创建中…");
@@ -428,6 +447,36 @@
         showError(ex.message);
         afterHumanFail("register");
       } finally { busy(form, false); }
+    });
+
+    // 游客登录：免注册，服务端自动分配「游客xxxx」昵称
+    var gbtn = $("#btn-guest");
+    if (gbtn) gbtn.addEventListener("click", async function () {
+      if (state.config.guestLoginOpen === false) { showError("当前未开放游客登录"); return; }
+      showError("");
+      if (state.config.captchaEnabled !== false && state.config.captchaMode === "image" &&
+          !$("#login-captcha").value.trim()) {
+        showError("请先填写图片中的数字，再点游客登录"); return;
+      }
+      var label = gbtn.textContent;
+      gbtn.disabled = true;
+      gbtn.textContent = "正在进入…";
+      try {
+        var d = await request("/guest", {
+          method: "POST",
+          body: Object.assign({ remember: true }, humanPayload("login"))
+        });
+        state.user = d.user;
+        cacheUser(d.user);
+        notify("已以游客身份进入：" + d.user.displayName);
+        emit("authed", d.user);
+      } catch (ex) {
+        showError(ex.message);
+        afterHumanFail("login");
+      } finally {
+        gbtn.disabled = false;
+        gbtn.textContent = label;
+      }
     });
 
     $("#reg-name").addEventListener("input", function () {

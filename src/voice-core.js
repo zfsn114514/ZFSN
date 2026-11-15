@@ -34,11 +34,22 @@ export const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 export const DEFAULT_SETTINGS = Object.freeze({
   registrationOpen: true,           // 是否开放注册
+  captchaEnabled: true,             // 人机验证总开关（关掉后登录/注册/游客都不再校验）
   captchaMode: "image",             // image | turnstile
+  guestLoginOpen: true,             // 是否允许「游客登录」（免注册，自动分配昵称）
   allowUserSelfHosted: false,       // 普通用户能否添加「自建 SFU」频道（可选高级模式）
   allowUserPrivateChannels: true,   // 普通用户能否添加私有频道（默认允许）
   maxPrivateChannelsPerUser: 10
 });
+
+/** 游客账号保留时长：超过这个时间且没有活跃会话的游客会被清掉。 */
+export const GUEST_TTL = 7 * 24 * 60 * 60 * 1000;
+
+/** 游客昵称：游客 + 4 位数字，例如「游客3721」。 */
+export function guestDisplayName() {
+  var n = 1000 + Math.floor(Math.random() * 9000);
+  return "游客" + n;
+}
 
 /* ── 随机 / 哈希 ─────────────────────────────────────────────── */
 
