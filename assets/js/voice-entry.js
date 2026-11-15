@@ -11,12 +11,18 @@
  *    不会把 .terminal-tag 挤到中间。
  *  · 其它页面没有 .topbar：退化为 position:fixed 固定左上角。
  *  · /voice 自身是独立布局，不注入，避免出现「进入语音」的入口套娃。
+ *  · /admin 管理后台同理不注入：后台里已有「ZF语音」标签页，浮动按钮
+ *    会压住左上角的后台标题与折叠菜单。
  * ══════════════════════════════════════════════════════════════ */
 (function () {
   "use strict";
 
   // /voice 独立布局不显示入口按钮
   if (location.pathname === "/voice" || location.pathname.indexOf("/voice/") === 0) return;
+  // 管理后台 / 管理终端不显示：这个按钮固定在左上角（后台没有 .topbar 可插），
+  // 会压住后台左上角的标题与折叠菜单按钮。管理后台里本来就有「ZF语音」标签页，
+  // 不需要这个站内跳转入口。
+  if (/^\/admin(?:[\/.]|$)/.test(location.pathname)) return;
   // 防止重复注入（某些页面会重复加载脚本）
   if (document.querySelector("[data-voice-entry]")) return;
 

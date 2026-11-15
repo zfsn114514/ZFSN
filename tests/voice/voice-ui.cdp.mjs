@@ -344,6 +344,15 @@ try {
     assert.equal(r.pane, true, "未注入面板");
   });
 
+  await step("管理后台不显示左上角 ZF语音 浮动入口（避免压住后台标题）", async function () {
+    const r = await admin.evaluate(`({
+      entry: !!document.querySelector("[data-voice-entry]"),
+      style: !!document.querySelector("[data-voice-entry-style]")
+    })`);
+    assert.equal(r.entry, false, "后台仍注入了站内浮动入口");
+    assert.equal(r.style, false, "后台仍注入了入口样式");
+  });
+
   await step("点击标签后五个面板全部完成加载，不再停在「加载中…」", async function () {
     await admin.click('.tabs button[data-tab="voice"]');
     await wait(2600);
