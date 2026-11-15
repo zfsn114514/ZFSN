@@ -556,8 +556,12 @@
         if (p.cancelScheduledValues) p.cancelScheduledValues(now);
         /* 30ms 斜坡：直接 0/1 跳变会在每个字头尾留「咔」声，坡太慢又会吃掉
            开头的音节，30ms 在听感上几乎无感。 */
-        if (p.setTargetAtTime) p.setTargetAtTime(target, now, 0.01);
-        else p.value = target;
+        if (p.setTargetAtTime) {
+          p.setTargetAtTime(target, now, 0.01);
+          // setTargetAtTime 是渐近的，永远不会真的等于目标值；80ms 后钉死，
+          // 免得关门时留一路 -40dB 的残余在传。
+          if (p.setValueAtTime) p.setValueAtTime(target, now + 0.08);
+        } else p.value = target;
       } catch (_) { this.gateGain.gain.value = target; }
       return;
     }
