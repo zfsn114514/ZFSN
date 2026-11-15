@@ -422,6 +422,26 @@ function ensureFirewall() {
   });
 }
 
+/* ── 单实例锁 ──────────────────────────────────────────────────
+   记录当前正在跑的 node 后端 PID。两个窗口同时启动时，靠它判断
+   「已经在跑」而不是「端口被占，杀掉了事」。 */
+const LOCK_FILE = path.join(HERE, "backend.lock");
+function readLockPid() {
+  try {
+    const n = parseInt(fs.readFileSync(LOCK_FILE, "utf8").trim(), 10);
+    return n > 0 ? n : 0;
+  } catch (_) { return 0; }
+}
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (_) { return false; }
+}
+function writeLockPid() {
+  try { fs.writeFileSync(LOCK_FILE, String(process.pid)); } catch (_) {}
+}
+function clearLock() {
+  try { if (readLockPid() === process.pid) fs.unlinkSync(LOCK_FILE); } catch (_) {}
+}
+
 /* ── run：LiveKit + Tunnel 一起跑 ────────────────────────────── */
 async function run() {
   let st = readState();
@@ -431,11 +451,24 @@ async function run() {
   }
   if (!fs.existsSync(LK_EXE)) { C.err("缺少 livekit-server.exe，请先跑 setup"); return; }
 
+  /* 单实例锁：以前这里是无条件 killByPort(7880)，于是「双击两次 bat」会
+     变成两个实例互相残杀——后启动的杀掉先启动的 LiveKit，先启动的那边
+     打一行「LiveKit 意外退出」就跟着关掉隧道，看起来就是「后端启动不了」。
+     现在改成：端口在响 + 锁主人还活着 = 拒绝重复启动，谁也别杀谁。 */
+  const lockPid = readLockPid();
   if (await httpUp("http://127.0.0.1:" + PORT + "/")) {
-    C.warn("端口 " + PORT + " 已被占用（可能已经有一个后端在跑）。先停掉旧的再启动。");
+    if (lockPid && lockPid !== process.pid && pidAlive(lockPid)) {
+      C.ok("后端已经在运行了（PID " + lockPid + "），这次不重复启动。");
+      C.info("要重启就先去关掉那个窗口（或任务管理器结束 PID " + lockPid + "），再启动一次。");
+      return;
+    }
+    C.warn("端口 " + PORT + " 被一个没有锁记录的进程占着（上次强制结束留下的？），先清掉。");
     await killByPort(PORT);
     await sleep(800);
+  } else if (lockPid && !pidAlive(lockPid)) {
+    C.info("清理上次异常退出留下的锁（PID " + lockPid + "）。");
   }
+  writeLockPid();
 
   C.title("启动 LiveKit Server（媒体转发）");
   ensureFirewall();
@@ -536,6 +569,7 @@ async function run() {
     C.title("正在停止本机语音媒体后端…");
     try { if (cf) cf.kill(); } catch (_) {}
     try { lk.kill(); } catch (_) {}
+    clearLock();
     setTimeout(function () { process.exit(0); }, 500);
   };
   process.on("SIGINT", shutdown);
@@ -543,6 +577,7 @@ async function run() {
   process.on("exit", function () {
     try { if (cf) cf.kill(); } catch (_) {}
     try { lk.kill(); } catch (_) {}
+    clearLock();
   });
   // 前台保持：任何一边退出都关掉另一边，避免留下半死不活的后端
   lk.on("exit", function () {

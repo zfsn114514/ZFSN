@@ -27,3 +27,6 @@ dev/.voice-dev-credentials.txt
 livekit/livekit.yaml
 livekit/.env
 livekit/livekit-server.exe
+
+# 后端单实例锁（运行时生成）
+livekit/backend.lock
