@@ -303,10 +303,14 @@
        Math.round(q.rttMs) + " ms · 丢包 " + (q.lossPct == null ? "—" : Number(q.lossPct).toFixed(1) + "%"));
 
     $("#member-grid").innerHTML = list.map(function (m) {
+      var flags = statusIcons(m);
+      /* 头像在左、名字与状态在右：横向卡片，一屏能放下更多人，也更像成员条目。 */
       return '<div class="member-card' + (m.speaking ? " speaking" : "") + (m.sharing ? " sharing" : "") + '">' +
-        avatarHTML(m) + '<span class="name">' + esc(m.name) + "</span>" +
+        avatarHTML(m) +
+        '<div class="m-body"><span class="name">' + esc(m.name) + "</span>" +
         '<span class="tags">' + (m.id === me().id ? "我" : "成员") +
-        (m.speaking ? " · 说话中" : "") + "</span>" + statusIcons(m) + "</div>";
+        (m.speaking ? " · 说话中" : "") + "</span>" +
+        (flags ? '<span class="m-flags">' + flags + "</span>" : "") + "</div></div>";
     }).join("");
 
     var sharer = list.filter(function (m) { return m.sharing; })[0];
@@ -314,6 +318,9 @@
     var showScreen = !!sharer;
     var stage = $("#screen-stage");
     stage.hidden = !showScreen;
+    /* 有共享画面时聊天固定高度、画面吃满剩余空间（见 .room.has-screen） */
+    var roomEl = $("#room");
+    if (roomEl) roomEl.classList.toggle("has-screen", showScreen);
     $("#member-grid").hidden = showScreen;
     if (sharer) {
       $("#screen-owner").textContent = sharer.name + " 正在共享屏幕";

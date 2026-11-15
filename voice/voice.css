@@ -280,17 +280,20 @@ button:disabled{opacity:.6;cursor:wait}
 .room-head h2{margin:0;font-size:19px;font-weight:600}
 .room-meta{display:flex;align-items:center;gap:10px;margin:5px 0 0;font-size:11.5px;color:var(--muted)}
 .room-actions{display:flex;gap:8px;align-items:center}
-.member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+.member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:14px}
 .member-grid[hidden]{display:none}
+/* 头像在左、名字与状态在右：横向卡片比原来居中竖排更好扫读，占高度也更少。 */
 .member-card{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
-  min-height:158px;padding:18px;border:1px solid var(--line);border-radius:var(--r);
+  display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;
+  min-height:0;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r);
   background:var(--surface);transition:border-color .2s,transform .24s var(--ease);
 }
 .member-card:hover{transform:translateY(-2px);border-color:var(--line2)}
-.member-card .avatar{width:56px;height:56px;font-size:19px}
+.member-card .avatar{width:44px;height:44px;font-size:16px;flex:none}
+.member-card .m-body{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
 .member-card .name{font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.member-card .tags{display:flex;gap:6px;font-size:10.5px;color:var(--dim)}
+.member-card .tags{display:flex;gap:6px;font-size:10.5px;color:var(--dim);flex-wrap:wrap}
+.member-card .m-flags{display:flex;gap:5px;flex-wrap:wrap}
 .member-card.sharing{border-color:rgba(63,214,63,.45)}
 
 .screen-stage[hidden]{display:none}
@@ -459,9 +462,9 @@ html[data-theme="light"] .screen-main{background:#e4e4ea}
   .v-layout.no-members .members{opacity:1;pointer-events:auto}
   .welcome{padding:26px 18px 50px}
   .room{padding:14px 14px 30px}
-  .member-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
-  .member-card{min-height:128px;padding:12px}
-  .member-card .avatar{width:46px;height:46px;font-size:16px}
+  .member-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .member-card{min-height:0;padding:11px 12px;gap:10px}
+  .member-card .avatar{width:38px;height:38px;font-size:14px}
   .userbar{padding:0 10px;gap:8px}
   .me-text{display:none}
   .call-info{gap:8px}
@@ -482,6 +485,20 @@ html[data-theme="light"] .screen-main{background:#e4e4ea}
 @media(min-width:761px){.chat-mobile-toggle{display:none}}
 .chat-panel{margin-top:18px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.02);overflow:hidden}
 .chat-panel.collapsed .chat-body{display:none}
+/* 桌面端：房间内容纵向撑满舞台，聊天面板吃掉剩余高度，消息区随窗口变高。
+   以前 .chat-messages 写死 180px，窗口一拉高下面就空一大片。 */
+@media(min-width:761px){
+  .room{display:flex;flex-direction:column;height:100%;min-height:0}
+  .room .chat-panel{flex:1 1 auto;display:flex;flex-direction:column;min-height:250px}
+  .room .chat-panel.collapsed{flex:0 0 auto;min-height:0}
+  .room .chat-body{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+  .room .chat-messages{flex:1 1 auto;height:auto;min-height:80px}
+  /* 有人共享屏幕时，画面区吃满剩余高度，聊天固定回一个舒适高度，别互相挤 */
+  .room.has-screen .chat-panel{flex:0 0 auto;min-height:0}
+  .room.has-screen .chat-messages{height:132px;flex:0 0 auto}
+  .room.has-screen .screen-stage{flex:1 1 auto;min-height:0}
+  .room.has-screen .screen-main{aspect-ratio:auto;flex:1 1 auto;min-height:220px}
+}
 .chat-head{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12px}
 .chat-head strong{flex:1}.chat-head button{border:1px solid var(--line2);border-radius:7px;background:transparent;color:var(--muted);padding:4px 9px;cursor:pointer}
 #chat-unread,.chat-mobile-toggle span{color:var(--red-soft);font-size:11px}

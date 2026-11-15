@@ -305,6 +305,7 @@
     this.audioCtx = null;
     this.gain = null;
     this.gateGain = null;
+    this.hpf = null;
     this.analyser = null;
     this.vadTimer = null;
     this.micOn = true;
@@ -336,14 +337,36 @@
 
   VoiceTransportBase.prototype.audioConstraints = function () {
     var a = this.settings.audio || {};
+    var echo = this.opts.echo !== false;
+    var noise = this.opts.noise !== false;
+    var agc = this.opts.agc !== false;
     var c = {
-      echoCancellation: this.opts.echo !== false,
-      noiseSuppression: this.opts.noise !== false,
-      autoGainControl: this.opts.agc !== false,
+      echoCancellation: echo,
+      noiseSuppression: noise,
+      autoGainControl: agc,
       channelCount: a.channels || 1
     };
     if (a.sampleRate) c.sampleRate = a.sampleRate;
     if (this.opts.deviceId) c.deviceId = { exact: this.opts.deviceId };
+    /* Chrome 的实现级开关：标准三项只是「开/关」，这几项才会打开更激进的
+       回声消除（尤其是外放时的那一层非线性抑制）与噪声抑制子功能。
+       不支持的浏览器会忽略未知约束，不会报错。 */
+    var adv = {};
+    if (echo) {
+      adv.googEchoCancellation = true;
+      adv.googExperimentalEchoCancellation = true;
+      adv.googAudioMirroring = false;
+    }
+    if (noise) {
+      adv.googNoiseSuppression = true;
+      adv.googHighpassFilter = true;
+      adv.googTypingNoiseDetection = true;
+    }
+    if (agc) {
+      adv.googAutoGainControl = true;
+      adv.googAutoGainControl2 = true;
+    }
+    if (Object.keys(adv).length) c.advanced = [adv];
     return c;
   };
 
@@ -394,6 +417,13 @@
       if (!AC || !this.micStream) return;
       this.audioCtx = new AC();
       var src = this.audioCtx.createMediaStreamSource(this.micStream);
+      /* 高通滤波：切掉 90Hz 以下的低频（空调轰鸣、桌面震动、手持噪声、
+         近讲效应造成的浑浊）。人声基频最低约 85Hz，切在这里不会伤到语音，
+         但能明显减轻对方听到的「嗡嗡」底噪，也顺带减轻回声能量。 */
+      this.hpf = this.audioCtx.createBiquadFilter();
+      this.hpf.type = "highpass";
+      this.hpf.frequency.value = 90;
+      this.hpf.Q.value = 0.7;
       this.gain = this.audioCtx.createGain();
       this.gain.gain.value = this.inputVolume;
       this.gateGain = this.audioCtx.createGain();
@@ -401,7 +431,8 @@
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 512;
       var dest = this.audioCtx.createMediaStreamDestination();
-      src.connect(this.gain);
+      src.connect(this.hpf);
+      this.hpf.connect(this.gain);
       this.gain.connect(this.gateGain);
       this.gateGain.connect(dest);
       src.connect(this.analyser);   // 门限之前取样，永远能听到真实麦克风
@@ -411,6 +442,7 @@
       console.warn("[voice] 音频处理不可用，回退原始麦克风", e);
       this.processedStream = null;
       this.gateGain = null;
+      this.hpf = null;
     }
   };
 
@@ -1509,11 +1541,11 @@
     }
     var old = {
       micStream: this.micStream, processedStream: this.processedStream, audioCtx: this.audioCtx,
-      gain: this.gain, gateGain: this.gateGain, analyser: this.analyser, micPublication: this.micPublication
+      gain: this.gain, gateGain: this.gateGain, hpf: this.hpf, analyser: this.analyser, micPublication: this.micPublication
     };
     clearInterval(this.vadTimer);
     this.micStream = stream; this.processedStream = null; this.audioCtx = null;
-    this.gain = null; this.gateGain = null; this.analyser = null;
+    this.gain = null; this.gateGain = null; this.hpf = null; this.analyser = null;
     this.gateOpen = true; this.gateHold = 0; this.silentMs = 0;
     this.buildAudioGraph();
     this.setInputVolume(this.inputVolume * 100);
@@ -1592,7 +1624,7 @@
     clearInterval(this.vadTimer);
     if (this.micStream) this.micStream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} });
     this.micStream = null; this.processedStream = null;
-    this.analyser = null; this.gain = null; this.gateGain = null;
+    this.analyser = null; this.gain = null; this.gateGain = null; this.hpf = null;
     if (this.audioCtx) { try { await this.audioCtx.close(); } catch (_) {} this.audioCtx = null; }
     var fresh = await this.publishAudio();
     try { await this.onAudioTrackReplaced(old, fresh); } catch (e) { console.warn("[voice] 替换音轨失败", e); }
@@ -1664,6 +1696,7 @@
     this.audioCtx = null;
     this.gain = null;
     this.gateGain = null;
+    this.hpf = null;
     this.analyser = null;
   };
 

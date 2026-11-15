@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#07070b">
 <title>ZF语音 · ZFSN</title>
 <link rel="icon" href="/favicon-32.png">
-<link rel="stylesheet" href="/voice/voice.css?v=20261115k">
+<link rel="stylesheet" href="/voice/voice.css?v=20261115l">
 <script>
 /* ── 保持登录：同步预登录判断 ──────────────────────────────────────
    这个脚本必须放在 <head> 且不能 defer：HTML 一解析到登录页就要决定
@@ -415,10 +415,11 @@
         </section>
         <!-- 麦克风 -->
         <section class="set-pane" data-pane="mic" role="tabpanel" hidden>
-          <p class="dlg-note">由浏览器原生处理，改动后立即重新采集麦克风。</p>
+          <p class="dlg-note">由浏览器原生处理（已开启实验级回声消除、打字声检测与 90Hz 低切）。改动后立即重新采集麦克风。</p>
           <label class="check"><input type="checkbox" id="set-noise" checked> 降噪（noise suppression）</label>
           <label class="check"><input type="checkbox" id="set-echo" checked> 回声消除（echo cancellation）</label>
           <label class="check"><input type="checkbox" id="set-agc" checked> 自动增益（auto gain）</label>
+          <p class="dlg-help">用外放（不戴耳机）时回声最难消：浏览器只能压到一定程度，把音量调低或戴耳机的效果永远好于软件处理。</p>
           <h3>麦克风激活阈值</h3>
           <div class="meter" id="set-meter" role="img" aria-label="输入电平与激活阈值">
             <span class="meter-fill" id="set-meter-fill"></span>
@@ -475,8 +476,8 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <!-- 2026-11-15a：升级缓存版本号，强制浏览器拉取全新脚本，避免新旧静态资源混用 -->
-<script defer src="/voice/auth.js?v=20261115k"></script>
-<script defer src="/voice/transport.js?v=20261115k"></script>
-<script defer src="/voice/voice.js?v=20261115k"></script>
+<script defer src="/voice/auth.js?v=20261115l"></script>
+<script defer src="/voice/transport.js?v=20261115l"></script>
+<script defer src="/voice/voice.js?v=20261115l"></script>
 </body>
 </html>

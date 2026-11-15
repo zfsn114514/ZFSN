@@ -174,6 +174,41 @@ try {
     assert.equal(r.hasEntryInApp, false, "/voice 独立布局不应显示入口套娃");
     assert.ok(r.bodyText.indexOf("Cloudflare") >= 0 || r.bodyText.indexOf("私有频道") >= 0,
       "页面缺少后端架构中文说明：" + r.bodyText);
+
+    /* 进入一个频道，检查成员卡片横排 + 聊天撑到底（两条都是纯 CSS 回归点） */
+    await app.evaluate(`(function(){
+      var b = document.querySelector('#channel-list button[data-channel]');
+      if (b) b.click();
+    })()`);
+    await wait(1200);
+    const layout = await app.evaluate(`(function(){
+      var card = document.querySelector(".member-card");
+      var av = card && card.querySelector(".avatar");
+      var nm = card && card.querySelector(".name");
+      var stage = document.querySelector(".stage");
+      var chat = document.getElementById("chat-panel");
+      var msgs = document.getElementById("chat-messages");
+      function rect(el){ return el ? el.getBoundingClientRect() : null; }
+      var rc = rect(card), ra = rect(av), rn = rect(nm), rs = rect(stage), rp = rect(chat), rm = rect(msgs);
+      return {
+        hasCard: !!card,
+        dir: card ? getComputedStyle(card).flexDirection : "",
+        avatarBeforeName: !!(ra && rn && ra.right <= rn.left && Math.abs(ra.top - rn.top) < 26),
+        stageBottom: rs ? Math.round(rs.bottom) : 0,
+        chatBottom: rp ? Math.round(rp.bottom) : 0,
+        chatHeight: rp ? Math.round(rp.height) : 0,
+        msgHeight: rm ? Math.round(rm.height) : 0,
+        cardBox: rc ? [Math.round(rc.width), Math.round(rc.height)] : null
+      };
+    })()`);
+    assert.equal(layout.hasCard, true, "进频道后没有成员卡片：" + JSON.stringify(layout));
+    assert.equal(layout.dir, "row", "成员卡片应改成横排（头像在左）：" + JSON.stringify(layout));
+    assert.equal(layout.avatarBeforeName, true, "头像没有排在名字左边：" + JSON.stringify(layout));
+    assert.ok(layout.cardBox && layout.cardBox[1] < 120, "成员卡片不该再是 158px 高的竖排卡片：" + JSON.stringify(layout));
+    assert.ok(layout.chatBottom >= layout.stageBottom - 40,
+      "聊天面板没有撑到舞台底部：" + JSON.stringify(layout));
+    assert.ok(layout.msgHeight > 200, "聊天消息区没有随窗口变高（仍是写死的 180px）：" + JSON.stringify(layout));
+
     await app.screenshot(path.join(SHOTS, "voice-app-view.png"));
     assert.deepEqual(app.errors.filter(function (e) { return e.indexOf("favicon") < 0; }), [],
       "应用视图控制台报错：" + app.errors.join(" | "));

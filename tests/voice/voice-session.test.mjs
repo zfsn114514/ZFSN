@@ -331,7 +331,7 @@ await test("登录页 head 有同步预登录脚本，且带两个「保持登�
   assert.match(html, /id="login-remember"[^>]*checked/);
   assert.match(html, /id="reg-remember"[^>]*checked/);
   // 缓存版本号：每次改前端脚本都要同步提升，否则老用户仍跑缓存里的旧代码。
-  assert.match(html, /auth\.js\?v=20261115k/, "脚本版本号要更新，否则用户仍用缓存旧版");
+  assert.match(html, /auth\.js\?v=20261115l/, "脚本版本号要更新，否则用户仍用缓存旧版");
 });
 
 await test("CSS 里预登录视图规则与恢复遮罩齐全", function () {
