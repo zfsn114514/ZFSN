@@ -711,6 +711,11 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
           <label>排序权重</label>
           <input id="w-order" type="number" value="0" placeholder="数字越小越靠前">
         </div>
+        <div class="fld">
+          <label>私密作品</label>
+          <label class="appearance-motion"><input type="checkbox" id="w-private"> 设为私密（前台需要输入 PIN 才能看到）</label>
+          <div class="hint">私密作品不会出现在公开作品墙、RSS 订阅和「热门作品」排行里；已解锁的访客在 2 小时内可以直接浏览。</div>
+        </div>
         <div class="frow">
           <button class="btn primary" id="w-save">发布作品</button>
           <button class="btn" id="w-cancel">取消</button>
@@ -849,6 +854,27 @@ button,input,textarea,select{font-family:inherit;font-size:inherit}
           <button class="btn primary" id="p-save">修改密码</button>
           <span class="msg" id="p-msg" style="flex:1;text-align:right"></span>
         </div>
+      </div>
+
+      <div class="form" style="max-width:540px">
+        <h3>私密作品 PIN</h3>
+        <div class="desc" style="margin-bottom:14px;color:#8b8ba0;font-size:12.5px;line-height:1.6">
+          前台「作品」页的私密文件夹需要 4 位数字 PIN 才能打开。改完 PIN 后，
+          所有已经解锁过的浏览器会立即失效，需要重新输入。
+        </div>
+        <div class="fld">
+          <label>新的 4 位 PIN</label>
+          <input id="pin-new" type="password" inputmode="numeric" maxlength="4" placeholder="4 位数字" autocomplete="new-password">
+        </div>
+        <div class="fld">
+          <label>再输一次</label>
+          <input id="pin-new2" type="password" inputmode="numeric" maxlength="4" placeholder="重复输入" autocomplete="new-password">
+        </div>
+        <div class="frow">
+          <button class="btn primary" id="pin-save">保存 PIN</button>
+          <span class="msg" id="pin-msg" style="flex:1;text-align:right"></span>
+        </div>
+        <div class="hint" id="pin-tip">首次使用默认 PIN 是 1145，建议尽快改掉。</div>
       </div>
 
       <div class="form" style="max-width:540px">
@@ -2002,6 +2028,7 @@ function openWorkForm(item){
   $("#w-save").textContent=item && item.id ? "保存修改" : "发布作品";
   $("#w-title").value = item ? (item.title || "") : "";
   $("#w-tag").value = item ? (item.tag || "") : "";
+  $("#w-private").checked = !!(item && item.private);
   $("#w-desc").value = item ? (item.desc || "") : "";
   $("#w-desc").dispatchEvent(new Event("input"));
 
@@ -2066,7 +2093,8 @@ $("#w-save").addEventListener("click", function(){
       return { name: f.name, path: f.path, size: f.size, sizeText: f.sizeText };
     }),
     link: $("#w-link").value.trim(),
-    order: Number($("#w-order").value) || 0
+    order: Number($("#w-order").value) || 0,
+    private: $("#w-private").checked ? 1 : 0
   };
   var btn = $("#w-save");
   btn.disabled = true;
@@ -2114,6 +2142,7 @@ function loadWorks(){
           '<div class="itbody">' +
             "<header>" +
               '<span class="who">' + esc(w.title) + "</span>" +
+              (w.private ? '<span class="loc" style="color:#e0a94a;border-color:rgba(224,169,74,.4)">私密</span>' : "") +
               (w.tag ? '<span class="loc">' + esc(w.tag) + "</span>" : "") +
               '<span class="when">' + esc(w.time || "") + " · 权重 " + (w.order || 0) + "</span>" +
             "</header>" +
@@ -2273,6 +2302,58 @@ $("#p-save").addEventListener("click", function(){
     });
 });
 
+/* ══════ 私密作品 PIN ══════
+ * 只做「设置」，不回显旧 PIN —— 服务端存的是 PBKDF2 哈希，
+ * 压根没有可回显的明文。忘记 PIN 就直接重设一个新的。
+ */
+(function initPinSettings(){
+  var save = $("#pin-save");
+  if (!save) return;
+
+  function loadPinState(){
+    api("/api/admin/private-pin").then(function(d){
+      var tip = $("#pin-tip");
+      if (tip){
+        tip.textContent = d && d.updatedAt
+          ? "PIN 最后修改时间：" + d.updatedAt
+          : "首次使用默认 PIN 是 1145，建议尽快改掉。";
+      }
+    }).catch(function(){ /* 读不到就不显示时间，不影响设置 */ });
+  }
+  loadPinState();
+
+  save.addEventListener("click", function(){
+    var p1 = $("#pin-new").value.trim();
+    var p2 = $("#pin-new2").value.trim();
+    var msg = $("#pin-msg");
+    msg.className = "msg";
+    if (!/^\d{4}$/.test(p1)){ msg.className = "msg bad"; msg.textContent = "PIN 必须是 4 位数字"; return; }
+    if (p1 !== p2){ msg.className = "msg bad"; msg.textContent = "两次输入的 PIN 不一致"; return; }
+
+    save.disabled = true;
+    save.textContent = "保存中…";
+    api("/api/admin/private-pin", { method: "POST", body: JSON.stringify({ pin: p1 }) })
+      .then(function(d){
+        msg.className = "msg ok";
+        msg.textContent = "已更新，所有已解锁的浏览器需重新输入";
+        toast("私密作品 PIN 已更新", "ok");
+        $("#pin-new").value = "";
+        $("#pin-new2").value = "";
+        var tip = $("#pin-tip");
+        if (tip && d && d.updatedAt) tip.textContent = "PIN 最后修改时间：" + d.updatedAt;
+      })
+      .catch(function(e){
+        msg.className = "msg bad";
+        msg.textContent = e.message;
+        if (/登录|会话/.test(e.message)) backToLogin();
+      })
+      .then(function(){
+        save.disabled = false;
+        save.textContent = "保存 PIN";
+      });
+  });
+})();
+
 /* ══════ 汇总刷新 ══════ */
 
 /* ══════ 关于我（首页自我介绍） ══════
@@ -2422,7 +2503,7 @@ $("#site-background-upload").addEventListener("change",function(){
 $("#site-edit-about").addEventListener("click",function(){$('.tabs button[data-tab=about]').click();});
 var studio=ZFSNAdminStudio({
   api:api, upload:function(file){return uploadFiles("image",[file],{});}, url:mUrl, open:openWorkForm, refresh:loadWorks, toast:toast,
-  read:function(){return {id:editingId,title:$("#w-title").value,tag:$("#w-tag").value,desc:$("#w-desc").value,images:IMGS.slice(),video:VIDEOP,cover:IMGS[0]||VIDEO_COVER||"",files:FILES.slice(),link:$("#w-link").value,order:Number($("#w-order").value)||0};},
+  read:function(){return {id:editingId,title:$("#w-title").value,tag:$("#w-tag").value,desc:$("#w-desc").value,images:IMGS.slice(),video:VIDEOP,cover:IMGS[0]||VIDEO_COVER||"",files:FILES.slice(),link:$("#w-link").value,order:Number($("#w-order").value)||0,private:$("#w-private").checked?1:0};},
   setImages:function(images){IMGS=images;renderThumbs();},
   namespace:function(){return API_BASE||location.origin;}
 });

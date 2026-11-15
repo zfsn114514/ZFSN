@@ -127,9 +127,130 @@ function rowToWork(r) {
     ts: Number(r.ts),
     time: r.time || "",
     updatedAt: r.updated_at || "",
+    private: Number(r.private) ? 1 : 0,
     likes: Number(r.like_count) || 0,
     comments: Number(r.comment_count) || 0
   };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   私密作品文件夹（4 位 PIN）
+   ───────────────────────────────────────────────────────────────
+   设计要点，改之前先读：
+
+   1) **PIN 只在服务端校验**。前端不能硬编码 1145，否则任何人
+      F12 就能看到并直接调接口拿作品。
+
+   2) **私密作品在公开接口里必须被彻底过滤**，不是"前端隐藏"。
+      GET /api/works 的 SQL 里带 private = 0，详情/点赞/评论/下载
+      也逐个校验，否则改个 URL 就能绕过 PIN。
+
+   3) 校验通过后发一张 HMAC 签名的票（token），2 小时有效。
+      票绑定 private_pin.ver，改 PIN 会让所有旧票立刻失效。
+      密钥存在 config 表里自动生成 —— 不依赖 wrangler secret，
+      部署即可用；想更强可以用环境变量覆盖（见 PIN_SECRET_ENV）。
+
+   4) 4 位 PIN 只有 1 万种组合，哈希再强也挡不住离线爆破。
+      真正的防线是**在线限流**：按 IP 每 15 分钟最多 6 次。
+      这个数字改小会让正常用户频繁被锁，改大则爆破变容易。
+   ══════════════════════════════════════════════════════════════ */
+
+const PIN_DEFAULT = "1145";          // 首次初始化用的 PIN，之后可在后台改
+const PIN_TTL = 2 * 60 * 60 * 1000;  // 解锁票有效期 2 小时
+const PIN_TRY_LIMIT = 6;             // 窗口内最多尝试次数
+const PIN_TRY_WINDOW = 15 * 60 * 1000;
+const PIN_SECRET_ENV = "PRIVATE_PIN_SECRET"; // 可选：用 secret 覆盖自动生成的密钥
+
+/** 读 PIN 记录；不存在就用默认 PIN 初始化一条（惰性建表，免手工迁移数据） */
+async function getPinRecord(env) {
+  const row = await env.DB.prepare("SELECT v FROM config WHERE k = 'private_pin'").first();
+  if (row && row.v) {
+    try {
+      const rec = JSON.parse(row.v);
+      if (rec && rec.salt && rec.hash) return rec;
+    } catch (_) { /* 坏数据当没设置，下面重建 */ }
+  }
+  const rec = await L.hashPassword(PIN_DEFAULT);
+  rec.ver = L.randomHex(4);
+  await env.DB.prepare(
+    "INSERT INTO config (k, v) VALUES ('private_pin', ?) " +
+    "ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+  ).bind(JSON.stringify(rec)).run();
+  return rec;
+}
+
+/** 存新 PIN（管理后台改 PIN 用）。ver 换新值 = 所有已签发的票立即作废。 */
+async function setPinRecord(env, pin, tz) {
+  const rec = await L.hashPassword(pin);
+  rec.ver = L.randomHex(4);
+  rec.at = L.stamp(L.now(), tz);
+  await env.DB.prepare(
+    "INSERT INTO config (k, v) VALUES ('private_pin', ?) " +
+    "ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+  ).bind(JSON.stringify(rec)).run();
+  return rec;
+}
+
+/** HMAC 签名密钥：优先用 secret，没有就用 config 里自动生成的随机串 */
+async function pinSecret(env) {
+  const fromEnv = env && env[PIN_SECRET_ENV];
+  if (fromEnv) return String(fromEnv);
+  const row = await env.DB.prepare("SELECT v FROM config WHERE k = 'pin_secret'").first();
+  if (row && row.v) return row.v;
+  const s = L.randomHex(32);
+  await env.DB.prepare(
+    "INSERT INTO config (k, v) VALUES ('pin_secret', ?) " +
+    "ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+  ).bind(s).run();
+  return s;
+}
+
+async function hmacHex(secret, msg) {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+  return L.bytesToHex(new Uint8Array(sig));
+}
+
+/** 发一张解锁票。格式 exp.ver.sig —— 自包含，不用落库。 */
+async function issuePinToken(env, rec) {
+  const exp = L.now() + PIN_TTL;
+  const body = exp + "." + (rec.ver || "0");
+  const sig = await hmacHex(await pinSecret(env), body);
+  return { token: body + "." + sig, exp };
+}
+
+/** 校验请求头里的解锁票。任何一步不对都返回 false，不区分原因（别给猜的人信息）。 */
+async function verifyPinToken(env, request) {
+  const raw = String(request.headers.get("x-private-token") || "");
+  const parts = raw.split(".");
+  if (parts.length !== 3) return false;
+  const exp = Number(parts[0]);
+  if (!exp || exp < L.now()) return false;
+  let rec;
+  try { rec = await getPinRecord(env); } catch (_) { return false; }
+  if (String(rec.ver || "0") !== parts[1]) return false;
+  const want = await hmacHex(await pinSecret(env), parts[0] + "." + parts[1]);
+  return L.safeEqual(want, parts[2]);
+}
+
+/** 管理员或已解锁，二者之一即可看私密作品 */
+async function canSeePrivate(env, request) {
+  if (await L.checkToken(env, L.adminTokenOf(request))) return true;
+  return await verifyPinToken(env, request);
+}
+
+/**
+ * 单件作品的访问闸门。
+ * 返回 true = 可以访问；false = 当它不存在（回 404，不泄露"这里有个私密作品"）。
+ */
+async function workAccessible(env, request, workId) {
+  const row = await env.DB.prepare("SELECT private FROM works WHERE id = ?").bind(workId).first();
+  if (!row) return false;
+  if (!Number(row.private)) return true;
+  return await canSeePrivate(env, request);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -309,7 +430,9 @@ async function serveFeed(request, env, url) {
   try {
     const rs = await env.DB.prepare(
       "SELECT id, title, descr, cover, tag, ts, time FROM works " +
-      "ORDER BY ts DESC LIMIT 40"
+      // ⚠ 必须排除私密作品：RSS 是公开订阅源，把私密作品的标题
+      //   和简介漏进去等于绕过 PIN。加字段时别忘了这里。
+      "WHERE private = 0 ORDER BY ts DESC LIMIT 40"
     ).all();
     items = rs.results || [];
   } catch (e) {
@@ -525,9 +648,11 @@ async function handleAPI(request, env, ctx, url) {
     ).all();
 
     // 作品排行：联表取标题，没有浏览记录的也要显示（LEFT JOIN，views 为 0）
+    // ⚠ 排除私密作品：/api/stats 是公开接口，标题漏出来就等于绕过了 PIN
     const topWorks = await env.DB.prepare(
       "SELECT w.id, w.title, COALESCE(v.views,0) AS views " +
       "FROM works w LEFT JOIN work_views v ON v.work_id = w.id " +
+      "WHERE w.private = 0 " +
       "ORDER BY views DESC, w.ts DESC LIMIT 20"
     ).all();
 
@@ -803,14 +928,92 @@ async function handleAPI(request, env, ctx, url) {
   /* ══ 作品 ══ */
 
   if (p === "/api/works" && method === "GET") {
+    /* ⚠ 访客只拿 private = 0。
+     *   私密作品绝不能出现在这个公开列表里 —— 只靠前端隐藏的话，
+     *   任何人打开 F12 就能读到全部标题和图片地址，PIN 形同虚设。
+     *   管理员（带有效 x-admin-token）拿全量，后台才能编辑私密作品。 */
+    const isAdmin = await L.checkToken(env, L.adminTokenOf(request));
     const rs = await env.DB.prepare(
       "SELECT w.*, " +
       "  (SELECT COUNT(*) FROM likes l WHERE l.work_id = w.id) AS like_count, " +
       "  (SELECT COUNT(*) FROM comments c WHERE c.work_id = w.id) AS comment_count " +
-      "FROM works w ORDER BY w.ord ASC, w.ts DESC"
+      "FROM works w " + (isAdmin ? "" : "WHERE w.private = 0 ") +
+      "ORDER BY w.ord ASC, w.ts DESC"
+    ).all();
+    const items = (rs.results || []).map(rowToWork);
+    return L.ok({ count: items.length, items, admin: isAdmin });
+  }
+
+  /* 私密作品的「存在性」查询：只回布尔，不泄露数量、标题、封面。
+   * 前端据此决定要不要显示文件夹入口 —— 没有私密作品时不留个空文件夹。 */
+  if (p === "/api/private/meta" && method === "GET") {
+    const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM works WHERE private = 1").first();
+    const has = !!(row && Number(row.c) > 0);
+    let unlocked = false;
+    if (has) {
+      try { unlocked = await verifyPinToken(env, request); } catch (_) { unlocked = false; }
+    }
+    return L.ok({ has, unlocked });
+  }
+
+  /* 私密作品列表：必须带解锁票（或管理员身份）才能拿到 */
+  if (p === "/api/private/works" && method === "GET") {
+    if (!(await canSeePrivate(env, request))) {
+      return L.fail("需要先输入 PIN 解锁", 401);
+    }
+    const rs = await env.DB.prepare(
+      "SELECT w.*, " +
+      "  (SELECT COUNT(*) FROM likes l WHERE l.work_id = w.id) AS like_count, " +
+      "  (SELECT COUNT(*) FROM comments c WHERE c.work_id = w.id) AS comment_count " +
+      "FROM works w WHERE w.private = 1 ORDER BY w.ord ASC, w.ts DESC"
     ).all();
     const items = (rs.results || []).map(rowToWork);
     return L.ok({ count: items.length, items });
+  }
+
+  /* 用 PIN 换解锁票。PIN 只在这里校验，前端永远拿不到正确值。 */
+  if (p === "/api/private/unlock" && method === "POST") {
+    if (!(await L.rateAllow(env, "pinguess:" + ip, PIN_TRY_LIMIT, PIN_TRY_WINDOW))) {
+      if (ctx && ctx.waitUntil) ctx.waitUntil(L.rateClean(env));
+      return L.fail("尝试次数过多，请 15 分钟后再试", 429);
+    }
+    let body;
+    try { body = await L.readJSON(request, 2000); } catch (_) { return L.fail("请求体格式错误", 400); }
+    const pin = String((body && body.pin) || "").trim();
+    if (!/^\d{4}$/.test(pin)) return L.fail("请输入 4 位数字 PIN", 400);
+
+    const rec = await getPinRecord(env);
+    let pass = false;
+    try {
+      pass = await L.verifyPassword(pin, rec, env.PBKDF2_ITERATIONS);
+    } catch (e) {
+      return L.fail("PIN 校验异常，请联系站点管理员", 500);
+    }
+    if (!pass) return L.fail("PIN 不正确", 401);
+
+    // 成功一次就把失败计数清掉，正常人不会因为之前手滑被继续惩罚
+    await env.DB.prepare("DELETE FROM rate WHERE k = ?").bind("pinguess:" + ip).run();
+    if (ctx && ctx.waitUntil) ctx.waitUntil(L.rateClean(env));
+    const t = await issuePinToken(env, rec);
+    return L.ok({ token: t.token, exp: t.exp, ttl: PIN_TTL });
+  }
+
+  /* 后台读 PIN 设置状态（只回「有没有设过」，绝不回 PIN 本身） */
+  if (p === "/api/admin/private-pin" && method === "GET") {
+    if (!(await L.checkToken(env, L.adminTokenOf(request)))) return L.fail("未登录或会话已过期", 401);
+    const rec = await getPinRecord(env);
+    return L.ok({ set: !!(rec && rec.hash), updatedAt: rec && rec.at ? rec.at : "" });
+  }
+
+  /* 后台改 PIN：4 位数字，改完所有已解锁的票立即失效 */
+  if (p === "/api/admin/private-pin" && method === "POST") {
+    if (!(await L.checkToken(env, L.adminTokenOf(request)))) return L.fail("未登录或会话已过期", 401);
+    let body;
+    try { body = await L.readJSON(request, 2000); } catch (_) { return L.fail("请求体格式错误", 400); }
+    const pin = String((body && body.pin) || "").trim();
+    if (!/^\d{4}$/.test(pin)) return L.fail("PIN 必须是 4 位数字", 400);
+    const rec = await setPinRecord(env, pin, tz);
+    return L.ok({ updatedAt: rec.at });
   }
 
   if (p === "/api/admin/works/order" && method === "POST") {
@@ -844,20 +1047,21 @@ async function handleAPI(request, env, ctx, url) {
 
     const id = L.randomHex(8);
     const ts = L.now();
+    const isPrivate = (body.private === true || body.private === 1 || body.private === "1") ? 1 : 0;
     await env.DB.prepare(
-      "INSERT INTO works (id, title, descr, link, cover, tag, images, video, files, ord, ts, time) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO works (id, title, descr, link, cover, tag, images, video, files, ord, ts, time, private) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).bind(
       id, title, L.clean(body.desc, 50000), L.clean(body.link, 500), cover,
       L.clean(body.tag, 24), JSON.stringify(images), video, JSON.stringify(files),
-      Number(body.order) || 0, ts, L.stamp(ts, tz)
+      Number(body.order) || 0, ts, L.stamp(ts, tz), isPrivate
     ).run();
 
     return L.ok({ item: rowToWork({
       id, title, descr: L.clean(body.desc, 50000), link: L.clean(body.link, 500),
       cover, tag: L.clean(body.tag, 24), images: JSON.stringify(images), video,
       files: JSON.stringify(files), ord: Number(body.order) || 0, ts,
-      time: L.stamp(ts, tz), like_count: 0, comment_count: 0
+      time: L.stamp(ts, tz), private: isPrivate, like_count: 0, comment_count: 0
     }) });
   }
 
@@ -865,6 +1069,7 @@ async function handleAPI(request, env, ctx, url) {
   m = new RegExp("^/api/works/(" + ID_RE + ")/interactions$").exec(p);
   if (m && method === "GET") {
     const workId = m[1];
+    if (!(await workAccessible(env, request, workId))) return L.fail("作品不存在", 404);
     const lk = await env.DB.prepare(
       "SELECT ip, geo, ua, ts, time FROM likes WHERE work_id = ? ORDER BY ts DESC"
     ).bind(workId).all();
@@ -885,8 +1090,9 @@ async function handleAPI(request, env, ctx, url) {
   m = new RegExp("^/api/works/(" + ID_RE + ")/like$").exec(p);
   if (m && method === "POST") {
     const workId = m[1];
-    const work = await env.DB.prepare("SELECT id, title FROM works WHERE id = ?").bind(workId).first();
+    const work = await env.DB.prepare("SELECT id, title, private FROM works WHERE id = ?").bind(workId).first();
     if (!work) return L.fail("作品不存在", 404);
+    if (Number(work.private) && !(await canSeePrivate(env, request))) return L.fail("作品不存在", 404);
 
     if (!(await L.rateAllow(env, "like:" + ip, 20, 60 * 1000))) {
       return L.fail("操作太快了，请稍后再试", 429);
@@ -917,8 +1123,9 @@ async function handleAPI(request, env, ctx, url) {
   m = new RegExp("^/api/works/(" + ID_RE + ")/comments$").exec(p);
   if (m && method === "POST") {
     const workId = m[1];
-    const work = await env.DB.prepare("SELECT id FROM works WHERE id = ?").bind(workId).first();
+    const work = await env.DB.prepare("SELECT id, private FROM works WHERE id = ?").bind(workId).first();
     if (!work) return L.fail("作品不存在", 404);
+    if (Number(work.private) && !(await canSeePrivate(env, request))) return L.fail("作品不存在", 404);
 
     let body;
     try { body = await L.readJSON(request); } catch (_) { return L.fail("请求体格式错误"); }
@@ -964,8 +1171,10 @@ async function handleAPI(request, env, ctx, url) {
   // 下载作品附件：保留上传时的原始文件名
   m = new RegExp("^/api/download/(" + ID_RE + ")/(\\d+)$").exec(p);
   if (m && (method === "GET" || method === "HEAD")) {
-    const row = await env.DB.prepare("SELECT files FROM works WHERE id = ?").bind(m[1]).first();
+    const row = await env.DB.prepare("SELECT files, private FROM works WHERE id = ?").bind(m[1]).first();
     if (!row) return L.fail("作品不存在", 404);
+    // 附件下载同样要过闸门，否则私密作品的附件可以直接按序号拖走
+    if (Number(row.private) && !(await canSeePrivate(env, request))) return L.fail("作品不存在", 404);
     const files = parseJSON(row.files, []);
     const f = files[Number(m[2])];
     if (!f || !f.path) return L.fail("文件不存在", 404);
@@ -990,6 +1199,10 @@ async function handleAPI(request, env, ctx, url) {
       "FROM works w WHERE w.id = ?"
     ).bind(workId).first();
     if (!row) return L.fail("作品不存在", 404);
+    // 私密作品：没解锁就当作不存在（404 而不是 403，别告诉猜的人这里有东西）
+    if (Number(row.private) && !(await canSeePrivate(env, request))) {
+      return L.fail("作品不存在", 404);
+    }
 
     const lk = await env.DB.prepare(
       "SELECT ip FROM likes WHERE work_id = ?"
@@ -999,10 +1212,12 @@ async function handleAPI(request, env, ctx, url) {
     ).bind(workId).all();
 
     // 相邻作品：排序口径必须和 GET /api/works 完全一致
-    // （ord 升序，同 ord 新的在前），否则详情页翻页顺序会跟列表对不上
+    // （ord 升序，同 ord 新的在前），否则详情页翻页顺序会跟列表对不上。
+    // 公开作品只在公开池里翻，私密作品只在私密池里翻 —— 否则上一篇/下一篇
+    // 的标题会把私密作品泄露出去。
     const all = await env.DB.prepare(
-      "SELECT id, title, cover FROM works ORDER BY ord ASC, ts DESC"
-    ).all();
+      "SELECT id, title, cover FROM works WHERE private = ? ORDER BY ord ASC, ts DESC"
+    ).bind(Number(row.private) ? 1 : 0).all();
     const rows = all.results || [];
     const i = rows.findIndex((r) => r.id === workId);
     const nb = (j) => (i < 0 || j < 0 || j >= rows.length ? null : {
@@ -1053,18 +1268,21 @@ async function handleAPI(request, env, ctx, url) {
     const files = body.files !== undefined ? normFileList(body.files, 10) : parseJSON(row.files, []);
     let cover = body.cover !== undefined ? L.clean(body.cover, 800) : (row.cover || "");
     if (!cover && images.length) cover = images[0];
+    const isPrivate = body.private !== undefined
+      ? ((body.private === true || body.private === 1 || body.private === "1") ? 1 : 0)
+      : (Number(row.private) ? 1 : 0);
 
     const updatedAt = L.stamp(L.now(), tz);
     await env.DB.prepare(
-      "UPDATE works SET title=?, descr=?, link=?, cover=?, tag=?, images=?, video=?, files=?, ord=?, updated_at=? " +
+      "UPDATE works SET title=?, descr=?, link=?, cover=?, tag=?, images=?, video=?, files=?, ord=?, updated_at=?, private=? " +
       "WHERE id=?"
     ).bind(title, descr, link, cover, tag, JSON.stringify(images), video,
-      JSON.stringify(files), ord, updatedAt, id).run();
+      JSON.stringify(files), ord, updatedAt, isPrivate, id).run();
 
     return L.ok({ item: rowToWork({
       id, title, descr, link, cover, tag,
       images: JSON.stringify(images), video, files: JSON.stringify(files),
-      ord, ts: row.ts, time: row.time, updated_at: updatedAt,
+      ord, ts: row.ts, time: row.time, updated_at: updatedAt, private: isPrivate,
       like_count: 0, comment_count: 0
     }) });
   }

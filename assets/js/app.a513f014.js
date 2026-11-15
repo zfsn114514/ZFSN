@@ -876,6 +876,263 @@
     });
   }
 
+  /* ═══ 私密作品文件夹 ═══
+   *
+   * 安全模型（改代码前务必读一遍）：
+   *   · 私密作品**不在** GET /api/works 的返回里，服务端 SQL 就带 private = 0。
+   *     前端这里只是「显示或不显示」，不承担任何防护职责。
+   *   · PIN 由服务端校验（/api/private/unlock），成功后发一张 2 小时的 HMAC 票。
+   *   · 所有请求都通过 api() 自动带票，所以详情页/点赞/评论不用各自改。
+   *   · 票存 sessionStorage，关标签页即失效。
+   */
+  function vaultEl(id){ return document.getElementById(id); }
+
+  /** 把 VAULT 状态同步到界面上（唯一一处改 DOM 的地方，避免状态与视图打架） */
+  function vaultSyncUI(){
+    var box = vaultEl("vault");
+    if (!box) return;
+    var unlocked = !!VAULT.token;
+    // 没有私密作品、也没解锁过 → 整个入口都不出现，不留空文件夹
+    box.hidden = !VAULT.has && !unlocked;
+    box.classList.toggle("locked", !unlocked);
+    box.classList.toggle("open", unlocked && VAULT.open);
+
+    var tip = vaultEl("vault-tip");
+    if (tip){
+      tip.textContent = unlocked
+        ? (VAULT.open ? "点击收起" : "已解锁 · 点击展开")
+        : "需要 4 位 PIN 才能查看";
+    }
+    var card = vaultEl("vault-card");
+    if (card) card.setAttribute("aria-expanded", (unlocked && VAULT.open) ? "true" : "false");
+
+    var body = vaultEl("vault-body");
+    if (body) body.hidden = !(unlocked && VAULT.open);
+  }
+
+  function pinHint(text, cls){
+    var p = vaultEl("pin-hint");
+    if (!p) return;
+    p.textContent = text || "输入 4 位 PIN 进入";
+    p.className = cls || "";
+  }
+
+  function pinPaint(){
+    var dots = vaultEl("pin-dots");
+    if (!dots) return;
+    var items = dots.querySelectorAll("i");
+    for (var i = 0; i < items.length; i++){
+      items[i].classList.toggle("on", i < pinBuf.length);
+    }
+    dots.setAttribute("aria-label", "已输入 " + pinBuf.length + " 位，共 " + PIN_LEN + " 位");
+  }
+
+  var pinLastFocus = null;
+
+  function pinOpen(msg){
+    var m = vaultEl("pinmodal");
+    if (!m) return;
+    pinLastFocus = document.activeElement;
+    pinBuf = "";
+    pinBusy = false;
+    m.hidden = false;
+    m.classList.remove("busy");
+    var pbox = m.querySelector(".pinbox");
+    if (pbox) pbox.classList.remove("shake");
+    var dots = vaultEl("pin-dots");
+    if (dots) dots.classList.remove("bad", "ok");
+    pinPaint();
+    pinHint(msg || "输入 4 位 PIN 进入", "");
+    document.body.style.overflow = "hidden";
+    setTimeout(function(){
+      var k = m.querySelector('.pinkey[data-key="1"]');
+      if (k) k.focus();
+    }, 60);
+  }
+
+  function pinClose(){
+    var m = vaultEl("pinmodal");
+    if (!m) return;
+    m.hidden = true;
+    m.classList.remove("busy");
+    pinBuf = "";
+    pinBusy = false;
+    document.body.style.overflow = "";
+    if (pinLastFocus && pinLastFocus.focus){
+      try { pinLastFocus.focus(); } catch (_) { /* 元素可能已被移除 */ }
+    }
+  }
+
+  function pinDel(){
+    if (pinBusy || !pinBuf) return;
+    pinBuf = pinBuf.slice(0, -1);
+    pinPaint();
+  }
+
+  function pinPress(d){
+    if (pinBusy || pinBuf.length >= PIN_LEN) return;
+    pinBuf += String(d);
+    pinPaint();
+    // 第 4 位点亮之后再提交，否则用户看不到最后一位就跳走了
+    if (pinBuf.length === PIN_LEN) setTimeout(pinSubmit, 130);
+  }
+
+  function pinSubmit(){
+    if (pinBusy || pinBuf.length !== PIN_LEN) return;
+    pinBusy = true;
+    var m = vaultEl("pinmodal");
+    if (m) m.classList.add("busy");
+    pinHint("正在验证…", "");
+
+    api("/api/private/unlock", {
+      method: "POST",
+      body: JSON.stringify({ pin: pinBuf })
+    }).then(function(d){
+      vaultSaveTicket(d.token, d.exp);
+      var dots = vaultEl("pin-dots");
+      if (dots){ dots.classList.remove("bad"); dots.classList.add("ok"); }
+      pinHint("解锁成功", "");
+      setTimeout(function(){
+        pinClose();
+        VAULT.has = true;
+        VAULT.open = true;
+        vaultSyncUI();
+        vaultLoad();
+        var box = vaultEl("vault");
+        if (box) box.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 360);
+    }).catch(function(e){
+      var msg = e.message || "验证失败";
+      pinBusy = false;
+      if (m) m.classList.remove("busy");
+      var pbox = m ? m.querySelector(".pinbox") : null;
+      if (pbox){
+        pbox.classList.remove("shake");
+        void pbox.offsetWidth;   // 强制重排，同一个动画才能连续触发
+        pbox.classList.add("shake");
+      }
+      pinBuf = "";
+      pinPaint();
+      var dots = vaultEl("pin-dots");
+      if (dots){ dots.classList.remove("ok"); dots.classList.add("bad"); }
+      pinHint(msg, /过多|稍后/.test(msg) ? "wait" : "bad");
+      setTimeout(function(){ if (dots) dots.classList.remove("bad"); }, 720);
+    });
+  }
+
+  /** 拉私密作品并渲染到文件夹里 */
+  function vaultLoad(){
+    if (!VAULT.token) return;
+    var box = vaultEl("vault-gallery");
+    if (box) box.innerHTML = '<div class="wcmt-empty" style="column-span:all">正在打开私密文件夹…</div>';
+
+    api("/api/private/works").then(function(d){
+      VAULT.items = (d && d.items) || [];
+      vaultRender(VAULT.items);
+    }).catch(function(e){
+      var msg = e.message || "加载失败";
+      // 票过期（改过 PIN 或超 2 小时）→ 重新上锁并让用户再输一次
+      if (/PIN|解锁/.test(msg)){
+        vaultSaveTicket("", 0);
+        VAULT.open = false;
+        VAULT.items = [];
+        if (box) box.innerHTML = "";
+        vaultSyncUI();
+        pinOpen("解锁已过期，请重新输入 PIN");
+        return;
+      }
+      if (box){
+        box.innerHTML = '<div class="wcmt-empty" style="column-span:all">' +
+          '私密作品加载失败：' + esc(msg) + '</div>';
+      }
+    });
+  }
+
+  function vaultRender(list){
+    var box = vaultEl("vault-gallery");
+    if (!box) return;
+    if (!list.length){
+      box.innerHTML = '<div class="wcmt-empty" style="column-span:all">私密文件夹里还没有作品</div>';
+      return;
+    }
+    box.innerHTML = "";
+    list.forEach(function(w, i){
+      var el = document.createElement("div");
+      el.className = "gitem reveal" + (w.cover ? "" : " gitem-txt");
+      el.style.animationDelay = (i * 0.06) + "s";
+      var img = workImg(w, i);
+      el.innerHTML =
+        '<span class="pill">' + (w.tag ? esc(w.tag) : "私密") + '</span>' +
+        (w.cover
+          ? pictureHtml(img, 'alt="' + esc(w.title) + '" loading="lazy" decoding="async"')
+          : '') +
+        '<div class="gmeta">' +
+          badgeHtml(w) +
+          '<div class="gt">' + esc(w.title) + '</div>' +
+          (w.desc ? '<div class="gs">' + esc(WorkMarkdown.summary(w.desc)) + '</div>' : '') +
+        '</div>';
+
+      var _imgEl = el.querySelector("img");
+      if (_imgEl) blurUp(_imgEl, img, i);
+
+      el.addEventListener("click", function(){
+        if (window.__zfsnOpenWork) window.__zfsnOpenWork(w.id);
+      });
+      box.appendChild(el);
+    });
+  }
+
+  /** 问服务端：这个站有没有私密作品、我这张票还有效吗 */
+  function vaultInit(){
+    vaultLoadTicket();
+    api("/api/private/meta").then(function(d){
+      VAULT.has = !!(d && d.has);
+      // 以服务端为准：票被改 PIN 作废时，本地不能还显示「已解锁」
+      if (VAULT.token && d && d.unlocked === false) vaultSaveTicket("", 0);
+      vaultSyncUI();
+      if (VAULT.token && VAULT.open) vaultLoad();
+    }).catch(function(){
+      // 拿不到状态就不显示入口 —— 别给一个点了只会报错的按钮
+      vaultSyncUI();
+    });
+  }
+
+  (function initVault(){
+    var card = vaultEl("vault-card");
+    if (card){
+      card.addEventListener("click", function(){
+        if (!VAULT.token){ pinOpen(); return; }
+        VAULT.open = !VAULT.open;
+        vaultSyncUI();
+        if (VAULT.open && !VAULT.items.length) vaultLoad();
+      });
+    }
+
+    var modal = vaultEl("pinmodal");
+    if (modal){
+      modal.addEventListener("click", function(e){
+        if (e.target.closest("[data-key]")){
+          pinPress(e.target.closest("[data-key]").getAttribute("data-key"));
+          return;
+        }
+        if (e.target.closest("#pin-del")){ pinDel(); return; }
+        if (e.target.id === "pin-mask" || e.target.closest("#pin-close")) pinClose();
+      });
+
+      // 物理键盘也要能用：数字键直接输入，退格删除，Esc 关闭
+      document.addEventListener("keydown", function(e){
+        if (modal.hidden) return;
+        if (e.key === "Escape"){ pinClose(); return; }
+        if (e.key === "Backspace"){ e.preventDefault(); pinDel(); return; }
+        if (/^[0-9]$/.test(e.key)){ e.preventDefault(); pinPress(e.key); }
+      });
+    }
+
+    // 延迟探测：首屏会同时打 6~8 个接口，这条链路对并发很敏感
+    // （详见 fetchRetry 上方的注释），没必要在最挤的时候再挤一个进去。
+    setTimeout(vaultInit, 1000);
+  })();
+
   /* ═══ 作品筛选（搜索 + 标签）═══
    *
    * 全部在前端做。作品列表本来就是一次性拉全量的（/api/works 返回完整数组），
@@ -2599,10 +2856,56 @@
     });
   }
 
+  /* ═══ 私密作品（PIN）状态 ═══
+   *
+   * token 存在 sessionStorage：关掉标签页就失效，比 localStorage 干净
+   * （共用电脑时不会留下长期后门）。它只是 HMAC 签名的一张票，
+   * 真正的校验永远在服务端 —— 前端存不存在、存哪都不影响安全性。
+   */
+  var VAULT = {
+    token: "",        // 解锁票；空 = 未解锁
+    exp: 0,           // 票的过期时间戳（服务端也会校验，这里只用于提前清理）
+    has: false,       // 站点是否存在私密作品
+    open: false,      // 文件夹当前是否展开
+    loading: false,
+    items: []
+  };
+  var VAULT_KEY = "zfsn_vault_ticket";
+  var PIN_LEN = 4;
+  var pinBuf = "";
+  var pinBusy = false;
+
+  /** 票据存取（sessionStorage 在隐私模式下可能直接抛错，一律兜住） */
+  function vaultSaveTicket(token, exp){
+    VAULT.token = token || "";
+    VAULT.exp = Number(exp) || 0;
+    try {
+      if (token) sessionStorage.setItem(VAULT_KEY, JSON.stringify({ token: token, exp: VAULT.exp }));
+      else sessionStorage.removeItem(VAULT_KEY);
+    } catch (_) { /* 存不了就只保留在内存里，本次会话仍然可用 */ }
+  }
+
+  function vaultLoadTicket(){
+    try {
+      var raw = sessionStorage.getItem(VAULT_KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (o && o.token && (!o.exp || Number(o.exp) > Date.now())){
+        VAULT.token = o.token;
+        VAULT.exp = Number(o.exp) || 0;
+      } else {
+        sessionStorage.removeItem(VAULT_KEY);
+      }
+    } catch (_) { /* 坏数据当没有 */ }
+  }
+
   /* 统一请求：先确保后端地址已探测出来 */
   function api(path, opts){
     opts = opts || {};
     opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    // 带着解锁票请求所有接口：公开接口会忽略它，私密作品接口认它。
+    // 这样详情页、点赞、评论不用各自处理鉴权 —— 一处注入，处处生效。
+    if (VAULT.token) opts.headers["x-private-token"] = VAULT.token;
     return detectAPI().then(function(base){
       if (base === null){
         /* ⚠ 不要在这里写「请去启动 D:\ZFSN-server\server.js」——

@@ -114,7 +114,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-<link rel="stylesheet" href="assets/css/app.af31ecd8.css">
+<link rel="stylesheet" href="assets/css/app.d3021d70.css">
 <link rel="stylesheet" href="assets/css/markdown.32a99c4e.css">
 <link id="cyberpunk-theme" rel="stylesheet" href="assets/css/cyberpunk.c6eb7baf.css" media="not all">
 <link id="nightcity-theme" rel="stylesheet" href="assets/css/nightcity.bb67ae7a.css" media="not all">
@@ -307,6 +307,33 @@
          纯前端过滤：作品列表本来就一次性全部拉下来了
          （/api/works 返回完整数组），所以筛选不需要再请求后端。
          作品多到几百条之后再考虑服务端分页。 -->
+    <!-- ── 私密作品文件夹 ────────────────────────────────────
+         入口要不要显示由 /api/private/meta 决定（只有存在私密作品时才出现），
+         这样没有私密内容时这里不会留一个空文件夹。
+         里面的作品**不在**公开的 /api/works 里，必须先用 PIN 换票，
+         再带票请求 /api/private/works —— 前端隐藏不算防护，服务端过滤才算。 -->
+    <div class="vault" id="vault" hidden>
+      <button type="button" class="vault-card" id="vault-card" aria-haspopup="dialog">
+        <span class="vault-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+            <rect x="4" y="10" width="16" height="11" rx="2.5"/>
+            <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            <circle cx="12" cy="15.5" r="1.4"/>
+          </svg>
+        </span>
+        <span class="vault-txt">
+          <b id="vault-label">私密作品</b>
+          <i id="vault-tip">需要 4 位 PIN 才能查看</i>
+        </span>
+        <span class="vault-go" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+        </span>
+      </button>
+      <div class="vault-body" id="vault-body" hidden>
+        <div class="gallery vault-gallery" id="vault-gallery"></div>
+      </div>
+    </div>
+
     <div class="gfilter" id="gfilters">
       <div class="gsearch">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
@@ -614,7 +641,7 @@
   <script defer src="assets/vendor/marked-17.0.1.js"></script>
   <script defer src="assets/vendor/dompurify-3.3.3.js"></script>
   <script defer src="assets/js/markdown.42400e06.js"></script>
-  <script defer src="assets/js/app.bec4078d.js"></script>
+  <script defer src="assets/js/app.a513f014.js"></script>
   <script defer src="assets/js/visitor-theme.6ca1e859.js"></script>
   <script defer src="assets/js/guest-media.4168334e.js"></script>
   <script defer src="assets/js/danmaku.de1add44.js"></script>
@@ -630,5 +657,49 @@
   <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "769eabb4db2347bcaa66b69fc7bbba46"}'></script>
   <!-- ZF语音：全站左上角入口按钮（运行时注入，不改现有 DOM 结构） -->
   <script src="/assets/js/voice-entry.js"></script>
+
+  <!-- ══ 私密作品 PIN 键盘 ══════════════════════════════════════
+       布局说明：1-9 排成 3×3，第 4 行是「空 / 0 / 退格」——
+       也就是说 0 正好在中间那一列的下面，和手机拨号盘的习惯一致。
+       输满 4 位自动提交，不需要再点确认键。
+       这里的按钮全部由 app.js 渲染事件，DOM 保持静态便于排查。 -->
+  <div class="pinmodal" id="pinmodal" hidden>
+    <div class="pinmask" id="pin-mask"></div>
+    <div class="pinbox" role="dialog" aria-modal="true" aria-labelledby="pin-title" aria-describedby="pin-hint">
+      <button type="button" class="pinclose" id="pin-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <div class="pinhead">
+        <span class="pinlock" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <rect x="4" y="10" width="16" height="11" rx="2.5"/>
+            <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            <circle cx="12" cy="15.5" r="1.4"/>
+          </svg>
+        </span>
+        <h3 id="pin-title">私密作品</h3>
+        <p id="pin-hint">输入 4 位 PIN 进入</p>
+      </div>
+      <div class="pindots" id="pin-dots" aria-live="polite" aria-label="已输入 0 位，共 4 位">
+        <i></i><i></i><i></i><i></i>
+      </div>
+      <div class="pinkeypad" id="pinkeypad">
+        <button type="button" class="pinkey" data-key="1">1</button>
+        <button type="button" class="pinkey" data-key="2">2</button>
+        <button type="button" class="pinkey" data-key="3">3</button>
+        <button type="button" class="pinkey" data-key="4">4</button>
+        <button type="button" class="pinkey" data-key="5">5</button>
+        <button type="button" class="pinkey" data-key="6">6</button>
+        <button type="button" class="pinkey" data-key="7">7</button>
+        <button type="button" class="pinkey" data-key="8">8</button>
+        <button type="button" class="pinkey" data-key="9">9</button>
+        <span class="pinkey-spacer" aria-hidden="true"></span>
+        <button type="button" class="pinkey" data-key="0">0</button>
+        <button type="button" class="pinkey pinkey-del" id="pin-del" aria-label="删除一位">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9L3 12z"/><path d="M12 9.5l4 5M16 9.5l-4 5"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

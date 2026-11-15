@@ -2102,3 +2102,147 @@ html[data-motion=off] .card .c3d{transform:none!important}
 .game-main-menu{display:none}
 .nightcity-logo{display:none}
 .game-menu-edition{display:none}
+
+/* ══════════════════════════════════════════════════════════════
+   私密作品文件夹 + PIN 键盘
+   ───────────────────────────────────────────────────────────────
+   颜色全部走 :root 里的变量，切主题时不会掉队。
+   键盘是 3 列网格：1-9 占三行，第四行是「空 / 0 / 退格」，
+   所以 0 落在中间那一列的正下方（手机拨号盘的习惯位置）。
+   ══════════════════════════════════════════════════════════════ */
+
+.vault{margin:0 0 48px}
+.vault[hidden]{display:none}
+
+.vault-card{
+  display:flex;align-items:center;gap:16px;width:100%;
+  padding:18px 22px;border-radius:var(--r);
+  border:1px solid var(--line);background:var(--surface);
+  color:var(--text);font:inherit;text-align:left;cursor:pointer;
+  transition:border-color .3s var(--ease),background .3s var(--ease),transform .3s var(--ease);
+}
+.vault-card:hover{border-color:var(--line2);background:var(--surface2);transform:translateY(-1px)}
+.vault-card:focus-visible{outline:2px solid var(--red-soft);outline-offset:3px}
+
+.vault-ic{
+  display:grid;place-items:center;flex:0 0 auto;
+  width:44px;height:44px;border-radius:12px;
+  background:rgba(255,45,74,.1);border:1px solid rgba(255,45,74,.28);
+  color:var(--red-soft);
+}
+.vault-ic svg{width:21px;height:21px}
+.vault.locked .vault-ic{animation:vaultPulse 3.4s ease-in-out infinite}
+
+.vault-txt{display:flex;flex-direction:column;gap:3px;flex:1 1 auto;min-width:0}
+.vault-txt b{font-size:15px;font-weight:600;letter-spacing:.02em}
+.vault-txt i{font-style:normal;font-size:12px;color:var(--muted)}
+
+.vault-go{flex:0 0 auto;color:var(--muted);transition:transform .3s var(--ease),color .3s var(--ease)}
+.vault-go svg{width:18px;height:18px}
+.vault-card:hover .vault-go{color:var(--red-soft);transform:translateX(3px)}
+
+/* 已解锁：图标转绿调、箭头转成「收起」*/
+.vault.open .vault-ic{background:rgba(29,158,117,.12);border-color:rgba(29,158,117,.32);color:#1d9e75}
+.vault.open .vault-go{transform:rotate(90deg)}
+
+.vault-body{margin-top:26px;animation:vaultReveal .45s var(--ease) both}
+.vault-body[hidden]{display:none}
+
+@keyframes vaultPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,45,74,0)}50%{box-shadow:0 0 0 6px rgba(255,45,74,.07)}}
+@keyframes vaultReveal{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+/* ── PIN 弹层 ── */
+.pinmodal{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px}
+.pinmodal[hidden]{display:none}
+
+.pinmask{
+  position:absolute;inset:0;background:rgba(4,4,8,.74);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  animation:pinFade .28s ease both;
+}
+
+.pinbox{
+  position:relative;width:100%;max-width:352px;
+  padding:34px 28px 28px;border-radius:22px;
+  background:linear-gradient(180deg,#12121a,#0b0b11);
+  border:1px solid var(--line2);
+  box-shadow:0 30px 80px rgba(0,0,0,.6);
+  animation:pinPop .34s var(--ease) both;
+}
+.pinbox.shake{animation:pinShake .42s cubic-bezier(.36,.07,.19,.97) both}
+
+.pinclose{
+  position:absolute;top:12px;right:12px;width:32px;height:32px;
+  display:grid;place-items:center;border-radius:9px;border:1px solid transparent;
+  background:none;color:var(--muted);cursor:pointer;transition:.2s;
+}
+.pinclose svg{width:15px;height:15px}
+.pinclose:hover{color:var(--text);background:var(--surface2);border-color:var(--line)}
+
+.pinhead{text-align:center;margin-bottom:22px}
+.pinlock{
+  display:grid;place-items:center;width:52px;height:52px;margin:0 auto 14px;
+  border-radius:15px;background:rgba(255,45,74,.1);
+  border:1px solid rgba(255,45,74,.28);color:var(--red-soft);
+}
+.pinlock svg{width:24px;height:24px}
+.pinhead h3{margin:0 0 6px;font-size:17px;font-weight:600;letter-spacing:.01em}
+.pinhead p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
+.pinhead p.bad{color:var(--red-soft)}
+.pinhead p.wait{color:#e0a94a}
+
+/* 四个点：填一位亮一个 */
+.pindots{display:flex;justify-content:center;gap:16px;margin-bottom:26px}
+.pindots i{
+  width:13px;height:13px;border-radius:50%;
+  border:1.5px solid var(--line2);background:transparent;
+  transition:background .18s var(--ease),border-color .18s var(--ease),transform .18s var(--ease);
+}
+.pindots i.on{background:var(--red);border-color:var(--red);transform:scale(1.12)}
+.pindots.bad i{background:var(--red-soft);border-color:var(--red-soft)}
+.pindots.ok i{background:#1d9e75;border-color:#1d9e75}
+
+/* 键盘：3 列，共四行 */
+.pinkeypad{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:12px;justify-items:center;
+}
+.pinkey{
+  width:100%;aspect-ratio:1/1;max-width:74px;
+  display:grid;place-items:center;
+  border-radius:50%;border:1px solid var(--line);
+  background:var(--surface);color:var(--text);
+  font-family:var(--font-sans,inherit);font-size:20px;font-weight:500;
+  cursor:pointer;user-select:none;
+  transition:background .16s ease,border-color .16s ease,transform .12s ease,color .16s ease;
+}
+.pinkey:hover{background:var(--surface2);border-color:var(--line2)}
+.pinkey:active{transform:scale(.94);background:rgba(255,45,74,.14);border-color:rgba(255,45,74,.4)}
+.pinkey:focus-visible{outline:2px solid var(--red-soft);outline-offset:2px}
+.pinkey-spacer{width:100%;aspect-ratio:1/1;max-width:74px}
+.pinkey-del{color:var(--muted)}
+.pinkey-del svg{width:22px;height:22px}
+.pinkey:disabled{opacity:.45;cursor:not-allowed}
+
+.pinmodal.busy .pinkey{pointer-events:none}
+
+@keyframes pinFade{from{opacity:0}to{opacity:1}}
+@keyframes pinPop{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes pinShake{
+  10%,90%{transform:translateX(-2px)}
+  20%,80%{transform:translateX(4px)}
+  30%,50%,70%{transform:translateX(-7px)}
+  40%,60%{transform:translateX(7px)}
+}
+
+@media (max-width:520px){
+  .pinbox{padding:30px 20px 24px;max-width:100%}
+  .pinkeypad{gap:10px}
+  .pinkey{font-size:18px}
+  .vault-card{padding:15px 16px;gap:13px}
+  .vault-ic{width:38px;height:38px;border-radius:10px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .pinbox,.pinmask,.vault-body,.vault.locked .vault-ic{animation:none!important}
+}
