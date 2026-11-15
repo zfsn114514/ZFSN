@@ -402,6 +402,41 @@ export async function makeCaptcha(secret) {
   };
 }
 
+/* ── 同站判断（Origin / CSRF 校验的统一口径）───────────────────
+ *
+ *  ⚠ 不能只做 host 全等比较。
+ *
+ *  本地 IIS 镜像从 https://zfsnnb.dpdns.org:8443 发起请求，经 ARR 反代后
+ *  Worker 看到的 URL 是 https://www.zfsnnb.dpdns.org/api/voice/…，
+ *  于是 Origin 的 host（带 :8443）和 request.url 的 host（www，无端口）
+ *  永远不相等 —— 所有写接口（登录/注册/加入频道/发消息）直接 403，
+ *  而读接口不校验 Origin，表现就是"页面能开、登不上"。
+ *
+ *  放行范围严格限定为「同一主域的 apex / www 互换」，且协议必须一致。
+ *  第三方站点、同域的其它子域（evil.zfsnnb.dpdns.org）仍然被拒，
+ *  CSRF 防护的语义没有放宽：同域不同端口并不构成"跨站"。
+ *
+ *  线上（直接访问 www）走第一分支，行为与之前完全一致。
+ * ══════════════════════════════════════════════════════════════ */
+
+export const SITE_APEX = "zfsnnb.dpdns.org";
+
+function sameSiteHost(hostname) {
+  return hostname === SITE_APEX || hostname === "www." + SITE_APEX;
+}
+
+export function originOK(request) {
+  const o = request.headers.get("origin");
+  if (!o) return true;   // 同源表单 / curl；SameSite=Lax 兜底
+  try {
+    const a = new URL(o);
+    const b = new URL(request.url);
+    if (a.host === b.host) return true;
+    return a.protocol === b.protocol &&
+      sameSiteHost(a.hostname) && sameSiteHost(b.hostname);
+  } catch (_) { return false; }
+}
+
 /* ── Cookie ──────────────────────────────────────────────────── */
 
 export function parseCookies(header) {

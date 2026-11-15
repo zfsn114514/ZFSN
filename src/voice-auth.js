@@ -29,13 +29,8 @@ function changesOf(r) {
   return 0;
 }
 
-function originOK(request) {
-  const o = request.headers.get("origin");
-  if (!o) return true;   // 同源表单 / curl；SameSite=Lax 兜底
-  try {
-    return new URL(o).host === new URL(request.url).host;
-  } catch (_) { return false; }
-}
+/** 统一口径见 voice-core.js 的 originOK（含本地 IIS 镜像的说明）。 */
+function originOK(request) { return C.originOK(request); }
 
 function err(msg, status) { return L.fail(msg, status || 400); }
 

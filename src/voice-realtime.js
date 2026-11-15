@@ -51,12 +51,8 @@ function ok(data, status, cookies) {
   return res;
 }
 
-function originOK(request) {
-  const o = request.headers.get("origin");
-  if (!o) return true;
-  try { return new URL(o).host === new URL(request.url).host; }
-  catch (_) { return false; }
-}
+/** 统一口径见 voice-core.js 的 originOK（含本地 IIS 镜像的说明）。 */
+function originOK(request) { return C.originOK(request); }
 
 async function readBody(request) {
   try { return await L.readJSON(request, 256 * 1024); }
