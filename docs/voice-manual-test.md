@@ -114,7 +114,11 @@ npm run voice:dev            # http://127.0.0.1:8790
 | # | 操作 | 预期 | ✅ |
 |---|---|---|---|
 | F1 | Chrome / Edge / Firefox / Safari 桌面各跑一次 B1、E1 | 主要功能可用；不支持项有中文降级提示 | ☐ |
-| F2 | 手机宽度 375px | 三栏变抽屉，成员 / 频道可展开，底部用户条不遮挡 | ☐ |
+| F2 | 手机宽度 375px / 390px（或真机 Chrome / Safari） | 走移动版：左栏圆形图标 + 频道抽屉顶部 banner 卡与「邀请」按钮、频道行右侧人数、底部「消息胶囊 + 4 个圆形按钮」 | ☐ |
+| F2b | 手机端点「消息胶囊」 | 全屏聊天面板滑出：顶部 × + 居中「聊天」，气泡自己的在右（品牌红）、别人的在左，输入框提示「发送给 频道名」，点 × 关闭 | ☐ |
+| F2c | 手机端进频道 | 顶栏收进吸顶频道条（← / 频道名 / 人数 / 共享·成员·全屏）；成员卡为方形大卡、名牌在左下角；底栏胶囊与圆形按钮不被遮挡 | ☐ |
+| F2d | 手机端点抽屉里的频道 | 抽屉自动收起并进频道；抽屉打开时底栏隐藏，不露出半截 | ☐ |
+| F2e | 手机端共享画面 | 画面区 4:3，占位文案不与「全屏 / 画中画 / 音量」工具条重叠 | ☐ |
 | F3 | 只用键盘 Tab / Enter / Esc | 能开关麦、进频道、开设置、关对话框；焦点可见 | ☐ |
 | F4 | 屏幕阅读器读关键按钮 | 都有 `aria-label` / 语义化标签 | ☐ |
 | F5 | 一个频道拉到 10~20 人（可用多标签页模拟） | 成员列表稳定，共享画面靠 SFU 转发不卡顿 | ☐ |
@@ -138,7 +142,8 @@ npm run voice:dev            # http://127.0.0.1:8790
 | 未通过项与现象 | |
 | 已知限制 / 后续跟进 | |
 
-> 自动化测试命令：`npm run voice:test:all`（4 套共 70 项）；
+> 自动化测试命令：`npm run voice:test:all`（9 套共 131 项，含 `voice:test:mobile` 手机端布局回归）；
 > 页面与后台的无头浏览器复验截图落在 `tools/dev/_shots/`
-> （`voice-login-captcha.png`、`voice-app-view.png`、`admin-voice-panels.png`）。
+> （`voice-login-captcha.png`、`voice-app-view.png`、`admin-voice-panels.png`、
+> `voice-mobile-list.png` / `voice-mobile-drawer.png` / `voice-mobile-room.png` / `voice-mobile-chat.png`）。
 > 注意：自动化覆盖的是接口、WebSocket、DOM 与渲染，**真实音频与屏幕共享仍需按 B / E 组人工验收**。
