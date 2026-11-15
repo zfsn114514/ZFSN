@@ -66,6 +66,10 @@ run_worker_first = [
   "/voice",
   "/voice/",
   "/voice/index.html",
+  # 独立登录页：Worker 把同一份 index.html 映射过来，必须自己进白名单，
+  # 否则静态层找不到 /voice/login 这个文件会直接 404。
+  "/voice/login",
+  "/voice/login/",
   "/voice.html",
 ]
 

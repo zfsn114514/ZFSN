@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#07070b">
 <title>ZF语音 · ZFSN</title>
 <link rel="icon" href="/favicon-32.png">
-<link rel="stylesheet" href="/voice/voice.css?v=20261115i">
+<link rel="stylesheet" href="/voice/voice.css?v=20261115j">
 <script>
 /* ── 保持登录：同步预登录判断 ──────────────────────────────────────
    这个脚本必须放在 <head> 且不能 defer：HTML 一解析到登录页就要决定
@@ -20,6 +20,12 @@
    来回闪跳。两条线索都没有才直接显示登录页。                        */
 (function () {
   try {
+    /* /voice/login 是**独立**的登录页地址：到了这里就是要登录，
+       不许再走「先显示恢复动画」那条路（否则会先闪一下再被踢回来）。 */
+    if (/^\/voice\/login\/?$/.test(location.pathname)) {
+      document.documentElement.setAttribute("data-voice-login", "1");
+      return;
+    }
     var hasHint = /(?:^|;\s*)zf_voice_si=1(?:;|$)/.test(document.cookie);
     if (!hasHint) {
       var seen = Number(localStorage.getItem("zf_voice_seen") || 0);
@@ -469,8 +475,8 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <!-- 2026-11-15a：升级缓存版本号，强制浏览器拉取全新脚本，避免新旧静态资源混用 -->
-<script defer src="/voice/auth.js?v=20261115i"></script>
-<script defer src="/voice/transport.js?v=20261115i"></script>
-<script defer src="/voice/voice.js?v=20261115i"></script>
+<script defer src="/voice/auth.js?v=20261115j"></script>
+<script defer src="/voice/transport.js?v=20261115j"></script>
+<script defer src="/voice/voice.js?v=20261115j"></script>
 </body>
 </html>

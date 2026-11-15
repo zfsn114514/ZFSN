@@ -366,10 +366,16 @@ html[data-theme="light"] .screen-main{background:#e4e4ea}
 .dlg-alert[hidden]{display:none}
 
 /* ── 语音设置：紧凑弹窗 + 左侧分类 ─────────────────────────── */
+/* ⚠ 这里必须写成 `.dlg-settings[open]`：
+   `<dialog>` 未打开时靠浏览器默认样式表 `dialog:not([open]){display:none}`
+   隐藏，而作者样式表优先级更高 —— 直接给 .dlg-settings 写 display:flex
+   会让弹窗**永远显示**，点「完成」/×/ESC 都关不掉（只是 open 属性没了），
+   登录页上也会凭空盖一块设置面板。2026-11-15 用户报的就是这个。 */
 .dlg-settings{
   width:min(94vw,620px);max-height:min(80vh,540px);padding:16px 18px 14px;
-  display:flex;flex-direction:column;overflow:hidden;
+  overflow:hidden;
 }
+.dlg-settings[open]{display:flex;flex-direction:column}
 .dlg-settings form{flex:1;min-height:0;gap:8px}
 .dlg-settings .dlg-head{margin-bottom:0}
 .set-wrap{display:flex;gap:14px;flex:1;min-height:0;margin-top:10px}

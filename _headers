@@ -37,6 +37,12 @@
 /voice/
   Content-Type: text/html; charset=utf-8
 
+/voice/login
+  Content-Type: text/html; charset=utf-8
+
+/voice/login/
+  Content-Type: text/html; charset=utf-8
+
 /voice.html
   Content-Type: text/html; charset=utf-8
 

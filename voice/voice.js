@@ -396,6 +396,20 @@
   }
 
   /* ── 视图切换 ──────────────────────────────────────────────── */
+
+  /** 当前是不是独立登录页 /voice/login（Worker 把同一份 HTML 也映射到那里）。 */
+  function onLoginPage() {
+    return /^\/voice\/login\/?$/.test(location.pathname);
+  }
+
+  /** 登录页与应用页互斥：切视图前必须把弹窗收干净，
+      否则 modal 会留在顶层挡住登录表单，看起来就像「关不掉、卡在登录页」。 */
+  function closeAllDialogs() {
+    $$("dialog[open]").forEach(function (d) {
+      try { d.close(); } catch (_) { d.removeAttribute("open"); }
+    });
+  }
+
   function showApp(user, badge) {
     if (user) {
       state.user = user;
@@ -413,7 +427,8 @@
     VoiceAuth.session.ready();
     renderAll();
   }
-  function showAuth() {
+  function showAuth(reason) {
+    closeAllDialogs();
     leaveChannel(true).catch(function () {});
     state.user = null;
     state.channels = [];
@@ -421,6 +436,12 @@
     clearInterval(state.demoTimer);
     // 清掉预登录标记与用户资料缓存，并按需初始化验证码 / Turnstile
     VoiceAuth.session.guest();
+    // 登录页有独立地址：从应用视图掉线时直接跳过去（整页重载），
+    // 比在 /voice 里就地换成登录壳更干净 —— 刷新 /voice 也不会再看到登录页。
+    if (!onLoginPage()) {
+      location.replace("/voice/login" + (reason ? "?reason=" + encodeURIComponent(reason) : ""));
+      return;
+    }
     $("#app-view").hidden = true;
     $("#auth-view").hidden = false;
     VoiceAuth.session.prepareGuest();
@@ -793,6 +814,9 @@
     VoiceAuth.bindForms();
     VoiceAuth.on("message", function (t) { toast(t); });
     VoiceAuth.on("authed", function (user) {
+      // 登录页登录成功后回到应用页（/voice/login → /voice），刷新、后退都不会
+      // 再落到登录页；已在应用页时只补一次引导数据。
+      if (onLoginPage()) { location.replace("/voice/"); return; }
       // auth.js 已经拿到用户对象，再取一次引导数据保证频道列表最新
       bootstrap(user);
     });
@@ -819,9 +843,10 @@
     if (!btn) return;
     btn.addEventListener("click", async function () {
       closeDlg("dlg-settings");
-      await VoiceAuth.logout();
-      showAuth();
-      toast("已退出登录");
+      closeAllDialogs();
+      try { await VoiceAuth.logout(); } catch (_) { /* 网络失败也照常回登录页 */ }
+      // 退出后直接回登录页地址：/voice 里不留任何登录壳，刷新也不会倒退
+      location.replace("/voice/login");
     });
   }
 
@@ -832,7 +857,7 @@
       var d = prefetched ? await prefetched : await api("/api/voice/bootstrap");
       if (d && d.__error) throw d.__error;
       var user = presetUser || (d && d.user);
-      if (!user) { showAuth(); return; }
+      if (!user) { showAuth("expired"); return; }
       state.capabilities = d.capabilities || {};
       state.settings = d.settings || {};
       state.channels = d.channels || [];
@@ -840,7 +865,7 @@
       showApp(user, state.capabilities.sfu ? "Cloudflare SFU" : "本地直连降级 · 未配置 SFU");
     } catch (e) {
       toast("无法读取频道配置：" + (e.message || "网络错误"));
-      showAuth();
+      showAuth("error");
     }
   }
 
@@ -1447,6 +1472,18 @@
         closeDlg(id);
       });
     });
+    /* 点遮罩也能关：<dialog> 原生只支持 ESC，点外面那片空白什么都不发生，
+       很容易被当成「这个弹窗关不掉」。
+       判据：事件 target 是 dialog 本身（内容区点击会命中子元素），
+       且坐标落在 dialog 盒子外面（盒子内部还有 padding）。 */
+    $$("dialog.dlg").forEach(function (d) {
+      d.addEventListener("click", function (e) {
+        if (e.target !== d || !d.open) return;
+        var r = d.getBoundingClientRect();
+        var outside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+        if (outside) closeDlg(d.id);
+      });
+    });
   }
 
   /* ── 初始化 ────────────────────────────────────────────────── */
@@ -1490,6 +1527,21 @@
       startSpeakingDemo();
       return;
     }
+    if (onLoginPage()) {
+      /* 独立登录页 /voice/login：这里只负责登录。
+         如果这台设备其实还登录着（直接访问或书签），判定后自动回 /voice，
+         避免「已登录却停在登录页」。 */
+      $("#auth-view").hidden = false;
+      $("#app-view").hidden = true;
+      var reason = params.get("reason");
+      VoiceAuth.bootstrap().then(function (user) {
+        if (user) { location.replace("/voice/"); return; }
+        VoiceAuth.renderAvatarPreview();
+        if (reason === "expired") toast("登录状态已过期，请重新登录");
+        else if (reason === "error") toast("无法读取频道配置，请检查网络后重试");
+      });
+      return;
+    }
     if (VoiceAuth.session.hinted()) {
       // <head> 里的同步脚本已经把视图切成「预登录」，登录页一次都不会闪。
       // 先用本地缓存把用户栏填上，恢复动画盖住还没加载完的频道列表。
@@ -1503,19 +1555,14 @@
       var prefetch = api("/api/voice/bootstrap").catch(function (e) { return { __error: e }; });
       VoiceAuth.bootstrap().then(function (user) {
         if (user) bootstrap(user, prefetch);
-        else {
-          // Cookie 标记还在但服务端会话已失效（过期 / 被管理员踢下线）
-          showAuth();
-          toast("登录状态已过期，请重新登录");
-        }
+        // Cookie 标记还在但服务端会话已失效（过期 / 被管理员踢下线）：
+        // showAuth 会整页跳到 /voice/login，不会在应用壳里留一个登录页
+        else showAuth("expired");
       });
     } else {
-      $("#auth-view").hidden = false;
-      $("#app-view").hidden = true;
-      VoiceAuth.bootstrap().then(function (user) {
-        if (user) bootstrap(user);
-        else VoiceAuth.renderAvatarPreview();
-      });
+      // /voice 是应用页，登录壳只住在 /voice/login。没有任何登录痕迹时
+      // 直接过去，省掉「先渲染登录页再跳」的那一下闪动。
+      location.replace("/voice/login");
     }
   }
 

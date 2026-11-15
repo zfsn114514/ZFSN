@@ -193,6 +193,14 @@ const worker = {
       // 作品是存在 D1 里、可以随时在后台增删的，静态 feed 一发布就过期了。
       // 由 Worker 每次现读 D1 生成，新作品立刻能被订阅者看到。
       if (p === "/feed.xml" || p === "/rss.xml") return await serveFeed(request, env, url);
+      // /voice/login：独立的登录页地址。复用同一份 voice/index.html
+      // （前端按 location.pathname 切视图），好处是 /voice 只管应用本体，
+      // 已登录时刷新 /voice 永远不会再闪一下登录页再跳回来。
+      if (p === "/voice/login" || p === "/voice/login/") {
+        const to = new URL(request.url);
+        to.pathname = "/voice/index.html";
+        return await serveAsset(new Request(to.toString(), request), env, p);
+      }
       return await serveAsset(request, env, p);
     } catch (e) {
       // 兜底：接口崩了也别把整站拖成 500，静态资源照常返回

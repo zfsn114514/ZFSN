@@ -34,6 +34,17 @@ try {
   /* preview=1：不登后端，直接进预览大厅，只测 UI 行为 */
   const p = await page(browser, BASE + "/voice/?preview=1", { waitMs: 2200 });
 
+  await step("没打开时设置弹窗完全不可见（作者样式不能顶掉 dialog 的默认 display:none）", async function () {
+    const r = await p.evaluate(`(function(){
+      var d = document.getElementById("dlg-settings");
+      return { open: d.open, display: getComputedStyle(d).display,
+               h: Math.round(d.getBoundingClientRect().height) };
+    })()`);
+    assert.equal(r.open, false, "一进页面弹窗就是打开的");
+    assert.equal(r.display, "none", "关闭状态仍被 CSS 显示出来（display=" + r.display + "），表现为「关不掉、卡在页面上」");
+    assert.equal(r.h, 0, "关闭状态仍有高度：" + r.h);
+  });
+
   await step("点设置按钮打开居中弹窗，四个分类只有一个是可见的", async function () {
     assert.ok(await p.click("#btn-settings"), "找不到设置按钮");
     await wait(300);
@@ -185,6 +196,31 @@ try {
     assert.equal(r.out[r.out.length - 1].volume, 1, "拖回 100% 后音量应为 1");
     const fresh = (p.errors || []).slice(before).filter((e) => !/favicon|ERR_|404/i.test(e));
     assert.deepEqual(fresh, [], "拖音量时抛出异常：" + fresh.join(" | "));
+  });
+
+  await step("点弹窗外面的遮罩也能关掉设置（以前只有右上角小叉和 ESC）", async function () {
+    await p.evaluate(`document.getElementById("btn-settings").click()`);
+    await wait(220);
+    assert.equal(await p.evaluate(`document.getElementById("dlg-settings").open`), true, "设置没打开");
+    // 遮罩点击在浏览器里就是「事件目标是 dialog 本身、坐标在盒子外」
+    await p.evaluate(`(function () {
+      var d = document.getElementById("dlg-settings");
+      d.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 2, clientY: 2 }));
+    })()`);
+    await wait(180);
+    assert.equal(await p.evaluate(`document.getElementById("dlg-settings").open`), false, "点遮罩没关掉弹窗");
+    // 盒子里面的点击不能误关
+    await p.evaluate(`document.getElementById("btn-settings").click()`);
+    await wait(200);
+    await p.evaluate(`(function () {
+      var d = document.getElementById("dlg-settings");
+      var r = d.getBoundingClientRect();
+      var inner = d.querySelector("h2") || d;
+      inner.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.left + 20, clientY: r.top + 20 }));
+    })()`);
+    await wait(150);
+    assert.equal(await p.evaluate(`document.getElementById("dlg-settings").open`), true, "点弹窗内部被误关");
+    await p.evaluate(`document.getElementById("dlg-settings").close()`);
   });
 
   await step("弹窗与后台页面都没有 JS 异常", async function () {

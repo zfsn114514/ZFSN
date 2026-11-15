@@ -149,6 +149,9 @@ const MIME = {
 function resolveAsset(pathname) {
   let p;
   try { p = decodeURIComponent(pathname); } catch (_) { p = pathname; }
+  // 独立登录页：与生产 Worker 的 /voice/login 路由保持一致，复用同一份 HTML，
+  // 前端按 location.pathname 决定显示登录壳还是应用壳。
+  if (/^\/voice\/login\/?$/.test(p)) return "/voice/index.html";
   if (p.endsWith("/")) return p + "index.html";
   if (!path.extname(p)) {
     if (fs.existsSync(path.join(ROOT, p, "index.html"))) return p + "/index.html";

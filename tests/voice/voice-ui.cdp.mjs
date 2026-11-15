@@ -52,8 +52,10 @@ const browser = await launch({ port: 9300 + Math.floor(Math.random() * 200) });
 
 try {
   /* ── 1. 登录页 / 验证码 ──────────────────────────────────── */
-  const voice = await page(browser, BASE + "/voice/", { waitMs: 2200 });
-  await step("/voice/ 显示独立登录壳与「返回主站」（按设计不沿用主站导航）", async function () {
+  const voice = await page(browser, BASE + "/voice/", { waitMs: 2600 });
+  await step("未登录打开 /voice/ 自动落到独立登录页 /voice/login", async function () {
+    const r = await voice.evaluate(`({ path: location.pathname, hash: location.hash })`);
+    assert.equal(r.path, "/voice/login", "未登录应跳到 /voice/login，实际：" + r.path);
     const title = await voice.text("#auth-title");
     assert.equal(title.trim(), "ZF语音");
     assert.ok(await voice.evaluate('!!document.querySelector(".auth-back")'));
@@ -176,6 +178,34 @@ try {
     assert.deepEqual(app.errors.filter(function (e) { return e.indexOf("favicon") < 0; }), [],
       "应用视图控制台报错：" + app.errors.join(" | "));
     await app.close();
+  });
+
+  /* ── 1b. 已登录访问登录页地址：自动回应用页 ────────────────── */
+  await step("已登录直接打开 /voice/login 会自动回到 /voice（不会停在登录页）", async function () {
+    const dbL = new DatabaseSync(path.join(ROOT, "tools/dev/.voice-dev.sqlite"));
+    dbL.exec("PRAGMA busy_timeout = 5000;");
+    const uL = dbL.prepare("SELECT id FROM voice_users WHERE username = 'admin'").get();
+    const tokenL = "L" + crypto.randomBytes(24).toString("hex");
+    dbL.prepare("INSERT OR REPLACE INTO voice_sessions (token_hash,user_id,exp,ip,ua,created_at) VALUES (?,?,?,?,?,?)")
+      .run(await C.sha256Hex(tokenL), uL.id, Date.now() + 3600000, "127.0.0.1", "cdp-login-path", Date.now());
+    dbL.close();
+
+    const lp = await page(browser, BASE + "/voice/login", { waitMs: 400 });
+    await lp.call("Network.setCookie", {
+      name: "zf_voice_sid", value: tokenL, url: BASE + "/voice/",
+      httpOnly: true, sameSite: "Lax", secure: false
+    });
+    await lp.call("Page.navigate", { url: BASE + "/voice/login" });
+    await wait(2600);
+    const r = await lp.evaluate(`({
+      path: location.pathname,
+      appHidden: document.getElementById("app-view").hidden,
+      authHidden: document.getElementById("auth-view").hidden
+    })`);
+    assert.equal(r.path, "/voice/", "已登录访问 /voice/login 应回 /voice，实际：" + r.path);
+    assert.equal(r.appHidden, false, "回到 /voice 后应用视图没显示");
+    assert.equal(r.authHidden, true);
+    await lp.close();
   });
 
   /* ── 2a. 保持登录：Cookie 自动恢复（2026-11-14c）───────────── */
