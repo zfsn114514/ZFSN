@@ -983,11 +983,28 @@
     var m = vaultEl("pinmodal");
     if (m) m.classList.add("busy");
     pinHint("正在验证…", "");
+    var pin = pinBuf;   // 先存下来：后面重试要用同一个值，而 pinBuf 可能被清空
 
-    api("/api/private/unlock", {
-      method: "POST",
-      body: JSON.stringify({ pin: pinBuf })
-    }).then(function(d){
+    /* 网络抖动时自动重试一次。
+     * 只重试「网络类」错误 —— PIN 错误 / 限流不能重试，
+     * 那只会把 15 分钟 6 次的额度更快耗光。 */
+    function attempt(left){
+      return api("/api/private/unlock", {
+        method: "POST",
+        body: JSON.stringify({ pin: pin })
+      }).catch(function(e){
+        var msg = (e && e.message) || "";
+        if (left > 0 && /网络|再试一次|超时/.test(msg)){
+          pinHint("网络有点慢，正在重试…", "");
+          return new Promise(function(r){ setTimeout(r, 900); }).then(function(){
+            return attempt(left - 1);
+          });
+        }
+        throw e;
+      });
+    }
+
+    attempt(1).then(function(d){
       vaultSaveTicket(d.token, d.exp);
       var dots = vaultEl("pin-dots");
       if (dots){ dots.classList.remove("bad"); dots.classList.add("ok"); }
@@ -2922,6 +2939,15 @@
           if (!r.ok || d.ok === false) throw new Error(d.error || ("HTTP " + r.status));
           return d;
         });
+    }).catch(function(err){
+      /* 把底层网络错误翻译成人话。
+       * 原来 abort/断网时会直接把 "signal is aborted without reason" 显示在
+       * PIN 弹层上 —— 用户完全看不懂，还以为是自己的问题。 */
+      var m = (err && err.message) || "";
+      if (/aborted|Failed to fetch|NetworkError|network error|Load failed|ERR_/i.test(m)){
+        throw new Error("网络有点慢，请再试一次");
+      }
+      throw err;
     });
   }
 
