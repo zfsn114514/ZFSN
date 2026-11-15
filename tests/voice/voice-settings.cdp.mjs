@@ -163,6 +163,30 @@ try {
     await p2.close();
   });
 
+  await step("共享音量拉到 150% / 200% 不抛 IndexSizeError（volume 只吃 0~1）", async function () {
+    const before = (p.errors || []).length;
+    const r = await p.evaluate(`(function(){
+      var s = document.getElementById("screen-volume");
+      if (!s) return { ok: false, why: "找不到共享音量滑块" };
+      var v = document.getElementById("screen-video");
+      var out = [];
+      [100, 150, 200, 30, 100].forEach(function (x) {
+        s.value = String(x);
+        s.dispatchEvent(new Event("input", { bubbles: true }));
+        out.push({ slider: x, volume: v ? v.volume : null });
+      });
+      return { ok: true, max: s.max, out: out };
+    })()`);
+    assert.equal(r.ok, true, r.why);
+    r.out.forEach(function (o) {
+      assert.ok(typeof o.volume === "number", "没有取到元素音量：" + JSON.stringify(o));
+      assert.ok(o.volume >= 0 && o.volume <= 1, "媒体元素音量越界（会抛 IndexSizeError）：" + JSON.stringify(o));
+    });
+    assert.equal(r.out[r.out.length - 1].volume, 1, "拖回 100% 后音量应为 1");
+    const fresh = (p.errors || []).slice(before).filter((e) => !/favicon|ERR_|404/i.test(e));
+    assert.deepEqual(fresh, [], "拖音量时抛出异常：" + fresh.join(" | "));
+  });
+
   await step("弹窗与后台页面都没有 JS 异常", async function () {
     const errs = (p.errors || []).filter((e) => !/favicon|ERR_|404/i.test(e));
     assert.deepEqual(errs, [], "出现 JS 错误：" + errs.join(" | "));

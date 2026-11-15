@@ -1178,8 +1178,11 @@
     });
     $("#screen-volume").addEventListener("input", function (e) {
       var v = Number(e.target.value);
+      if (!isFinite(v)) v = 100;
       var video = $("#screen-video");
-      if (video) video.volume = v / 100;
+      // volume 只吃 0~1，直接把 1.03 赋上去会抛 IndexSizeError；
+      // 超过 100% 的放大由传输层用 WebAudio 增益补上（setMemberVolume）。
+      if (video) video.volume = Math.max(0, Math.min(1, v / 100));
       if (state.transport && state.sharerId) state.transport.setMemberVolume(state.sharerId, v);
     });
     /* 全屏查看：共享画面本身、双击画面、顶部全屏按钮共用同一个入口 */

@@ -37,6 +37,90 @@
 
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
+  /* ── 媒体音量（0~200%）─────────────────────────────────────────
+     HTMLMediaElement.volume 按规范只接受 0~1，超出会直接抛
+     IndexSizeError（用户拖音量条时的报错就来自这里）。界面上的
+     音量条是 0~200%，所以超过 100% 的那部分用 WebAudio 的 GainNode
+     放大：元素自身音量固定在 1，增益全由 gain 节点给。
+     100% 以内仍只用元素音量，不额外挂音频图（挂了也只是多一路空转）。 */
+  var volCtx = null;
+  var volNodes = [];
+  var resumeArmed = false;
+
+  /* 自动播放策略下 AudioContext 可能是 suspended，此时把元素接进音频图会
+     变成静音。首次真实交互（点击 / 按键）时补一次 resume。 */
+  function armResume() {
+    if (resumeArmed || !volCtx) return;
+    resumeArmed = true;
+    function kick() {
+      try { if (volCtx && volCtx.state !== "running") volCtx.resume(); } catch (_) {}
+      if (volCtx && volCtx.state === "running") {
+        document.removeEventListener("pointerdown", kick, true);
+        document.removeEventListener("keydown", kick, true);
+        resumeArmed = false;
+      }
+    }
+    document.addEventListener("pointerdown", kick, true);
+    document.addEventListener("keydown", kick, true);
+  }
+
+  function volNodeOf(el) {
+    for (var i = 0; i < volNodes.length; i++) if (volNodes[i].el === el) return volNodes[i];
+    return null;
+  }
+
+  function ensureVolNode(el) {
+    var node = volNodeOf(el);
+    if (node) return node;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!volCtx) volCtx = new AC();
+      var src = volCtx.createMediaElementSource(el);
+      var gain = volCtx.createGain();
+      src.connect(gain);
+      gain.connect(volCtx.destination);
+      node = { el: el, src: src, gain: gain };
+      volNodes.push(node);
+      armResume();
+      return node;
+    } catch (_) { return null; }
+  }
+
+  /** 设置某个媒体元素的播放音量，gainValue 为倍数（1 = 原音量）。 */
+  function setElementVolume(el, gainValue) {
+    if (!el) return;
+    var g = Number(gainValue);
+    if (!isFinite(g) || g < 0) g = 0;
+    if (g > 2) g = 2;
+    var node = volNodeOf(el);
+    if (!node && g <= 1) {
+      // 常规范围：交给元素自己
+      try { el.volume = g; } catch (_) {}
+      return;
+    }
+    if (!node) node = ensureVolNode(el);
+    if (!node) {
+      // 没有 WebAudio（或被浏览器拒绝）：至少保证不抛错
+      try { el.volume = Math.min(1, g); } catch (_) {}
+      return;
+    }
+    try { el.volume = 1; } catch (_) {}
+    try { node.gain.gain.value = g; } catch (_) {}
+    if (volCtx && volCtx.state === "suspended" && volCtx.resume) {
+      var p = volCtx.resume();
+      if (p && p.catch) p.catch(function () {});
+    }
+  }
+
+  function dropElementVolume(el) {
+    for (var i = volNodes.length - 1; i >= 0; i--) {
+      if (volNodes[i].el !== el) continue;
+      try { volNodes[i].src.disconnect(); volNodes[i].gain.disconnect(); } catch (_) {}
+      volNodes.splice(i, 1);
+    }
+  }
+
   /** 等 ICE 收集完成（最多 2.5 秒），把 candidate 直接带在 SDP 里发，省去 trickle 复杂度。 */
   function waitICE(pc) {
     if (!pc || pc.iceGatheringState === "complete") return Promise.resolve();
@@ -444,16 +528,19 @@
     if (this.gain) this.gain.gain.value = this.inputVolume;
   };
   VoiceTransportBase.prototype.setMemberVolume = function (id, v) {
-    this.memberVolumes[id] = Math.max(0, Math.min(2, Number(v) / 100));
+    var g = Number(v) / 100;
+    if (!isFinite(g)) g = 1;
+    this.memberVolumes[id] = Math.max(0, Math.min(2, g));
+    var vol = this.memberVolumes[id];
     var e = this.elements[id];
-    if (e && e.audio) e.audio.volume = this.memberVolumes[id];
+    if (e && e.audio) setElementVolume(e.audio, vol);
     if (e && e.video) {
-      e.video.volume = this.memberVolumes[id];
+      setElementVolume(e.video, vol);
       var stage = document.getElementById("screen-video");
-      if (stage && stage.srcObject === e.video.srcObject) stage.volume = this.memberVolumes[id];
+      if (stage && stage.srcObject === e.video.srcObject) setElementVolume(stage, vol);
     }
     // LiveKit 路径下共享画面挂在舞台元素上（box.screenEl），不是临时 video
-    if (e && e.screenEl) e.screenEl.volume = this.memberVolumes[id];
+    if (e && e.screenEl) setElementVolume(e.screenEl, vol);
   };
   VoiceTransportBase.prototype.attach = function (memberId, kind, track, label) {
     var key = memberId;
@@ -464,11 +551,11 @@
       el.autoplay = true;
       el.playsInline = true;
       el.setAttribute("data-member", memberId);
-      if (kind === "audio") { el.volume = this.memberVolumes[memberId] == null ? 1 : this.memberVolumes[memberId]; el.muted = this.deaf; }
+      if (kind === "audio") { setElementVolume(el, this.memberVolumes[memberId] == null ? 1 : this.memberVolumes[memberId]); el.muted = this.deaf; }
       else {
         el.className = "remote-screen";
         el.muted = this.deaf;
-        el.volume = this.memberVolumes[memberId] == null ? 1 : this.memberVolumes[memberId];
+        setElementVolume(el, this.memberVolumes[memberId] == null ? 1 : this.memberVolumes[memberId]);
       }
       if (this.sink) this.sink.appendChild(el);
       box[kind] = el;
@@ -486,8 +573,9 @@
     if (!box) return;
     var self = this;
     ["audio", "video"].forEach(function (k) {
-      if (box[k]) { try { box[k].srcObject = null; box[k].remove(); } catch (_) {} }
+      if (box[k]) { try { box[k].srcObject = null; dropElementVolume(box[k]); box[k].remove(); } catch (_) {} }
     });
+    if (box.screenEl && box.screenEl.id !== "screen-video") dropElementVolume(box.screenEl);
     delete this.elements[memberId];
   };
   VoiceTransportBase.prototype.applySettings = function (settings) {
@@ -1050,7 +1138,7 @@
             try { track.attach(stage); }
             catch (_) { stage.srcObject = new MediaStream([track.mediaStreamTrack]); }
             stage.muted = self.deaf;
-            stage.volume = self.memberVolumes[id] == null ? 1 : self.memberVolumes[id];
+            setElementVolume(stage, self.memberVolumes[id] == null ? 1 : self.memberVolumes[id]);
             stage.play().catch(function () {});
             box.screenEl = stage;
             box.screenTrack = track;
@@ -1065,7 +1153,7 @@
           el.autoplay = true; el.playsInline = true;
           el.setAttribute("data-member", id);
           el.muted = self.deaf;
-          el.volume = self.memberVolumes[id] == null ? 1 : self.memberVolumes[id];
+          setElementVolume(el, self.memberVolumes[id] == null ? 1 : self.memberVolumes[id]);
           if (self.sink) self.sink.appendChild(el);
           box.audio = el;
           self.elements[id] = box;
